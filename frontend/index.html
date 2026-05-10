@@ -1,0 +1,736 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="description" content="Smart Alert System — Real-time traffic, flood & fire detection dashboard" />
+  <title>Smart Alert System</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <style>
+    :root {
+      --bg-primary: #0d1117;
+      --bg-secondary: #161b22;
+      --bg-tertiary: #21262d;
+      --border: #30363d;
+      --text-primary: #e6edf3;
+      --text-secondary: #8b949e;
+      --text-muted: #484f58;
+      --accent-fire: #ff3b3b;
+      --accent-flood: #3b8fff;
+      --accent-traffic: #ffb03b;
+      --accent-green: #3bff6f;
+      --sidebar-width: 320px;
+      --glow-fire: 0 0 20px rgba(255,59,59,0.4);
+      --glow-flood: 0 0 20px rgba(59,143,255,0.4);
+      --glow-traffic: 0 0 20px rgba(255,176,59,0.4);
+    }
+
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    body {
+      font-family: -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif;
+      background: var(--bg-primary);
+      color: var(--text-primary);
+      height: 100vh;
+      overflow: hidden;
+      display: flex;
+    }
+
+    /* ─── Sidebar ─── */
+    #sidebar {
+      width: var(--sidebar-width);
+      min-width: var(--sidebar-width);
+      background: var(--bg-primary);
+      border-right: 1px solid var(--border);
+      display: flex;
+      flex-direction: column;
+      z-index: 1000;
+      height: 100vh;
+    }
+
+    #sidebar-header {
+      padding: 16px 20px;
+      border-bottom: 1px solid var(--border);
+      background: linear-gradient(135deg, var(--bg-secondary), var(--bg-primary));
+    }
+
+    #sidebar-header h1 {
+      font-size: 16px;
+      font-weight: 700;
+      letter-spacing: 0.5px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    #sidebar-header h1 .logo-icon {
+      font-size: 22px;
+      filter: drop-shadow(0 0 6px rgba(59,255,111,0.5));
+    }
+
+    #sidebar-header p {
+      font-size: 11px;
+      color: var(--text-secondary);
+      margin-top: 4px;
+      font-family: 'Courier New', monospace;
+    }
+
+    .connection-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      font-size: 10px;
+      padding: 3px 8px;
+      border-radius: 12px;
+      margin-top: 8px;
+      font-family: monospace;
+      font-weight: 600;
+    }
+
+    .connection-badge.connected {
+      background: rgba(59,255,111,0.12);
+      color: var(--accent-green);
+      border: 1px solid rgba(59,255,111,0.2);
+    }
+
+    .connection-badge.disconnected {
+      background: rgba(255,59,59,0.12);
+      color: var(--accent-fire);
+      border: 1px solid rgba(255,59,59,0.2);
+    }
+
+    .connection-dot {
+      width: 6px; height: 6px;
+      border-radius: 50%;
+      background: currentColor;
+      animation: pulse-dot 2s infinite;
+    }
+
+    /* ─── Camera List ─── */
+    #camera-section {
+      padding: 12px 16px;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .section-title {
+      font-size: 10px;
+      text-transform: uppercase;
+      letter-spacing: 1.5px;
+      color: var(--text-secondary);
+      margin-bottom: 10px;
+      font-weight: 600;
+    }
+
+    .camera-item {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 8px 12px;
+      border-radius: 8px;
+      cursor: pointer;
+      transition: background 0.2s;
+      margin-bottom: 4px;
+    }
+
+    .camera-item:hover { background: var(--bg-tertiary); }
+
+    .camera-status-dot {
+      width: 8px; height: 8px;
+      border-radius: 50%;
+      background: var(--accent-green);
+      flex-shrink: 0;
+      box-shadow: 0 0 6px rgba(59,255,111,0.5);
+    }
+
+    .camera-status-dot.alert-traffic { background: var(--accent-traffic); box-shadow: var(--glow-traffic); }
+    .camera-status-dot.alert-fire { background: var(--accent-fire); box-shadow: var(--glow-fire); }
+    .camera-status-dot.alert-flood { background: var(--accent-flood); box-shadow: var(--glow-flood); }
+
+    .camera-info { flex: 1; min-width: 0; }
+    .camera-name { font-size: 13px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .camera-id { font-size: 10px; color: var(--text-muted); font-family: monospace; }
+
+    /* ─── Alert Log ─── */
+    #alert-section {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+      padding: 12px 0;
+    }
+
+    #filter-bar {
+      display: flex;
+      gap: 4px;
+      padding: 0 16px;
+      margin-bottom: 10px;
+    }
+
+    .filter-btn {
+      flex: 1;
+      padding: 6px 4px;
+      font-size: 10px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      background: transparent;
+      color: var(--text-secondary);
+      cursor: pointer;
+      transition: all 0.2s;
+      font-family: inherit;
+    }
+
+    .filter-btn:hover { border-color: var(--text-secondary); }
+    .filter-btn.active { background: var(--bg-tertiary); color: var(--text-primary); border-color: var(--text-primary); }
+    .filter-btn.active[data-filter="traffic_jam"] { border-color: var(--accent-traffic); color: var(--accent-traffic); }
+    .filter-btn.active[data-filter="fire"] { border-color: var(--accent-fire); color: var(--accent-fire); }
+    .filter-btn.active[data-filter="flood"] { border-color: var(--accent-flood); color: var(--accent-flood); }
+
+    #alert-log {
+      flex: 1;
+      overflow-y: auto;
+      padding: 0 12px;
+    }
+
+    #alert-log::-webkit-scrollbar { width: 4px; }
+    #alert-log::-webkit-scrollbar-track { background: transparent; }
+    #alert-log::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
+
+    .alert-row {
+      display: flex;
+      align-items: flex-start;
+      gap: 10px;
+      padding: 10px;
+      border-radius: 8px;
+      margin-bottom: 6px;
+      background: var(--bg-secondary);
+      border-left: 3px solid var(--border);
+      animation: slideIn 0.3s ease-out;
+      cursor: pointer;
+      transition: background 0.15s;
+    }
+
+    .alert-row:hover { background: var(--bg-tertiary); }
+    .alert-row[data-type="traffic_jam"] { border-left-color: var(--accent-traffic); }
+    .alert-row[data-type="fire"] { border-left-color: var(--accent-fire); }
+    .alert-row[data-type="flood"] { border-left-color: var(--accent-flood); }
+
+    .alert-icon { font-size: 18px; flex-shrink: 0; margin-top: 2px; }
+    .alert-content { flex: 1; min-width: 0; }
+    .alert-title { font-size: 12px; font-weight: 600; }
+    .alert-camera { font-size: 11px; color: var(--text-secondary); margin-top: 2px; }
+    .alert-time { font-size: 10px; color: var(--text-muted); font-family: monospace; margin-top: 3px; }
+
+    .alert-severity {
+      font-size: 9px;
+      padding: 2px 6px;
+      border-radius: 4px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      flex-shrink: 0;
+    }
+
+    .severity-critical { background: rgba(255,59,59,0.2); color: var(--accent-fire); }
+    .severity-high { background: rgba(255,140,59,0.2); color: #ff8c3b; }
+    .severity-medium { background: rgba(255,176,59,0.2); color: var(--accent-traffic); }
+    .severity-low { background: rgba(59,255,111,0.15); color: var(--accent-green); }
+
+    .empty-state {
+      text-align: center;
+      padding: 40px 20px;
+      color: var(--text-muted);
+      font-size: 12px;
+    }
+
+    .empty-state .empty-icon { font-size: 32px; margin-bottom: 8px; opacity: 0.5; }
+
+    /* ─── Map ─── */
+    #map-container {
+      flex: 1;
+      position: relative;
+    }
+
+    #map { width: 100%; height: 100%; }
+
+    .leaflet-popup-content-wrapper {
+      background: var(--bg-secondary) !important;
+      color: var(--text-primary) !important;
+      border-radius: 12px !important;
+      border: 1px solid var(--border) !important;
+      box-shadow: 0 8px 32px rgba(0,0,0,0.5) !important;
+    }
+
+    .leaflet-popup-tip { background: var(--bg-secondary) !important; }
+
+    .popup-content { min-width: 220px; }
+    .popup-header { font-size: 14px; font-weight: 700; margin-bottom: 6px; }
+    .popup-meta { font-size: 11px; color: var(--text-secondary); margin-bottom: 4px; font-family: monospace; }
+    .popup-image { width: 100%; border-radius: 8px; margin-top: 8px; border: 1px solid var(--border); }
+
+    .popup-badge {
+      display: inline-block;
+      font-size: 10px;
+      padding: 2px 8px;
+      border-radius: 4px;
+      font-weight: 700;
+      text-transform: uppercase;
+      margin-top: 6px;
+    }
+
+    .popup-badge.traffic_jam { background: rgba(255,176,59,0.2); color: var(--accent-traffic); }
+    .popup-badge.fire { background: rgba(255,59,59,0.2); color: var(--accent-fire); }
+    .popup-badge.flood { background: rgba(59,143,255,0.2); color: var(--accent-flood); }
+
+    /* ─── Marker blink ─── */
+    @keyframes marker-blink {
+      0%, 100% { opacity: 1; transform: scale(1); }
+      50% { opacity: 0.4; transform: scale(1.3); }
+    }
+
+    .marker-blink .marker-emoji { animation: marker-blink 0.6s ease-in-out 8; }
+
+    .marker-emoji {
+      font-size: 28px;
+      filter: drop-shadow(0 2px 6px rgba(0,0,0,0.6));
+      transition: all 0.3s;
+      cursor: pointer;
+    }
+
+    /* ─── Animations ─── */
+    @keyframes slideIn {
+      from { opacity: 0; transform: translateX(-10px); }
+      to { opacity: 1; transform: translateX(0); }
+    }
+
+    @keyframes pulse-dot {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.4; }
+    }
+
+    /* ─── Stats bar ─── */
+    #stats-bar {
+      display: flex;
+      gap: 6px;
+      padding: 10px 16px;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .stat-card {
+      flex: 1;
+      padding: 8px;
+      border-radius: 8px;
+      background: var(--bg-secondary);
+      text-align: center;
+      border: 1px solid var(--border);
+    }
+
+    .stat-value {
+      font-size: 20px;
+      font-weight: 700;
+      font-family: 'Courier New', monospace;
+    }
+
+    .stat-label {
+      font-size: 9px;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      color: var(--text-muted);
+      margin-top: 2px;
+    }
+
+    .stat-card.fire .stat-value { color: var(--accent-fire); }
+    .stat-card.flood .stat-value { color: var(--accent-flood); }
+    .stat-card.traffic .stat-value { color: var(--accent-traffic); }
+  </style>
+</head>
+<body>
+  <!-- ─── Sidebar ─── -->
+  <aside id="sidebar">
+    <div id="sidebar-header">
+      <h1><span class="logo-icon">🛡️</span> Smart Alert System</h1>
+      <p>Real-time Detection Dashboard</p>
+      <div class="connection-badge disconnected" id="connection-badge">
+        <span class="connection-dot"></span>
+        <span id="connection-text">CONNECTING...</span>
+      </div>
+    </div>
+
+    <div id="stats-bar">
+      <div class="stat-card fire"><div class="stat-value" id="stat-fire">0</div><div class="stat-label">Fire</div></div>
+      <div class="stat-card flood"><div class="stat-value" id="stat-flood">0</div><div class="stat-label">Flood</div></div>
+      <div class="stat-card traffic"><div class="stat-value" id="stat-traffic">0</div><div class="stat-label">Traffic</div></div>
+    </div>
+
+    <div id="camera-section">
+      <div class="section-title">📷 Cameras</div>
+      <div id="camera-list"></div>
+    </div>
+
+    <div id="alert-section">
+      <div style="padding: 0 16px;">
+        <div class="section-title">🚨 Alert Log</div>
+      </div>
+      <div id="filter-bar">
+        <button class="filter-btn active" data-filter="all" id="filter-all">All</button>
+        <button class="filter-btn" data-filter="traffic_jam" id="filter-traffic">🚗 Traffic</button>
+        <button class="filter-btn" data-filter="fire" id="filter-fire">🔥 Fire</button>
+        <button class="filter-btn" data-filter="flood" id="filter-flood">🌊 Flood</button>
+      </div>
+      <div id="alert-log">
+        <div class="empty-state">
+          <div class="empty-icon">📡</div>
+          <div>Waiting for alerts...</div>
+        </div>
+      </div>
+    </div>
+  </aside>
+
+  <!-- ─── Map ─── -->
+  <main id="map-container">
+    <div id="map"></div>
+  </main>
+
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script src="/socket.io/socket.io.js"></script>
+  <script>
+    /* ═══════════════════════════════════════════
+       CONFIG
+    ═══════════════════════════════════════════ */
+    const HCM_CENTER = [10.7769, 106.7009];
+    const MAP_ZOOM = 13;
+    const ALERT_ICONS = { traffic_jam: '🚗', fire: '🔥', flood: '🌊' };
+    const NORMAL_ICON = '🟢';
+
+    /* ═══════════════════════════════════════════
+       STATE
+    ═══════════════════════════════════════════ */
+    const cameras = new Map();   // camera_id → { data, marker, status }
+    const alerts = [];           // all alerts
+    let activeFilter = 'all';
+    const stats = { fire: 0, flood: 0, traffic_jam: 0 };
+
+    /* ═══════════════════════════════════════════
+       LEAFLET MAP
+    ═══════════════════════════════════════════ */
+    const map = L.map('map', {
+      zoomControl: false,
+      attributionControl: false,
+    }).setView(HCM_CENTER, MAP_ZOOM);
+
+    L.control.zoom({ position: 'topright' }).addTo(map);
+
+    L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+      maxZoom: 19,
+      subdomains: 'abcd',
+    }).addTo(map);
+
+    /* ═══════════════════════════════════════════
+       MARKER HELPERS
+    ═══════════════════════════════════════════ */
+    function createEmojiIcon(emoji) {
+      return L.divIcon({
+        html: `<span class="marker-emoji">${emoji}</span>`,
+        className: '',
+        iconSize: [32, 32],
+        iconAnchor: [16, 16],
+        popupAnchor: [0, -20],
+      });
+    }
+
+    function addCameraMarker(cam) {
+      const marker = L.marker([cam.location.lat, cam.location.lng], {
+        icon: createEmojiIcon(NORMAL_ICON),
+      }).addTo(map);
+
+      marker.bindPopup(`
+        <div class="popup-content">
+          <div class="popup-header">${cam.name}</div>
+          <div class="popup-meta">${cam.camera_id}</div>
+          <div class="popup-meta">${cam.location.address || ''}</div>
+          <div class="popup-badge" style="background:rgba(59,255,111,0.15);color:var(--accent-green);">NORMAL</div>
+        </div>
+      `);
+
+      cameras.set(cam.camera_id, { data: cam, marker, status: 'normal' });
+    }
+
+    function updateMarkerAlert(cameraId, alertData) {
+      const cam = cameras.get(cameraId);
+      if (!cam) return;
+
+      const emoji = ALERT_ICONS[alertData.event_type] || '⚠️';
+      cam.marker.setIcon(createEmojiIcon(emoji));
+      cam.status = alertData.event_type;
+
+      // Blink animation
+      const el = cam.marker.getElement();
+      if (el) {
+        el.classList.add('marker-blink');
+        setTimeout(() => el.classList.remove('marker-blink'), 5000);
+      }
+
+      // Update popup
+      let imgTag = '';
+      if (alertData.image_base64) {
+        const src = alertData.image_base64.startsWith('data:')
+          ? alertData.image_base64
+          : `data:image/jpeg;base64,${alertData.image_base64}`;
+        imgTag = `<img class="popup-image" src="${src}" alt="Detection" />`;
+      }
+
+      cam.marker.setPopupContent(`
+        <div class="popup-content">
+          <div class="popup-header">${alertData.camera_name || cameraId}</div>
+          <div class="popup-meta">${cameraId}</div>
+          <div class="popup-badge ${alertData.event_type}">
+            ${ALERT_ICONS[alertData.event_type] || ''} ${alertData.event_type.replace('_', ' ')}
+          </div>
+          <div class="popup-meta" style="margin-top:6px;">${new Date(alertData.timestamp).toLocaleString()}</div>
+          ${imgTag}
+        </div>
+      `);
+
+      cam.marker.openPopup();
+
+      // Reset to normal after 60s
+      setTimeout(() => {
+        cam.marker.setIcon(createEmojiIcon(NORMAL_ICON));
+        cam.status = 'normal';
+        updateCameraDot(cameraId, 'normal');
+      }, 60000);
+    }
+
+    /* ═══════════════════════════════════════════
+       CAMERA LIST
+    ═══════════════════════════════════════════ */
+    function renderCameraList() {
+      const el = document.getElementById('camera-list');
+      el.innerHTML = '';
+      cameras.forEach((cam, id) => {
+        const div = document.createElement('div');
+        div.className = 'camera-item';
+        div.id = `cam-item-${id}`;
+        div.innerHTML = `
+          <span class="camera-status-dot" id="cam-dot-${id}"></span>
+          <div class="camera-info">
+            <div class="camera-name">${cam.data.name}</div>
+            <div class="camera-id">${id}</div>
+          </div>
+        `;
+        div.onclick = () => {
+          map.flyTo([cam.data.location.lat, cam.data.location.lng], 16);
+          cam.marker.openPopup();
+        };
+        el.appendChild(div);
+      });
+    }
+
+    function updateCameraDot(cameraId, eventType) {
+      const dot = document.getElementById(`cam-dot-${cameraId}`);
+      if (!dot) return;
+      dot.className = 'camera-status-dot';
+      if (eventType === 'traffic_jam') dot.classList.add('alert-traffic');
+      else if (eventType === 'fire') dot.classList.add('alert-fire');
+      else if (eventType === 'flood') dot.classList.add('alert-flood');
+    }
+
+    /* ═══════════════════════════════════════════
+       ALERT LOG
+    ═══════════════════════════════════════════ */
+    function addAlertRow(alertData) {
+      const log = document.getElementById('alert-log');
+      const empty = log.querySelector('.empty-state');
+      if (empty) empty.remove();
+
+      const icons = { traffic_jam: '🚗', fire: '🔥', flood: '🌊' };
+      const labels = { traffic_jam: 'Traffic Jam', fire: 'Fire Detected', flood: 'Flood Warning' };
+
+      const row = document.createElement('div');
+      row.className = 'alert-row';
+      row.dataset.type = alertData.event_type;
+      row.id = `alert-${Date.now()}`;
+      row.innerHTML = `
+        <div class="alert-icon">${icons[alertData.event_type] || '⚠️'}</div>
+        <div class="alert-content">
+          <div class="alert-title">${labels[alertData.event_type] || alertData.event_type}</div>
+          <div class="alert-camera">${alertData.camera_name || alertData.camera_id}</div>
+          <div class="alert-time">${new Date(alertData.timestamp).toLocaleTimeString()}</div>
+        </div>
+        <span class="alert-severity severity-${alertData.severity}">${alertData.severity}</span>
+      `;
+
+      row.onclick = () => {
+        const cam = cameras.get(alertData.camera_id);
+        if (cam) {
+          map.flyTo([alertData.lat, alertData.lng], 16);
+          cam.marker.openPopup();
+        }
+      };
+
+      log.prepend(row);
+      alerts.unshift(alertData);
+
+      // Keep max 100 rows
+      while (log.children.length > 100) log.lastChild.remove();
+
+      applyFilter();
+    }
+
+    /* ═══════════════════════════════════════════
+       FILTERS
+    ═══════════════════════════════════════════ */
+    document.querySelectorAll('.filter-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        document.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        activeFilter = btn.dataset.filter;
+        applyFilter();
+      });
+    });
+
+    function applyFilter() {
+      document.querySelectorAll('.alert-row').forEach(row => {
+        if (activeFilter === 'all' || row.dataset.type === activeFilter) {
+          row.style.display = '';
+        } else {
+          row.style.display = 'none';
+        }
+      });
+    }
+
+    /* ═══════════════════════════════════════════
+       STATS
+    ═══════════════════════════════════════════ */
+    function updateStats(eventType) {
+      if (stats[eventType] !== undefined) {
+        stats[eventType]++;
+        const mapping = { fire: 'stat-fire', flood: 'stat-flood', traffic_jam: 'stat-traffic' };
+        const el = document.getElementById(mapping[eventType]);
+        if (el) el.textContent = stats[eventType];
+      }
+    }
+
+    /* ═══════════════════════════════════════════
+       AUDIO BEEP (Web Audio API)
+    ═══════════════════════════════════════════ */
+    let audioCtx = null;
+    function playBeep(type) {
+      if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+      const osc = audioCtx.createOscillator();
+      const gain = audioCtx.createGain();
+      osc.connect(gain);
+      gain.connect(audioCtx.destination);
+
+      const freqs = { fire: 880, flood: 523, traffic_jam: 660 };
+      osc.frequency.value = freqs[type] || 660;
+      osc.type = 'sine';
+      gain.gain.value = 0.15;
+      gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.5);
+
+      osc.start();
+      osc.stop(audioCtx.currentTime + 0.5);
+    }
+
+    /* ═══════════════════════════════════════════
+       SOCKET.IO
+    ═══════════════════════════════════════════ */
+    const socket = io({ transports: ['websocket', 'polling'] });
+
+    socket.on('connect', () => {
+      const badge = document.getElementById('connection-badge');
+      const text = document.getElementById('connection-text');
+      badge.className = 'connection-badge connected';
+      text.textContent = 'LIVE';
+    });
+
+    socket.on('disconnect', () => {
+      const badge = document.getElementById('connection-badge');
+      const text = document.getElementById('connection-text');
+      badge.className = 'connection-badge disconnected';
+      text.textContent = 'DISCONNECTED';
+    });
+
+    socket.on('alert', (data) => {
+      console.log('[Alert]', data);
+      updateMarkerAlert(data.camera_id, data);
+      updateCameraDot(data.camera_id, data.event_type);
+      addAlertRow(data);
+      updateStats(data.event_type);
+      playBeep(data.event_type);
+    });
+
+    /* ═══════════════════════════════════════════
+       INIT — Fetch cameras + historical events
+    ═══════════════════════════════════════════ */
+    async function loadHistoricalEvents() {
+      try {
+        const res = await fetch('/api/events?limit=50');
+        const json = await res.json();
+        const events = (json.events || []).reverse(); // oldest first so prepend order is correct
+        const cameraMap = {};
+        cameras.forEach((cam, id) => { cameraMap[id] = cam.data; });
+
+        events.forEach(evt => {
+          const cam = cameraMap[evt.camera_id];
+          const alertData = {
+            camera_id: evt.camera_id,
+            event_type: evt.event_type,
+            severity: evt.severity,
+            camera_name: cam ? cam.name : evt.camera_id,
+            lat: cam ? cam.location.lat : 0,
+            lng: cam ? cam.location.lng : 0,
+            timestamp: evt.timestamp,
+            metadata: evt.metadata || {},
+          };
+          addAlertRow(alertData);
+          updateStats(evt.event_type);
+          updateCameraDot(evt.camera_id, evt.event_type);
+        });
+
+        // Update marker for most recent alert per camera
+        const latestPerCamera = {};
+        (json.events || []).forEach(evt => {
+          if (!latestPerCamera[evt.camera_id]) {
+            latestPerCamera[evt.camera_id] = evt;
+          }
+        });
+        Object.values(latestPerCamera).forEach(evt => {
+          const cam = cameraMap[evt.camera_id];
+          if (cam) {
+            const emoji = ALERT_ICONS[evt.event_type] || NORMAL_ICON;
+            const camEntry = cameras.get(evt.camera_id);
+            if (camEntry) camEntry.marker.setIcon(createEmojiIcon(emoji));
+          }
+        });
+      } catch (err) {
+        console.warn('[Init] Could not fetch historical events:', err.message);
+      }
+    }
+
+    async function init() {
+      try {
+        const res = await fetch('/api/cameras');
+        const json = await res.json();
+        (json.cameras || []).forEach(cam => addCameraMarker(cam));
+        renderCameraList();
+      } catch (err) {
+        console.warn('[Init] Could not fetch cameras:', err.message);
+        const demoCams = [
+          { camera_id: 'CAM_001', name: 'Nguyễn Huệ — Lê Lợi', location: { lat: 10.7739, lng: 106.7030, address: 'District 1' } },
+          { camera_id: 'CAM_002', name: 'Điện Biên Phủ — Hai Bà Trưng', location: { lat: 10.7865, lng: 106.6953, address: 'District 3' } },
+          { camera_id: 'CAM_003', name: 'Bình Triệu Bridge', location: { lat: 10.8231, lng: 106.7114, address: 'Thủ Đức' } },
+        ];
+        demoCams.forEach(cam => addCameraMarker(cam));
+        renderCameraList();
+      }
+      // Load historical events from DB
+      await loadHistoricalEvents();
+    }
+
+    init();
+  </script>
+</body>
+</html>
