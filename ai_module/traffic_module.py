@@ -54,6 +54,44 @@ def has_significant_motion(prev_gray, curr_gray, threshold=5000):
     return motion_pixels > threshold
 
 
+def is_youtube_url(url: str) -> bool:
+    """Check if a URL is a YouTube link."""
+    return any(domain in url for domain in ["youtube.com", "youtu.be", "youtube.com/live"])
+
+
+def resolve_stream_url(url: str) -> str:
+    """
+    If the URL is a YouTube link, use yt-dlp to extract a direct stream URL.
+    Otherwise, return the URL as-is (RTSP, file path, etc.).
+    """
+    if not is_youtube_url(url):
+        return url
+
+    log.info(f"Detected YouTube URL — extracting stream with yt-dlp...")
+    try:
+        import yt_dlp
+
+        ydl_opts = {
+            "quiet": True,
+            "no_warnings": True,
+            "format": "best[height<=720][ext=mp4]/best[height<=720]/best",
+        }
+        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            info = ydl.extract_info(url, download=False)
+            stream = info.get("url")
+            if not stream:
+                log.error("yt-dlp returned no stream URL")
+                sys.exit(1)
+            log.info("YouTube stream URL resolved successfully")
+            return stream
+    except ImportError:
+        log.error("yt-dlp not installed. Run: pip install yt-dlp")
+        sys.exit(1)
+    except Exception as e:
+        log.error(f"Failed to resolve YouTube URL: {e}")
+        sys.exit(1)
+
+
 def send_event(data: dict):
     """POST event to backend."""
     headers = {
@@ -91,10 +129,14 @@ def main():
     except ImportError:
         log.warning("SORT not available — tracking disabled")
 
+    # ─── Resolve video source ───
+    stream_url = resolve_stream_url(RTSP_URL)
+    log.info(f"Resolved stream: {stream_url[:80]}...")
+
     # ─── Open video stream ───
-    cap = cv2.VideoCapture(RTSP_URL)
+    cap = cv2.VideoCapture(stream_url)
     if not cap.isOpened():
-        log.error(f"Cannot open RTSP stream: {RTSP_URL}")
+        log.error(f"Cannot open video stream: {stream_url[:80]}")
         sys.exit(1)
 
     prev_gray = None
@@ -105,7 +147,8 @@ def main():
             log.warning("Frame read failed — reconnecting in 5s")
             cap.release()
             time.sleep(5)
-            cap = cv2.VideoCapture(RTSP_URL)
+            stream_url = resolve_stream_url(RTSP_URL)  # re-resolve (YT URLs expire)
+            cap = cv2.VideoCapture(stream_url)
             continue
 
         gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)

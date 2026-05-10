@@ -26,9 +26,9 @@ API_TOKEN = os.getenv("API_TOKEN", "")
 JPEG_QUALITY = 70
 RESIZE_DIM = (640, 640)
 
-# HSV range for water detection
-HSV_LOWER = np.array([90, 30, 30])
-HSV_UPPER = np.array([130, 255, 200])
+# HSV range for muddy/brown water detection
+HSV_LOWER = np.array([5, 30, 30])
+HSV_UPPER = np.array([35, 200, 180])
 
 # Dynamic polling intervals (seconds)
 POLL_NORMAL = 300   # 5 minutes
@@ -62,6 +62,44 @@ def has_significant_motion(prev_gray, curr_gray, threshold=2000):
     _, thresh = cv2.threshold(diff, 20, 255, cv2.THRESH_BINARY)
     motion_pixels = cv2.countNonZero(thresh)
     return motion_pixels > threshold
+
+
+def is_youtube_url(url: str) -> bool:
+    """Check if a URL is a YouTube link."""
+    return any(domain in url for domain in ["youtube.com", "youtu.be", "youtube.com/live"])
+
+
+def resolve_stream_url(url: str) -> str:
+    """
+    If the URL is a YouTube link, use yt-dlp to extract a direct stream URL.
+    Otherwise, return the URL as-is.
+    """
+    if not is_youtube_url(url):
+        return url
+
+    log.info(f"Detected YouTube URL — extracting stream with yt-dlp...")
+    try:
+        import yt_dlp
+
+        ydl_opts = {
+            "quiet": True,
+            "no_warnings": True,
+            "format": "best[height<=720][ext=mp4]/best[height<=720]/best",
+        }
+        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            info = ydl.extract_info(url, download=False)
+            stream = info.get("url")
+            if not stream:
+                log.error("yt-dlp returned no stream URL")
+                sys.exit(1)
+            log.info("YouTube stream URL resolved successfully")
+            return stream
+    except ImportError:
+        log.error("yt-dlp not installed. Run: pip install yt-dlp")
+        sys.exit(1)
+    except Exception as e:
+        log.error(f"Failed to resolve YouTube URL: {e}")
+        sys.exit(1)
 
 
 def compute_water_ratio(frame: np.ndarray) -> float:
@@ -108,9 +146,13 @@ def main():
     log.info(f"HSV range: {HSV_LOWER} → {HSV_UPPER}")
     log.info(f"Thresholds: WATCH={WATCH_THRESHOLD}, ALERT={ALERT_THRESHOLD}")
 
-    cap = cv2.VideoCapture(RTSP_URL)
+    # ─── Resolve video source ───
+    stream_url = resolve_stream_url(RTSP_URL)
+    log.info(f"Resolved stream: {stream_url[:80]}...")
+
+    cap = cv2.VideoCapture(stream_url)
     if not cap.isOpened():
-        log.error(f"Cannot open RTSP stream: {RTSP_URL}")
+        log.error(f"Cannot open video stream: {stream_url[:80]}")
         sys.exit(1)
 
     prev_gray = None
@@ -122,7 +164,8 @@ def main():
             log.warning("Frame read failed — reconnecting in 5s")
             cap.release()
             time.sleep(5)
-            cap = cv2.VideoCapture(RTSP_URL)
+            stream_url = resolve_stream_url(RTSP_URL) # Re-resolve in case it expired
+            cap = cv2.VideoCapture(stream_url)
             continue
 
         gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
