@@ -89,7 +89,8 @@ npm install
 
 # Configure environment
 cp .env.example .env
-# Edit .env with your MongoDB URI, Redis URL, and API_SECRET
+# Edit .env with your MongoDB URI, Redis URL, API_SECRET,
+# JWT_SECRET, and GROQ_API_KEY for the chatbot
 nano .env
 ```
 

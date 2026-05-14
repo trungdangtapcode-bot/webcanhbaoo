@@ -1,403 +1,2170 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="vi">
+
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <meta name="description" content="Smart Alert System — Real-time traffic, flood & fire detection dashboard" />
+  <meta name="viewport" content="width=device-width,initial-scale=1.0" />
   <title>Smart Alert System</title>
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
   <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.css" />
   <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.Default.css" />
   <style>
     :root {
-      --bg-primary: #0d1117; --bg-secondary: #161b22; --bg-tertiary: #21262d;
-      --border: #30363d; --text-primary: #e6edf3; --text-secondary: #8b949e; --text-muted: #484f58;
-      --accent-fire: #ff3b3b; --accent-flood: #3b8fff; --accent-traffic: #ffb03b; --accent-green: #3bff6f;
-      --sidebar-width: 340px;
+      --bg: #0d1117;
+      --bg2: #161b22;
+      --bg3: #21262d;
+      --border: #30363d;
+      --text: #e6edf3;
+      --muted: #8b949e;
+      --fire: #ff4444;
+      --flood: #3b8fff;
+      --traffic: #ffb03b;
+      --green: #3bff6f;
+      --nav-w: 64px
     }
-    * { margin: 0; padding: 0; box-sizing: border-box; }
-    body { font-family: -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif; background: var(--bg-primary); color: var(--text-primary); height: 100vh; overflow: hidden; display: flex; }
 
-    /* Sidebar */
-    #sidebar { width: var(--sidebar-width); min-width: var(--sidebar-width); background: var(--bg-primary); border-right: 1px solid var(--border); display: flex; flex-direction: column; z-index: 1000; height: 100vh; }
-    #sidebar-header { padding: 16px 20px; border-bottom: 1px solid var(--border); background: linear-gradient(135deg, var(--bg-secondary), var(--bg-primary)); }
-    #sidebar-header h1 { font-size: 16px; font-weight: 700; display: flex; align-items: center; gap: 8px; }
-    #sidebar-header h1 .logo-icon { font-size: 22px; filter: drop-shadow(0 0 6px rgba(59,255,111,0.5)); }
-    #sidebar-header p { font-size: 11px; color: var(--text-secondary); margin-top: 4px; font-family: 'Courier New', monospace; }
-    .connection-badge { display: inline-flex; align-items: center; gap: 5px; font-size: 10px; padding: 3px 8px; border-radius: 12px; margin-top: 8px; font-family: monospace; font-weight: 600; }
-    .connection-badge.connected { background: rgba(59,255,111,0.12); color: var(--accent-green); border: 1px solid rgba(59,255,111,0.2); }
-    .connection-badge.disconnected { background: rgba(255,59,59,0.12); color: var(--accent-fire); border: 1px solid rgba(255,59,59,0.2); }
-    .connection-dot { width: 6px; height: 6px; border-radius: 50%; background: currentColor; animation: pulse-dot 2s infinite; }
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box
+    }
 
-    /* Stats */
-    #stats-bar { display: flex; flex-direction: column; background: var(--bg-secondary); border-bottom: 1px solid var(--border); }
-    .stats-row { display: flex; padding: 12px 16px; gap: 12px; }
-    #clear-data-btn:hover { background: rgba(255,59,59,0.2) !important; border-color: rgba(255,59,59,0.5) !important; color: #ff5555 !important; }
-    .stat-card { flex: 1; background: var(--bg-tertiary); border-radius: 8px; padding: 10px; text-align: center; border: 1px solid var(--border); }
-    .stat-value { font-size: 20px; font-weight: 700; font-family: 'Courier New', monospace; }
-    .stat-label { font-size: 9px; text-transform: uppercase; letter-spacing: 1px; color: var(--text-muted); margin-top: 2px; }
-    .stat-card.fire .stat-value { color: var(--accent-fire); }
-    .stat-card.flood .stat-value { color: var(--accent-flood); }
-    .stat-card.traffic .stat-value { color: var(--accent-traffic); }
+    body {
+      font-family: -apple-system, 'Segoe UI', sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      height: 100vh;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column
+    }
 
-    /* Alert / Event List */
-    #event-section { flex: 1; display: flex; flex-direction: column; overflow: hidden; padding: 12px 0; }
-    .section-title { font-size: 10px; text-transform: uppercase; letter-spacing: 1.5px; color: var(--text-secondary); margin-bottom: 10px; font-weight: 600; padding: 0 16px; }
-    #event-list { flex: 1; overflow-y: auto; padding: 0 8px; }
-    #event-list::-webkit-scrollbar { width: 4px; }
-    #event-list::-webkit-scrollbar-track { background: transparent; }
-    #event-list::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
-    .event-item { display: flex; align-items: flex-start; gap: 10px; padding: 10px 12px; border-radius: 8px; margin-bottom: 4px; animation: slideIn 0.3s ease; border: 1px solid var(--border); background: var(--bg-secondary); }
-    .event-item:hover { background: var(--bg-tertiary); }
-    .event-icon { font-size: 20px; flex-shrink: 0; margin-top: 2px; }
-    .event-info { flex: 1; min-width: 0; }
-    .event-type { font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; }
-    .event-type.fire { color: var(--accent-fire); }
-    .event-type.flood { color: var(--accent-flood); }
-    .event-type.traffic { color: var(--accent-traffic); }
-    .event-detail { font-size: 11px; color: var(--text-secondary); margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-    .event-time { font-size: 10px; color: var(--text-muted); margin-top: 3px; font-family: 'Courier New', monospace; }
-    .no-events { text-align: center; padding: 40px 20px; color: var(--text-muted); font-size: 12px; }
+    button {
+      cursor: pointer;
+      font-family: inherit
+    }
 
-    /* Map */
-    #map-container { flex: 1; position: relative; }
-    #map { width: 100%; height: 100%; }
+    input,
+    select,
+    textarea {
+      font-family: inherit;
+      background: var(--bg3);
+      color: var(--text);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 8px 12px;
+      outline: none;
+      width: 100%
+    }
 
-    /* Leaflet popup */
-    .leaflet-popup-content-wrapper { background: var(--bg-secondary) !important; color: var(--text-primary) !important; border-radius: 12px !important; border: 1px solid var(--border) !important; box-shadow: 0 8px 32px rgba(0,0,0,0.5) !important; }
-    .leaflet-popup-tip { background: var(--bg-secondary) !important; }
-    .popup-content { min-width: 240px; }
-    .popup-header { font-size: 14px; font-weight: 700; margin-bottom: 4px; }
-    .popup-meta { font-size: 11px; color: var(--text-secondary); margin-bottom: 3px; }
+    input:focus,
+    select:focus,
+    textarea:focus {
+      border-color: #58a6ff
+    }
 
-    /* Marker cluster override for dark theme */
-    .marker-cluster-small { background: rgba(59,255,111,0.3) !important; }
-    .marker-cluster-small div { background: rgba(59,255,111,0.6) !important; color: #fff !important; font-weight: 700; }
-    .marker-cluster-medium { background: rgba(255,176,59,0.3) !important; }
-    .marker-cluster-medium div { background: rgba(255,176,59,0.6) !important; color: #fff !important; font-weight: 700; }
-    .marker-cluster-large { background: rgba(255,59,59,0.3) !important; }
-    .marker-cluster-large div { background: rgba(255,59,59,0.6) !important; color: #fff !important; font-weight: 700; }
+    table {
+      border-collapse: collapse;
+      width: 100%
+    }
 
-    .marker-emoji { font-size: 24px; filter: drop-shadow(0 2px 6px rgba(0,0,0,0.6)); cursor: pointer; }
+    th,
+    td {
+      padding: 10px 12px;
+      text-align: left;
+      border-bottom: 1px solid var(--border);
+      font-size: 13px
+    }
 
-    /* Alert Toast */
-    #alert-toast-container { position: fixed; top: 20px; right: 20px; z-index: 9999; display: flex; flex-direction: column; gap: 10px; pointer-events: none; }
-    .alert-toast { pointer-events: auto; display: flex; align-items: center; gap: 12px; padding: 14px 20px; border-radius: 12px; color: #fff; font-weight: 600; font-size: 14px; box-shadow: 0 8px 32px rgba(0,0,0,0.5); animation: toastIn 0.4s ease, toastOut 0.4s ease 4.6s forwards; min-width: 320px; max-width: 460px; backdrop-filter: blur(12px); border: 1px solid rgba(255,255,255,0.15); }
-    .alert-toast.fire { background: linear-gradient(135deg, rgba(255,59,59,0.9), rgba(200,30,30,0.95)); }
-    .alert-toast.flood { background: linear-gradient(135deg, rgba(59,143,255,0.9), rgba(30,80,200,0.95)); }
-    .alert-toast.traffic { background: linear-gradient(135deg, rgba(255,176,59,0.9), rgba(200,130,20,0.95)); }
-    .alert-toast-icon { font-size: 28px; }
-    .alert-toast-body { flex: 1; }
-    .alert-toast-title { font-size: 15px; font-weight: 700; }
-    .alert-toast-detail { font-size: 11px; opacity: 0.85; margin-top: 2px; }
-    @keyframes toastIn { from { opacity: 0; transform: translateX(80px); } to { opacity: 1; transform: translateX(0); } }
-    @keyframes toastOut { from { opacity: 1; } to { opacity: 0; transform: translateY(-20px); } }
+    th {
+      background: var(--bg3);
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      color: var(--muted)
+    }
 
-    @keyframes pulse-dot { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
-    @keyframes slideIn { from { opacity: 0; transform: translateY(-5px); } to { opacity: 1; transform: translateY(0); } }
+    tr:hover td {
+      background: var(--bg2)
+    }
+
+    /* LOGIN */
+    #login-screen {
+      position: fixed;
+      inset: 0;
+      background: linear-gradient(135deg, #0d1117 0%, #161b22 100%);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 9999
+    }
+
+    .login-box {
+      background: var(--bg2);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      padding: 40px;
+      width: 360px;
+      box-shadow: 0 20px 60px rgba(0, 0, 0, 0.6)
+    }
+
+    .login-logo {
+      text-align: center;
+      font-size: 40px;
+      margin-bottom: 12px
+    }
+
+    .login-title {
+      text-align: center;
+      font-size: 22px;
+      font-weight: 700;
+      margin-bottom: 4px
+    }
+
+    .login-sub {
+      text-align: center;
+      font-size: 12px;
+      color: var(--muted);
+      margin-bottom: 28px
+    }
+
+    .login-tabs {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+      margin-bottom: 18px
+    }
+
+    .login-tab {
+      padding: 9px;
+      border: 1px solid var(--border);
+      background: var(--bg3);
+      color: var(--muted);
+      border-radius: 8px;
+      font-size: 13px;
+      font-weight: 700
+    }
+
+    .login-tab.active {
+      background: rgba(88, 166, 255, .15);
+      border-color: #58a6ff;
+      color: #58a6ff
+    }
+
+    .login-form {
+      display: none
+    }
+
+    .login-form.active {
+      display: block
+    }
+
+    .login-field {
+      margin-bottom: 16px
+    }
+
+    .login-field label {
+      display: block;
+      font-size: 12px;
+      color: var(--muted);
+      margin-bottom: 6px
+    }
+
+    .btn-primary {
+      width: 100%;
+      padding: 12px;
+      background: linear-gradient(135deg, #238636, #2ea043);
+      border: none;
+      border-radius: 8px;
+      color: #fff;
+      font-weight: 700;
+      font-size: 15px;
+      transition: opacity .2s
+    }
+
+    .btn-primary:hover {
+      opacity: .85
+    }
+
+    .auth-secondary {
+      width: 100%;
+      margin-top: 10px;
+      padding: 10px;
+      background: transparent;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      color: var(--muted);
+      font-weight: 600
+    }
+
+    .auth-secondary:hover {
+      background: var(--bg3);
+      color: var(--text)
+    }
+
+    .login-error {
+      background: rgba(255, 68, 68, .12);
+      border: 1px solid rgba(255, 68, 68, .3);
+      color: var(--fire);
+      padding: 10px 14px;
+      border-radius: 8px;
+      font-size: 13px;
+      margin-bottom: 16px;
+      display: none
+    }
+
+    /* APP LAYOUT */
+    #app {
+      display: none;
+      flex: 1;
+      flex-direction: column;
+      overflow: hidden
+    }
+
+    #app-header {
+      height: 48px;
+      background: var(--bg2);
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      padding: 0 16px;
+      gap: 12px;
+      flex-shrink: 0
+    }
+
+    .header-logo {
+      font-size: 18px
+    }
+
+    .header-title {
+      font-weight: 700;
+      font-size: 14px
+    }
+
+    .header-sep {
+      flex: 1
+    }
+
+    .header-user {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 13px
+    }
+
+    .role-badge {
+      padding: 2px 8px;
+      border-radius: 10px;
+      font-size: 10px;
+      font-weight: 700;
+      text-transform: uppercase
+    }
+
+    .role-badge.admin {
+      background: rgba(255, 176, 59, .15);
+      color: var(--traffic)
+    }
+
+    .role-badge.operator {
+      background: rgba(59, 143, 255, .15);
+      color: var(--flood)
+    }
+
+    .role-badge.guest {
+      background: rgba(139, 148, 158, .15);
+      color: var(--muted)
+    }
+
+    .conn-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--fire);
+      animation: pulse 2s infinite
+    }
+
+    .conn-dot.online {
+      background: var(--green)
+    }
+
+    @keyframes pulse {
+
+      0%,
+      100% {
+        opacity: 1
+      }
+
+      50% {
+        opacity: .4
+      }
+    }
+
+    .btn-logout {
+      background: rgba(255, 68, 68, .1);
+      border: 1px solid rgba(255, 68, 68, .2);
+      color: var(--fire);
+      padding: 5px 12px;
+      border-radius: 6px;
+      font-size: 12px;
+      font-weight: 600
+    }
+
+    .btn-logout:hover {
+      background: rgba(255, 68, 68, .25)
+    }
+
+    /* MAIN LAYOUT */
+    #layout {
+      display: flex;
+      flex: 1;
+      overflow: hidden
+    }
+
+    /* NAV */
+    #nav {
+      width: var(--nav-w);
+      background: var(--bg2);
+      border-right: 1px solid var(--border);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 8px 0;
+      gap: 4px;
+      flex-shrink: 0
+    }
+
+    .nav-item {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 3px;
+      padding: 10px 8px;
+      border-radius: 8px;
+      width: 52px;
+      cursor: pointer;
+      transition: background .2s;
+      border: 1px solid transparent
+    }
+
+    .nav-item:hover {
+      background: var(--bg3)
+    }
+
+    .nav-item.active {
+      background: rgba(88, 166, 255, .12);
+      border-color: rgba(88, 166, 255, .2)
+    }
+
+    .nav-icon {
+      font-size: 20px
+    }
+
+    .nav-label {
+      font-size: 9px;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: .5px
+    }
+
+    .nav-item.active .nav-label {
+      color: #58a6ff
+    }
+
+    /* CONTENT */
+    #content {
+      flex: 1;
+      overflow: hidden;
+      position: relative
+    }
+
+    .view {
+      display: none;
+      height: 100%;
+      overflow-y: auto;
+      overflow-x: hidden
+    }
+
+    .view.active {
+      display: flex;
+      flex-direction: column
+    }
+
+    .view-header {
+      padding: 16px 20px;
+      border-bottom: 1px solid var(--border);
+      background: var(--bg2);
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      flex-shrink: 0
+    }
+
+    .view-title {
+      font-size: 15px;
+      font-weight: 700
+    }
+
+    .view-body {
+      flex: 1;
+      padding: 20px;
+      overflow-y: auto
+    }
+
+    /* MAP VIEW */
+    #view-map {
+      padding: 0
+    }
+
+    #view-map.active {
+      display: block;
+      position: relative
+    }
+
+    #map {
+      width: 100%;
+      height: 100%
+    }
+
+    /* SIDEBAR overlay for map */
+    #map-sidebar {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 300px;
+      height: 100%;
+      background: var(--bg);
+      border-right: 1px solid var(--border);
+      z-index: 1000;
+      display: flex;
+      flex-direction: column
+    }
+
+    #map-sidebar-header {
+      padding: 12px 16px;
+      border-bottom: 1px solid var(--border)
+    }
+
+    #stats-row {
+      display: flex;
+      gap: 8px;
+      padding: 12px;
+      background: var(--bg2);
+      border-bottom: 1px solid var(--border)
+    }
+
+    .stat-card {
+      flex: 1;
+      background: var(--bg3);
+      border-radius: 8px;
+      padding: 8px;
+      text-align: center;
+      border: 1px solid var(--border)
+    }
+
+    .stat-v {
+      font-size: 20px;
+      font-weight: 700;
+      font-family: monospace
+    }
+
+    .stat-l {
+      font-size: 9px;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      color: var(--muted);
+      margin-top: 2px
+    }
+
+    .stat-card.fire .stat-v {
+      color: var(--fire)
+    }
+
+    .stat-card.flood .stat-v {
+      color: var(--flood)
+    }
+
+    .stat-card.traffic .stat-v {
+      color: var(--traffic)
+    }
+
+    #event-list-wrap {
+      flex: 1;
+      overflow-y: auto;
+      padding: 8px
+    }
+
+    #event-list-wrap::-webkit-scrollbar {
+      width: 4px
+    }
+
+    #event-list-wrap::-webkit-scrollbar-thumb {
+      background: var(--border);
+      border-radius: 4px
+    }
+
+    .ev-item {
+      display: flex;
+      gap: 10px;
+      padding: 10px;
+      border-radius: 8px;
+      margin-bottom: 4px;
+      background: var(--bg2);
+      border: 1px solid var(--border);
+      animation: slideIn .3s ease
+    }
+
+    .ev-item:hover {
+      background: var(--bg3);
+      cursor: pointer
+    }
+
+    .ev-icon {
+      font-size: 18px;
+      flex-shrink: 0;
+      margin-top: 1px
+    }
+
+    .ev-info {
+      flex: 1;
+      min-width: 0
+    }
+
+    .ev-type {
+      font-size: 11px;
+      font-weight: 700;
+      text-transform: uppercase
+    }
+
+    .ev-type.fire {
+      color: var(--fire)
+    }
+
+    .ev-type.flood {
+      color: var(--flood)
+    }
+
+    .ev-type.traffic_jam {
+      color: var(--traffic)
+    }
+
+    .ev-loc {
+      font-size: 11px;
+      color: var(--muted);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      margin-top: 2px
+    }
+
+    .ev-time {
+      font-size: 10px;
+      color: #484f58;
+      margin-top: 2px;
+      font-family: monospace
+    }
+
+    .no-ev {
+      text-align: center;
+      padding: 30px;
+      color: var(--muted);
+      font-size: 13px
+    }
+
+    /* MAP controls */
+    #map-controls {
+      position: absolute;
+      top: 12px;
+      right: 12px;
+      z-index: 1001;
+      display: flex;
+      flex-direction: column;
+      gap: 8px
+    }
+
+    .map-btn {
+      background: var(--bg2);
+      border: 1px solid var(--border);
+      color: var(--text);
+      padding: 8px 12px;
+      border-radius: 8px;
+      font-size: 12px;
+      font-weight: 600;
+      transition: background .2s
+    }
+
+    .map-btn:hover,
+    .map-btn.active {
+      background: rgba(88, 166, 255, .15);
+      border-color: #58a6ff;
+      color: #58a6ff
+    }
+
+    /* TOAST */
+    #toast-wrap {
+      position: fixed;
+      top: 16px;
+      right: 16px;
+      z-index: 99999;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      pointer-events: none
+    }
+
+    .toast {
+      pointer-events: auto;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 14px 18px;
+      border-radius: 12px;
+      color: #fff;
+      font-size: 14px;
+      box-shadow: 0 8px 32px rgba(0, 0, 0, .5);
+      animation: toastIn .4s ease, toastOut .4s 4.6s ease forwards;
+      min-width: 300px;
+      max-width: 420px;
+      border: 1px solid rgba(255, 255, 255, .1)
+    }
+
+    .toast.fire {
+      background: linear-gradient(135deg, rgba(255, 68, 68, .9), rgba(180, 0, 0, .95))
+    }
+
+    .toast.flood {
+      background: linear-gradient(135deg, rgba(59, 143, 255, .9), rgba(0, 60, 180, .95))
+    }
+
+    .toast.traffic_jam,
+    .toast.traffic {
+      background: linear-gradient(135deg, rgba(255, 176, 59, .9), rgba(180, 110, 0, .95))
+    }
+
+    .toast-icon {
+      font-size: 26px
+    }
+
+    .toast-title {
+      font-weight: 700;
+      font-size: 14px
+    }
+
+    .toast-detail {
+      font-size: 11px;
+      opacity: .85;
+      margin-top: 2px
+    }
+
+    @keyframes toastIn {
+      from {
+        opacity: 0;
+        transform: translateX(60px)
+      }
+
+      to {
+        opacity: 1;
+        transform: translateX(0)
+      }
+    }
+
+    @keyframes toastOut {
+      from {
+        opacity: 1
+      }
+
+      to {
+        opacity: 0;
+        transform: translateY(-20px)
+      }
+    }
+
+    @keyframes slideIn {
+      from {
+        opacity: 0;
+        transform: translateY(-4px)
+      }
+
+      to {
+        opacity: 1;
+        transform: translateY(0)
+      }
+    }
+
+    /* STATS VIEW */
+    .kpi-grid {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 16px;
+      margin-bottom: 24px
+    }
+
+    .kpi-card {
+      background: var(--bg2);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 20px
+    }
+
+    .kpi-val {
+      font-size: 32px;
+      font-weight: 800;
+      font-family: monospace
+    }
+
+    .kpi-label {
+      font-size: 12px;
+      color: var(--muted);
+      margin-top: 4px;
+      text-transform: uppercase;
+      letter-spacing: .8px
+    }
+
+    .kpi-card.fire .kpi-val {
+      color: var(--fire)
+    }
+
+    .kpi-card.flood .kpi-val {
+      color: var(--flood)
+    }
+
+    .kpi-card.traffic .kpi-val {
+      color: var(--traffic)
+    }
+
+    .kpi-card.green .kpi-val {
+      color: var(--green)
+    }
+
+    .charts-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 16px
+    }
+
+    .chart-card {
+      background: var(--bg2);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 20px
+    }
+
+    .chart-card h3 {
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--muted);
+      margin-bottom: 16px;
+      text-transform: uppercase;
+      letter-spacing: .8px
+    }
+
+    .chart-card canvas {
+      max-height: 220px
+    }
+
+    .days-select {
+      padding: 6px 10px;
+      font-size: 12px;
+      width: auto
+    }
+
+    /* CAMERAS VIEW */
+    .toolbar {
+      display: flex;
+      gap: 10px;
+      align-items: center;
+      flex-wrap: wrap;
+      margin-bottom: 16px
+    }
+
+    .toolbar .flex1 {
+      flex: 1
+    }
+
+    .btn {
+      padding: 8px 16px;
+      border-radius: 8px;
+      font-size: 13px;
+      font-weight: 600;
+      border: 1px solid var(--border);
+      background: var(--bg3);
+      color: var(--text);
+      transition: all .2s
+    }
+
+    .btn:hover {
+      background: var(--bg2)
+    }
+
+    .btn.primary {
+      background: #238636;
+      border-color: #2ea043;
+      color: #fff
+    }
+
+    .btn.primary:hover {
+      background: #2ea043
+    }
+
+    .btn.danger {
+      background: rgba(255, 68, 68, .1);
+      border-color: rgba(255, 68, 68, .3);
+      color: var(--fire)
+    }
+
+    .btn.danger:hover {
+      background: rgba(255, 68, 68, .25)
+    }
+
+    .btn.sm {
+      padding: 5px 10px;
+      font-size: 11px
+    }
+
+    .status-dot {
+      display: inline-block;
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      margin-right: 5px
+    }
+
+    .status-dot.online {
+      background: var(--green)
+    }
+
+    .status-dot.offline {
+      background: var(--muted)
+    }
+
+    .status-dot.maintenance {
+      background: var(--traffic)
+    }
+
+    /* MODAL */
+    .modal-overlay {
+      position: fixed;
+      inset: 0;
+      background: rgba(0, 0, 0, .7);
+      z-index: 10000;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      animation: fadeIn .2s
+    }
+
+    .modal {
+      background: var(--bg2);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      padding: 28px;
+      width: 420px;
+      max-width: 90vw;
+      box-shadow: 0 20px 60px rgba(0, 0, 0, .6)
+    }
+
+    .modal h2 {
+      font-size: 17px;
+      font-weight: 700;
+      margin-bottom: 20px
+    }
+
+    .form-group {
+      margin-bottom: 14px
+    }
+
+    .form-group label {
+      display: block;
+      font-size: 12px;
+      color: var(--muted);
+      margin-bottom: 6px
+    }
+
+    .form-row {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 10px
+    }
+
+    .modal-footer {
+      display: flex;
+      gap: 10px;
+      justify-content: flex-end;
+      margin-top: 20px
+    }
+
+    .token-box {
+      background: var(--bg);
+      border: 1px solid var(--green);
+      border-radius: 8px;
+      padding: 12px;
+      font-family: monospace;
+      font-size: 12px;
+      word-break: break-all;
+      color: var(--green);
+      margin: 12px 0
+    }
+
+    .warning-text {
+      font-size: 12px;
+      color: var(--traffic);
+      margin-top: 8px
+    }
+
+    @keyframes fadeIn {
+      from {
+        opacity: 0
+      }
+
+      to {
+        opacity: 1
+      }
+    }
+
+    /* HISTORY VIEW */
+    .filter-bar {
+      background: var(--bg2);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 16px;
+      margin-bottom: 16px;
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+      gap: 12px
+    }
+
+    .filter-bar label {
+      display: block;
+      font-size: 11px;
+      color: var(--muted);
+      margin-bottom: 5px
+    }
+
+    .pagination {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-top: 16px;
+      justify-content: flex-end
+    }
+
+    .page-btn {
+      padding: 6px 12px;
+      border-radius: 6px;
+      font-size: 12px;
+      font-weight: 600;
+      border: 1px solid var(--border);
+      background: var(--bg3);
+      color: var(--text)
+    }
+
+    .page-btn:disabled {
+      opacity: .4;
+      cursor: not-allowed
+    }
+
+    .page-btn.active {
+      background: #58a6ff;
+      border-color: #58a6ff;
+      color: #000
+    }
+
+    .lv1 {
+      color: var(--traffic)
+    }
+
+    .lv2 {
+      color: var(--flood)
+    }
+
+    .lv3 {
+      color: var(--fire)
+    }
+
+    /* CHATBOT VIEW */
+    #chat-wrap {
+      display: flex;
+      flex-direction: column;
+      height: 100%
+    }
+
+    #chat-msgs {
+      flex: 1;
+      overflow-y: auto;
+      padding: 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px
+    }
+
+    #chat-msgs::-webkit-scrollbar {
+      width: 4px
+    }
+
+    #chat-msgs::-webkit-scrollbar-thumb {
+      background: var(--border);
+      border-radius: 4px
+    }
+
+    .chat-msg {
+      max-width: 80%;
+      padding: 12px 16px;
+      border-radius: 12px;
+      font-size: 14px;
+      line-height: 1.5;
+      white-space: pre-wrap
+    }
+
+    .chat-msg.user {
+      background: #1f6feb;
+      color: #fff;
+      align-self: flex-end;
+      border-radius: 12px 12px 2px 12px
+    }
+
+    .chat-msg.bot {
+      background: var(--bg2);
+      border: 1px solid var(--border);
+      align-self: flex-start;
+      border-radius: 12px 12px 12px 2px
+    }
+
+    .chat-msg.loading {
+      opacity: .6;
+      animation: pulse 1s infinite
+    }
+
+    #chat-input-bar {
+      padding: 12px 16px;
+      border-top: 1px solid var(--border);
+      display: flex;
+      gap: 10px
+    }
+
+    #chat-input-bar input {
+      flex: 1
+    }
+
+    #chat-input-bar button {
+      padding: 8px 18px;
+      background: #238636;
+      border: none;
+      color: #fff;
+      border-radius: 8px;
+      font-weight: 600
+    }
+
+    /* USERS VIEW */
+    .user-role-select {
+      padding: 4px 8px;
+      font-size: 12px;
+      width: auto
+    }
+
+    /* LEVEL BADGES */
+    .lv-badge {
+      display: inline-block;
+      padding: 2px 8px;
+      border-radius: 10px;
+      font-size: 10px;
+      font-weight: 700;
+      text-transform: uppercase
+    }
+
+    .lv-badge.l1 {
+      background: rgba(255, 176, 59, .15);
+      color: var(--traffic)
+    }
+
+    .lv-badge.l2 {
+      background: rgba(59, 143, 255, .15);
+      color: var(--flood)
+    }
+
+    .lv-badge.l3 {
+      background: rgba(255, 68, 68, .15);
+      color: var(--fire)
+    }
+
+    /* Leaflet popup dark */
+    .leaflet-popup-content-wrapper {
+      background: var(--bg2) !important;
+      color: var(--text) !important;
+      border-radius: 12px !important;
+      border: 1px solid var(--border) !important;
+      box-shadow: 0 8px 32px rgba(0, 0, 0, .5) !important
+    }
+
+    .leaflet-popup-tip {
+      background: var(--bg2) !important
+    }
+
+    .popup-hdr {
+      font-size: 14px;
+      font-weight: 700;
+      margin-bottom: 4px
+    }
+
+    .popup-row {
+      font-size: 12px;
+      color: var(--muted);
+      margin-bottom: 3px
+    }
+
+    .marker-emoji {
+      font-size: 24px;
+      filter: drop-shadow(0 2px 6px rgba(0, 0, 0, .6));
+      cursor: pointer
+    }
+
+    .marker-cluster-small {
+      background: rgba(59, 255, 111, .3) !important
+    }
+
+    .marker-cluster-small div {
+      background: rgba(59, 255, 111, .6) !important;
+      color: #fff !important;
+      font-weight: 700
+    }
+
+    .marker-cluster-large {
+      background: rgba(255, 68, 68, .3) !important
+    }
+
+    .marker-cluster-large div {
+      background: rgba(255, 68, 68, .6) !important;
+      color: #fff !important;
+      font-weight: 700
+    }
+
+    @media(max-width:900px) {
+      .kpi-grid {
+        grid-template-columns: 1fr 1fr
+      }
+
+      .charts-grid {
+        grid-template-columns: 1fr
+      }
+
+      #map-sidebar {
+        width: 260px
+      }
+    }
   </style>
 </head>
+
 <body>
-  <aside id="sidebar">
-    <div id="sidebar-header">
-      <h1><span class="logo-icon">🛡️</span> Smart Alert System</h1>
-      <p>Real-time Alert Dashboard</p>
-      <div class="connection-badge disconnected" id="connection-badge">
-        <span class="connection-dot"></span>
-        <span id="connection-text">CONNECTING...</span>
+  <!-- LOGIN -->
+  <div id="login-screen">
+    <div class="login-box">
+      <div class="login-logo">🛡️</div>
+      <div class="login-title">Smart Alert System</div>
+      <div class="login-sub">Hệ thống cảnh báo thiên tai thời gian thực</div>
+      <div class="login-tabs">
+        <button class="login-tab active" id="login-tab-btn" type="button">Đăng nhập</button>
+        <button class="login-tab" id="signup-tab-btn" type="button">Đăng kí</button>
+      </div>
+      <div class="login-error" id="login-err"></div>
+      <div class="login-form active" id="login-form">
+        <div class="login-field"><label>Tên đăng nhập / Email</label><input id="l-user" type="text"
+            placeholder="username hoặc email" autocomplete="username" /></div>
+        <div class="login-field"><label>Mật khẩu</label><input id="l-pass" type="password" placeholder="••••••••"
+            autocomplete="current-password" /></div>
+        <button class="btn-primary" id="login-btn">Đăng nhập</button>
+        <button class="auth-secondary" id="guest-login-btn" type="button">Tiếp tục xem dashboard</button>
+      </div>
+      <div class="login-form" id="signup-form">
+        <div class="login-field"><label>Username</label><input id="s-user" type="text" placeholder="nguyen.van.a"
+            autocomplete="username" /></div>
+        <div class="login-field"><label>Email</label><input id="s-email" type="email" placeholder="a@example.com"
+            autocomplete="email" /></div>
+        <div class="login-field"><label>Họ và tên</label><input id="s-name" type="text" placeholder="Nguyễn Văn A"
+            autocomplete="name" /></div>
+        <div class="login-field"><label>Mật khẩu</label><input id="s-pass" type="password"
+            placeholder="Tối thiểu 8 ký tự" autocomplete="new-password" /></div>
+        <button class="btn-primary" id="signup-btn">Tạo tài khoản</button>
+        <button class="auth-secondary" id="guest-signup-btn" type="button">Để sau</button>
       </div>
     </div>
-
-    <div id="stats-bar">
-      <div class="stats-row">
-        <div class="stat-card fire"><div class="stat-value" id="stat-fire">0</div><div class="stat-label">Fire</div></div>
-        <div class="stat-card flood"><div class="stat-value" id="stat-flood">0</div><div class="stat-label">Flood</div></div>
-        <div class="stat-card traffic"><div class="stat-value" id="stat-traffic">0</div><div class="stat-label">Giao thông</div></div>
+  </div>
+  <!-- APP -->
+  <div id="app">
+    <header id="app-header">
+      <span class="header-logo">🛡️</span>
+      <span class="header-title">Smart Alert System</span>
+      <div class="header-sep"></div>
+      <span id="conn-dot" class="conn-dot" title="WebSocket"></span>
+      <div class="header-user">
+        <span id="hdr-name">...</span>
+        <span id="hdr-role" class="role-badge">...</span>
       </div>
-      <button id="clear-data-btn" style="margin: 10px 16px; padding: 8px; background: rgba(255,255,255,0.1); border: 1px solid rgba(255,255,255,0.2); color: white; border-radius: 6px; cursor: pointer; font-weight: bold; transition: all 0.2s;">🗑️ Xóa Lịch Sử</button>
+      <button class="btn-logout" id="logout-btn">Đăng xuất</button>
+    </header>
+    <div id="layout">
+      <nav id="nav">
+        <div class="nav-item active" data-view="map"><span class="nav-icon">🗺️</span><span class="nav-label">Bản
+            đồ</span></div>
+        <div class="nav-item" data-view="stats"><span class="nav-icon">📊</span><span class="nav-label">Thống kê</span>
+        </div>
+        <div class="nav-item" data-view="cameras"><span class="nav-icon">📷</span><span class="nav-label">Camera</span>
+        </div>
+        <div class="nav-item" data-view="history"><span class="nav-icon">📜</span><span class="nav-label">Lịch sử</span>
+        </div>
+        <div class="nav-item" data-view="chatbot"><span class="nav-icon">🤖</span><span class="nav-label">Chatbot</span>
+        </div>
+        <div class="nav-item admin-only" data-view="users" style="display:none"><span class="nav-icon">👥</span><span
+            class="nav-label">Users</span></div>
+      </nav>
+      <main id="content">
+        <!-- MAP VIEW -->
+        <div class="view active" id="view-map">
+          <div id="map-sidebar">
+            <div id="map-sidebar-header">
+              <div style="font-size:13px;font-weight:700;margin-bottom:8px">🔔 Sự kiện gần đây</div>
+              <button class="btn sm admin-only" id="clear-btn" style="width:100%;display:none">🗑️ Xóa lịch sử</button>
+            </div>
+            <div id="stats-row">
+              <div class="stat-card fire">
+                <div class="stat-v" id="st-fire">0</div>
+                <div class="stat-l">Fire</div>
+              </div>
+              <div class="stat-card flood">
+                <div class="stat-v" id="st-flood">0</div>
+                <div class="stat-l">Flood</div>
+              </div>
+              <div class="stat-card traffic">
+                <div class="stat-v" id="st-traffic">0</div>
+                <div class="stat-l">Traffic</div>
+              </div>
+            </div>
+            <div id="event-list-wrap">
+              <div class="no-ev">Chưa có sự kiện.<br>Đang theo dõi...</div>
+            </div>
+          </div>
+          <div id="map-controls">
+            <button class="map-btn" id="heatmap-btn">🔥 Heatmap</button>
+          </div>
+          <div id="map" style="position:absolute;top:0;left:300px;right:0;bottom:0"></div>
+        </div>
+        <!-- STATS VIEW -->
+        <div class="view" id="view-stats">
+          <div class="view-header">
+            <span style="font-size:20px">📊</span>
+            <span class="view-title">Thống Kê & Biểu Đồ</span>
+            <div class="header-sep"></div>
+            <select class="days-select" id="stats-days">
+              <option value="7">7 ngày</option>
+              <option value="14">14 ngày</option>
+              <option value="30">30 ngày</option>
+            </select>
+            <button class="btn sm" id="refresh-stats-btn">🔄 Làm mới</button>
+          </div>
+          <div class="view-body" id="stats-body">
+            <div class="kpi-grid">
+              <div class="kpi-card green">
+                <div class="kpi-val" id="kpi-total">-</div>
+                <div class="kpi-label">Tổng sự kiện</div>
+              </div>
+              <div class="kpi-card fire">
+                <div class="kpi-val" id="kpi-critical">-</div>
+                <div class="kpi-label">🔴 Khẩn cấp</div>
+              </div>
+              <div class="kpi-card traffic">
+                <div class="kpi-val" id="kpi-unresolved">-</div>
+                <div class="kpi-label">⏳ Chưa xử lý</div>
+              </div>
+              <div class="kpi-card flood">
+                <div class="kpi-val" id="kpi-today">-</div>
+                <div class="kpi-label">Hôm nay</div>
+              </div>
+            </div>
+            <div class="charts-grid">
+              <div class="chart-card">
+                <h3>Sự kiện theo ngày</h3><canvas id="chart-daily"></canvas>
+              </div>
+              <div class="chart-card">
+                <h3>Phân loại sự cố</h3><canvas id="chart-type"></canvas>
+              </div>
+              <div class="chart-card">
+                <h3>Phân cấp cảnh báo</h3><canvas id="chart-level"></canvas>
+              </div>
+              <div class="chart-card">
+                <h3>Top Camera nhiều sự cố</h3><canvas id="chart-cam"></canvas>
+              </div>
+            </div>
+          </div>
+        </div>
+        <!-- CAMERAS VIEW -->
+        <div class="view" id="view-cameras">
+          <div class="view-header">
+            <span style="font-size:20px">📷</span>
+            <span class="view-title">Quản Lý Camera</span>
+            <div class="header-sep"></div>
+            <button class="btn primary admin-only" id="add-cam-btn">+ Thêm Camera</button>
+          </div>
+          <div class="view-body">
+            <div class="toolbar">
+              <input id="cam-search" placeholder="🔍 Tìm theo tên hoặc ID..." style="width:240px" />
+              <select id="cam-filter-status" style="width:140px">
+                <option value="">Tất cả trạng thái</option>
+                <option value="online">Online</option>
+                <option value="offline">Offline</option>
+                <option value="maintenance">Bảo trì</option>
+              </select>
+            </div>
+            <div style="overflow-x:auto;border-radius:12px;border:1px solid var(--border)">
+              <table>
+                <thead>
+                  <tr>
+                    <th>ID</th>
+                    <th>Tên Camera</th>
+                    <th>Địa chỉ</th>
+                    <th>Trạng thái</th>
+                    <th>Last Seen</th>
+                    <th>Hành động</th>
+                  </tr>
+                </thead>
+                <tbody id="cam-tbody">
+                  <tr>
+                    <td colspan="6" style="text-align:center;padding:30px;color:var(--muted)">Đang tải...</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+        <!-- HISTORY VIEW -->
+        <div class="view" id="view-history">
+          <div class="view-header">
+            <span style="font-size:20px">📜</span>
+            <span class="view-title">Lịch Sử Sự Kiện</span>
+            <div class="header-sep"></div>
+            <button class="btn sm" id="export-btn">⬇️ Xuất CSV</button>
+          </div>
+          <div class="view-body">
+            <div class="filter-bar">
+              <div><label>Từ ngày</label><input type="datetime-local" id="h-from" /></div>
+              <div><label>Đến ngày</label><input type="datetime-local" id="h-to" /></div>
+              <div><label>Loại sự cố</label>
+                <select id="h-type">
+                  <option value="">Tất cả</option>
+                  <option value="fire">🔥 Hỏa hoạn</option>
+                  <option value="flood">🌊 Lũ lụt</option>
+                  <option value="traffic_jam">🚗 Giao thông</option>
+                </select>
+              </div>
+              <div><label>Mức độ</label>
+                <select id="h-level">
+                  <option value="">Tất cả</option>
+                  <option value="1">1 - Thông tin</option>
+                  <option value="2">2 - Cảnh báo</option>
+                  <option value="3">3 - Khẩn cấp</option>
+                </select>
+              </div>
+              <div><label>Trạng thái</label>
+                <select id="h-resolved">
+                  <option value="">Tất cả</option>
+                  <option value="false">Chưa xử lý</option>
+                  <option value="true">Đã xử lý</option>
+                </select>
+              </div>
+              <div style="display:flex;align-items:flex-end"><button class="btn primary" id="h-search-btn"
+                  style="width:100%">🔍 Tìm kiếm</button></div>
+            </div>
+            <div style="overflow-x:auto;border-radius:12px;border:1px solid var(--border)">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Thời gian</th>
+                    <th>Loại</th>
+                    <th>Cấp</th>
+                    <th>Camera</th>
+                    <th>Địa điểm</th>
+                    <th>Tin cậy</th>
+                    <th>Trạng thái</th>
+                    <th>Hành động</th>
+                  </tr>
+                </thead>
+                <tbody id="hist-tbody">
+                  <tr>
+                    <td colspan="8" style="text-align:center;padding:30px;color:var(--muted)">Nhấn Tìm kiếm để tra cứu.
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+            <div class="pagination" id="hist-pagination"></div>
+          </div>
+        </div>
+        <!-- CHATBOT VIEW -->
+        <div class="view" id="view-chatbot">
+          <div class="view-header"><span style="font-size:20px">🤖</span><span class="view-title">Chatbot AI Hỗ Trợ Ứng
+              Phó</span></div>
+          <div id="chat-wrap">
+            <div id="chat-msgs">
+              <div class="chat-msg bot">👋 Xin chào! Tôi là AI hỗ trợ ứng phó của Smart Alert System.<br><br>Bạn có thể
+                hỏi tôi về:<br>• Tình hình sự cố hỏa hoạn, lũ lụt, giao thông<br>• Thống kê và báo cáo<br>• Các sự cố
+                chưa được xử lý<br>• Đề xuất hành động ứng phó</div>
+            </div>
+            <div id="chat-input-bar">
+              <input id="chat-input" placeholder="Nhập câu hỏi... (Enter để gửi)" autocomplete="off" />
+              <button id="chat-send">Gửi</button>
+            </div>
+          </div>
+        </div>
+        <!-- USERS VIEW (admin only) -->
+        <div class="view" id="view-users">
+          <div class="view-header">
+            <span style="font-size:20px">👥</span><span class="view-title">Quản Lý Người Dùng</span>
+            <div class="header-sep"></div>
+            <button class="btn primary" id="add-user-btn">+ Tạo tài khoản</button>
+          </div>
+          <div class="view-body">
+            <div style="overflow-x:auto;border-radius:12px;border:1px solid var(--border)">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Username</th>
+                    <th>Email</th>
+                    <th>Họ tên</th>
+                    <th>Quyền</th>
+                    <th>Trạng thái</th>
+                    <th>Đăng nhập lần cuối</th>
+                    <th>Hành động</th>
+                  </tr>
+                </thead>
+                <tbody id="users-tbody">
+                  <tr>
+                    <td colspan="7" style="text-align:center;padding:30px;color:var(--muted)">Đang tải...</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </main>
     </div>
-
-    <div id="event-section">
-      <div class="section-title">🔔 Sự kiện gần đây</div>
-      <div id="event-list">
-        <div class="no-events">Chưa có sự kiện nào.<br>Hệ thống đang theo dõi...</div>
-      </div>
-    </div>
-  </aside>
-
-  <main id="map-container">
-    <div id="map"></div>
-  </main>
-
-  <!-- Alert Toast Container -->
-  <div id="alert-toast-container"></div>
-
+  </div>
+  <div id="toast-wrap"></div>
+  <!-- MODAL CONTAINER -->
+  <div id="modal-container"></div>
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
   <script src="https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+  <script src="/socket.io/socket.io.js" onerror="console.warn('Socket.IO not loaded')"></script>
   <script>
-    /* ═══ CONFIG ═══ */
-    let MAP_CENTER = [11.9444, 108.4441];
-    const MAP_ZOOM = 13;
-
-    const EVENT_ICONS = { fire: '🔥', flood: '🌊', traffic: '🚗' };
-    const EVENT_COLORS = { fire: 'var(--accent-fire)', flood: 'var(--accent-flood)', traffic: 'var(--accent-traffic)' };
-
-    /* ═══ STATE ═══ */
-    const eventMarkers = {};
-    let clusterGroup;
-    const stats = { fire: 0, flood: 0, traffic: 0 };
-
-    /* ═══ MAP ═══ */
-    const map = L.map('map', { zoomControl: false, attributionControl: false }).setView(MAP_CENTER, MAP_ZOOM);
-    L.control.zoom({ position: 'topright' }).addTo(map);
-    L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', { maxZoom: 19, subdomains: 'abcd' }).addTo(map);
-
-    clusterGroup = L.markerClusterGroup({ maxClusterRadius: 50, spiderfyOnMaxZoom: true, showCoverageOnHover: false });
-
-    /* ═══ GEOLOCATION — Ask user for browser location ═══ */
-    let userLocationMarker = null;
-    if ('geolocation' in navigator) {
-      navigator.geolocation.getCurrentPosition(
-        (pos) => {
-          const { latitude, longitude } = pos.coords;
-          MAP_CENTER = [latitude, longitude];
-          map.setView(MAP_CENTER, 14);
-          userLocationMarker = L.marker(MAP_CENTER, {
-            icon: L.divIcon({ html: '<span style="font-size:28px;filter:drop-shadow(0 2px 8px rgba(59,255,111,0.7))">📍</span>', className: '', iconSize: [28,28], iconAnchor: [14,14] })
-          }).addTo(map).bindPopup('<b>📍 Vị trí hiện tại của bạn</b>');
-          console.log('[Geo] Location:', latitude, longitude);
-          window.MY_LOCATION = { lat: latitude, lng: longitude };
-          if (window.socket && window.socket.connected) {
-             window.socket.emit('update-location', { camera_id: 'USB_CAM_001', lat: latitude, lng: longitude, address: 'Vị trí máy tính hiện tại' });
-          }
-        },
-        (err) => console.log('[Geo] Permission denied or error:', err.message),
-        { enableHighAccuracy: true, timeout: 10000 }
-      );
-    }
-    map.addLayer(clusterGroup);
-
-    /* ═══ HELPERS ═══ */
-    function createIcon(emoji) {
-      return L.divIcon({ html: `<span class="marker-emoji">${emoji}</span>`, className: '', iconSize: [28, 28], iconAnchor: [14, 14], popupAnchor: [0, -16] });
-    }
-
-    function formatTime(dateStr) {
-      try {
-        const d = new Date(dateStr);
-        return d.toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit', second: '2-digit' }) + ' ' + d.toLocaleDateString('vi-VN');
-      } catch { return dateStr; }
-    }
-
-    /* ═══ ADD EVENT TO MAP ═══ */
-    function addEventToMap(evt) {
-      if (!evt.lat || !evt.lng) return;
-
-      let type = evt.type || evt.event_type || 'traffic';
-      if (type === 'traffic_jam') type = 'traffic';
-      const icon = createIcon(EVENT_ICONS[type] || '⚠️');
-      const marker = L.marker([evt.lat, evt.lng], { icon });
-
-      marker.bindPopup(`
-        <div class="popup-content">
-          <div class="popup-header">${EVENT_ICONS[type] || '⚠️'} ${(type || '').toUpperCase()}</div>
-          <div class="popup-meta">📍 ${evt.location || evt.address || 'N/A'}</div>
-          <div class="popup-meta">📝 ${evt.description || evt.detail || ''}</div>
-          <div class="popup-meta">🕐 ${formatTime(evt.timestamp || evt.createdAt)}</div>
-        </div>
-      `, { maxWidth: 300 });
-
-      clusterGroup.addLayer(marker);
-
-      const evtId = evt._id || evt.id || Date.now();
-      eventMarkers[evtId] = marker;
-    }
-
-    /* ═══ EVENT LIST (sidebar) ═══ */
-    function addEventToList(evt) {
-      const listEl = document.getElementById('event-list');
-      // Remove "no events" placeholder
-      const placeholder = listEl.querySelector('.no-events');
-      if (placeholder) placeholder.remove();
-
-      let type = evt.type || evt.event_type || 'traffic';
-      if (type === 'traffic_jam') type = 'traffic';
-      const div = document.createElement('div');
-      div.className = 'event-item';
-      div.innerHTML = `
-        <span class="event-icon">${EVENT_ICONS[type] || '⚠️'}</span>
-        <div class="event-info">
-          <div class="event-type ${type}">${type}</div>
-          <div class="event-detail">${evt.location || evt.address || evt.description || 'Sự kiện mới'}</div>
-          <div class="event-time">${formatTime(evt.timestamp || evt.createdAt || new Date().toISOString())}</div>
-        </div>
-      `;
-      div.onclick = () => {
-        if (evt.lat && evt.lng) {
-          map.flyTo([evt.lat, evt.lng], 16);
-          const evtId = evt._id || evt.id;
-          if (evtId && eventMarkers[evtId]) {
-            eventMarkers[evtId].openPopup();
-          }
-        }
-      };
-      div.style.cursor = evt.lat ? 'pointer' : 'default';
-
-      // Prepend (newest first)
-      listEl.prepend(div);
-
-      // Keep max 50 items
-      while (listEl.children.length > 50) {
-        listEl.removeChild(listEl.lastChild);
+    'use strict';
+    /* ═══════════════════════════════════════════════════
+       AUTH MANAGER
+    ═══════════════════════════════════════════════════ */
+    const Auth = {
+      token: () => localStorage.getItem('jwt'),
+      user: () => { try { return JSON.parse(localStorage.getItem('user') || 'null'); } catch { return null; } },
+      save(token, user) { localStorage.setItem('jwt', token); localStorage.setItem('user', JSON.stringify(user)); },
+      clear() { localStorage.removeItem('jwt'); localStorage.removeItem('user'); },
+      isAdmin() { const u = this.user(); return u && u.role === 'admin'; },
+      headers() {
+        const headers = { 'Content-Type': 'application/json' };
+        if (this.token()) headers.Authorization = 'Bearer ' + this.token();
+        return headers;
       }
+    };
+
+    /* ═══════════════════════════════════════════════════
+       API CLIENT
+    ═══════════════════════════════════════════════════ */
+    const API = {
+      async req(method, path, body) {
+        const opts = { method, headers: Auth.headers() };
+        if (body) opts.body = JSON.stringify(body);
+        const r = await fetch(path, opts);
+        if (r.status === 401 && Auth.token()) { Auth.clear(); initApp(); }
+        return r;
+      },
+      get: (p) => API.req('GET', p),
+      post: (p, b) => API.req('POST', p, b),
+      patch: (p, b) => API.req('PATCH', p, b),
+      delete: (p) => API.req('DELETE', p),
+      json: async (p) => { const r = await API.get(p); return r.json(); },
+    };
+
+    /* ═══════════════════════════════════════════════════
+       TOAST
+    ═══════════════════════════════════════════════════ */
+    function showToast(type, title, detail) {
+      const icons = { fire: '🔥', flood: '🌊', traffic_jam: '🚗', traffic: '🚗' };
+      const wrap = document.getElementById('toast-wrap');
+      const el = document.createElement('div');
+      el.className = 'toast ' + type;
+      el.innerHTML = `<span class="toast-icon">${icons[type] || '⚠️'}</span><div><div class="toast-title">${title}</div><div class="toast-detail">${detail}</div></div>`;
+      wrap.appendChild(el);
+      setTimeout(() => el.remove(), 5000);
+      if ('Notification' in window && Notification.permission === 'granted')
+        new Notification(title, { body: detail });
     }
 
-    /* ═══ UPDATE STATS ═══ */
-    function updateStats(type) {
-      if (stats[type] !== undefined) {
-        stats[type]++;
-        document.getElementById(`stat-${type}`).textContent = stats[type];
-      }
+    /* ═══════════════════════════════════════════════════
+       MODAL HELPERS
+    ═══════════════════════════════════════════════════ */
+    function openModal(html) {
+      const overlay = document.createElement('div');
+      overlay.className = 'modal-overlay';
+      overlay.innerHTML = `<div class="modal">${html}</div>`;
+      overlay.addEventListener('click', e => { if (e.target === overlay) overlay.remove(); });
+      document.getElementById('modal-container').appendChild(overlay);
+      return overlay;
+    }
+    function closeModal() {
+      document.querySelectorAll('.modal-overlay').forEach(m => m.remove());
     }
 
-    /* ═══ SHOW ALERT TOAST ═══ */
-    function showAlertToast(type, evt) {
-      const container = document.getElementById('alert-toast-container');
-      const icons = { fire: '🔥', flood: '🌊', traffic: '🚗' };
-      const titles = { fire: 'PHÁT HIỆN HỎA HOẠN!', flood: 'CẢNH BÁO LŨ LỤT!', traffic: 'ÙN TẮC GIAO THÔNG!' };
-      const loc = evt.location || evt.address || evt.camera_name || 'Khu vực theo dõi';
-
-      const toast = document.createElement('div');
-      toast.className = `alert-toast ${type}`;
-      toast.innerHTML = `
-        <span class="alert-toast-icon">${icons[type] || '⚠️'}</span>
-        <div class="alert-toast-body">
-          <div class="alert-toast-title">${titles[type] || 'CẢNH BÁO!'}</div>
-          <div class="alert-toast-detail">📍 ${loc} — ${formatTime(evt.timestamp || new Date().toISOString())}</div>
-        </div>
-      `;
-      container.appendChild(toast);
-      // Auto-remove after 5s
-      setTimeout(() => { if (toast.parentNode) toast.remove(); }, 5000);
-
-      // Fly map to event location
-      if (evt.lat && evt.lng) {
-        map.flyTo([evt.lat, evt.lng], 15);
-      }
+    /* ═══════════════════════════════════════════════════
+       NAVIGATION
+    ═══════════════════════════════════════════════════ */
+    function switchView(name) {
+      document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
+      document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
+      document.getElementById('view-' + name)?.classList.add('active');
+      document.querySelector(`.nav-item[data-view="${name}"]`)?.classList.add('active');
+      if (name === 'stats') StatsView.load();
+      if (name === 'cameras') CamerasView.load();
+      if (name === 'history') HistoryView.load();
+      if (name === 'users') UsersView.load();
     }
-
-    /* ═══ HANDLE NEW EVENT ═══ */
-    function handleEvent(evt) {
-      addEventToMap(evt);
-      addEventToList(evt);
-      let type = evt.type || evt.event_type || 'traffic';
-      if (type === 'traffic_jam') type = 'traffic';
-      updateStats(type);
-
-      // Toast alert on screen
-      showAlertToast(type, evt);
-
-      // Browser Push Notification
-      const titles = { fire: '🔥 BÁO CHÁY!', flood: '🌊 CẢNH BÁO LŨ LỤT!', traffic: '🚗 ÙN TẮC GIAO THÔNG' };
-      const title = titles[type] || '⚠️ CẢNH BÁO';
-      const loc = evt.location || evt.address || evt.camera_name || 'Khu vực theo dõi';
-      
-      if ('Notification' in window && Notification.permission === 'granted') {
-        new Notification(title, { body: `Phát hiện sự cố tại: ${loc}` });
-      }
-    }
-
-    /* ═══ FETCH EXISTING EVENTS ═══ */
-    async function fetchExistingEvents() {
-      try {
-        const res = await fetch('/api/events');
-        const data = await res.json();
-        const events = Array.isArray(data) ? data : (data.events || data.data || []);
-        events.forEach(evt => {
-          addEventToMap(evt);
-          addEventToList(evt);
-          let type = evt.type || evt.event_type || 'traffic';
-          if (type === 'traffic_jam') type = 'traffic';
-          if (type && stats[type] !== undefined) {
-            stats[type]++;
-          }
-        });
-        // Update stat displays
-        Object.keys(stats).forEach(type => {
-          document.getElementById(`stat-${type}`).textContent = stats[type];
-        });
-      } catch (err) {
-        console.log('[Events] Could not fetch existing events:', err.message);
-      }
-    }
-
-    /* ═══ CLEAR DATA ═══ */
-    document.getElementById('clear-data-btn').addEventListener('click', async () => {
-      try {
-        await fetch('/api/events', { method: 'DELETE' });
-        // Clear UI
-        document.getElementById('event-list').innerHTML = '<div class="no-events">Không có sự kiện nào.</div>';
-        clusterGroup.clearLayers();
-        for (let key in eventMarkers) delete eventMarkers[key];
-        stats.fire = 0; stats.flood = 0; stats.traffic = 0;
-        Object.keys(stats).forEach(type => document.getElementById(`stat-${type}`).textContent = stats[type]);
-      } catch (err) {
-        console.error('Failed to clear data:', err);
-      }
+    document.querySelectorAll('.nav-item').forEach(item => {
+      item.addEventListener('click', () => switchView(item.dataset.view));
     });
 
-    /* ═══ SOCKET.IO (for real-time alerts) ═══ */
-    function initSocket() {
-      const badge = document.getElementById('connection-badge');
-      const text = document.getElementById('connection-text');
+    /* ═══════════════════════════════════════════════════
+       LOGIN
+    ═══════════════════════════════════════════════════ */
+    function showLoginError(message) {
+      const errEl = document.getElementById('login-err');
+      errEl.textContent = message;
+      errEl.style.display = 'block';
+    }
+    function clearLoginError() {
+      document.getElementById('login-err').style.display = 'none';
+    }
+    function setAuthMode(mode) {
+      const isSignup = mode === 'signup';
+      document.getElementById('login-form').classList.toggle('active', !isSignup);
+      document.getElementById('signup-form').classList.toggle('active', isSignup);
+      document.getElementById('login-tab-btn').classList.toggle('active', !isSignup);
+      document.getElementById('signup-tab-btn').classList.toggle('active', isSignup);
+      clearLoginError();
+    }
+    function hideAuthScreen() {
+      document.getElementById('login-screen').style.display = 'none';
+      clearLoginError();
+    }
+    function showAuthScreen(mode = 'login') {
+      setAuthMode(mode);
+      document.getElementById('login-screen').style.display = 'flex';
+    }
+    document.getElementById('login-tab-btn').addEventListener('click', () => setAuthMode('login'));
+    document.getElementById('signup-tab-btn').addEventListener('click', () => setAuthMode('signup'));
+    document.getElementById('guest-login-btn').addEventListener('click', hideAuthScreen);
+    document.getElementById('guest-signup-btn').addEventListener('click', hideAuthScreen);
 
+    document.getElementById('login-btn').addEventListener('click', async () => {
+      const username = document.getElementById('l-user').value.trim();
+      const password = document.getElementById('l-pass').value;
+      clearLoginError();
+      if (!username || !password) { showLoginError('Vui lòng nhập đầy đủ thông tin.'); return; }
+      try {
+        const r = await fetch('/api/auth/login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ username, password }) });
+        const data = await r.json();
+        if (!r.ok) { showLoginError(data.error || 'Đăng nhập thất bại.'); return; }
+        Auth.save(data.token, data.user);
+        initApp();
+      } catch (e) { showLoginError('Không thể kết nối server.'); }
+    });
+    document.getElementById('l-pass').addEventListener('keydown', e => { if (e.key === 'Enter') document.getElementById('login-btn').click(); });
+
+    document.getElementById('signup-btn').addEventListener('click', async () => {
+      const body = {
+        username: document.getElementById('s-user').value.trim(),
+        email: document.getElementById('s-email').value.trim(),
+        full_name: document.getElementById('s-name').value.trim(),
+        password: document.getElementById('s-pass').value,
+      };
+      clearLoginError();
+      if (!body.username || !body.email || !body.password) { showLoginError('Vui lòng nhập username, email và mật khẩu.'); return; }
+      if (body.password.length < 8) { showLoginError('Mật khẩu phải có ít nhất 8 ký tự.'); return; }
+      try {
+        const r = await fetch('/api/auth/signup', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+        const data = await r.json();
+        if (!r.ok) { showLoginError(data.error || 'Đăng kí thất bại.'); return; }
+        Auth.save(data.token, data.user);
+        initApp();
+      } catch (e) { showLoginError('Không thể kết nối server.'); }
+    });
+    ['s-user', 's-email', 's-name', 's-pass'].forEach(id => {
+      document.getElementById(id).addEventListener('keydown', e => { if (e.key === 'Enter') document.getElementById('signup-btn').click(); });
+    });
+
+    document.getElementById('logout-btn').addEventListener('click', () => {
+      if (Auth.token()) {
+        Auth.clear();
+        initApp();
+        return;
+      }
+      showAuthScreen('login');
+    });
+
+    /* ═══════════════════════════════════════════════════
+       INIT APP
+    ═══════════════════════════════════════════════════ */
+    function initApp() {
+      const user = Auth.user();
+      hideAuthScreen();
+      document.getElementById('app').style.display = 'flex';
+      document.querySelectorAll('.admin-only').forEach(el => el.style.display = 'none');
+      document.getElementById('hdr-name').textContent = user ? (user.full_name || user.username) : 'Khách';
+      document.getElementById('hdr-role').textContent = user ? user.role : 'guest';
+      document.getElementById('hdr-role').className = 'role-badge ' + (user ? user.role : 'guest');
+      document.getElementById('logout-btn').textContent = user ? 'Đăng xuất' : 'Đăng nhập / Đăng kí';
+      if (user && user.role === 'admin') {
+        document.querySelectorAll('.admin-only').forEach(el => el.style.display = '');
+      }
+      if ((!user || user.role !== 'admin') && document.getElementById('view-users')?.classList.contains('active')) switchView('map');
+      if ('Notification' in window && Notification.permission === 'default') Notification.requestPermission();
+      MapView.init();
+      initSocket();
+    }
+
+    /* ══════════════════════════════════════════════════
+       MAP VIEW
+    ══════════════════════════════════════════════════ */
+    const MapView = {
+      map: null, cluster: null, heatLayer: null,
+      heatActive: false, markers: {}, stats: { fire: 0, flood: 0, traffic: 0 },
+      icons: { fire: '🔥', flood: '🌊', traffic_jam: '🚗', traffic: '🚗' },
+
+      init() {
+        if (this.map) {
+          setTimeout(() => this.map.invalidateSize(), 0);
+          return;
+        }
+        this.map = L.map('map', { zoomControl: false, attributionControl: false }).setView([11.9444, 108.4441], 13);
+        L.control.zoom({ position: 'topright' }).addTo(this.map);
+        L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', { maxZoom: 19, subdomains: 'abcd' }).addTo(this.map);
+        this.cluster = L.markerClusterGroup({ maxClusterRadius: 50, showCoverageOnHover: false });
+        this.map.addLayer(this.cluster);
+        if ('geolocation' in navigator) {
+          navigator.geolocation.getCurrentPosition(pos => {
+            const { latitude: lat, longitude: lng } = pos.coords;
+            this.map.setView([lat, lng], 14);
+            L.marker([lat, lng], { icon: L.divIcon({ html: '<span style="font-size:28px">📍</span>', className: '', iconSize: [28, 28], iconAnchor: [14, 14] }) })
+              .addTo(this.map).bindPopup('<b>📍 Vị trí hiện tại</b>');
+            if (window._socket) window._socket.emit('update-location', { camera_id: 'USB_CAM_001', lat, lng });
+          }, () => { }, { enableHighAccuracy: true });
+        }
+        this.loadExisting();
+        document.getElementById('clear-btn').addEventListener('click', () => this.clearAll());
+        document.getElementById('heatmap-btn').addEventListener('click', () => this.toggleHeatmap());
+      },
+
+      makeIcon(type) {
+        const em = this.icons[type] || '⚠️';
+        return L.divIcon({ html: `<span class="marker-emoji">${em}</span>`, className: '', iconSize: [28, 28], iconAnchor: [14, 14], popupAnchor: [0, -16] });
+      },
+
+      addEvent(evt) {
+        let type = evt.type || evt.event_type || 'traffic';
+        if (type === 'traffic_jam') type = 'traffic';
+        if (evt.lat && evt.lng) {
+          const m = L.marker([evt.lat, evt.lng], { icon: this.makeIcon(type) });
+          m.bindPopup(`<div class="popup-hdr">${this.icons[type] || '⚠️'} ${type.toUpperCase()}</div><div class="popup-row">📍 ${evt.location || evt.address || 'N/A'}</div><div class="popup-row">🕐 ${fmtTime(evt.timestamp || evt.createdAt)}</div>`, { maxWidth: 260 });
+          this.cluster.addLayer(m);
+          const id = evt._id || evt.id || Date.now();
+          this.markers[id] = m;
+        }
+        this.addToList(evt, type);
+        if (this.stats[type] !== undefined) { this.stats[type]++; document.getElementById('st-' + type).textContent = this.stats[type]; }
+      },
+
+      addToList(evt, type) {
+        const wrap = document.getElementById('event-list-wrap');
+        const placeholder = wrap.querySelector('.no-ev');
+        if (placeholder) placeholder.remove();
+        const div = document.createElement('div');
+        div.className = 'ev-item';
+        div.innerHTML = `<span class="ev-icon">${this.icons[type] || '⚠️'}</span><div class="ev-info"><div class="ev-type ${type}">${type}</div><div class="ev-loc">${evt.location || evt.address || evt.camera_id || 'Khu vực theo dõi'}</div><div class="ev-time">${fmtTime(evt.timestamp || evt.createdAt)}</div></div>`;
+        div.onclick = () => { if (evt.lat && evt.lng) { this.map.flyTo([evt.lat, evt.lng], 16); const id = evt._id || evt.id; if (id && this.markers[id]) this.markers[id].openPopup(); } };
+        div.style.cursor = evt.lat ? 'pointer' : 'default';
+        wrap.prepend(div);
+        while (wrap.children.length > 50) wrap.removeChild(wrap.lastChild);
+      },
+
+      async loadExisting() {
+        try {
+          const r = await API.json('/api/events?limit=100');
+          const evts = Array.isArray(r) ? r : (r.events || r.data || []);
+          evts.forEach(e => this.addEvent(e));
+        } catch { }
+      },
+
+      async clearAll() {
+        if (!Auth.isAdmin()) { showAuthScreen('login'); return; }
+        if (!confirm('Xóa toàn bộ lịch sử sự kiện?')) return;
+        try {
+          await API.delete('/api/events');
+          document.getElementById('event-list-wrap').innerHTML = '<div class="no-ev">Không có sự kiện nào.</div>';
+          this.cluster.clearLayers();
+          this.markers = {};
+          this.stats = { fire: 0, flood: 0, traffic: 0 };
+          ['fire', 'flood', 'traffic'].forEach(t => document.getElementById('st-' + t).textContent = '0');
+        } catch { }
+      },
+
+      async toggleHeatmap() {
+        const btn = document.getElementById('heatmap-btn');
+        if (this.heatActive) {
+          if (this.heatLayer) this.map.removeLayer(this.heatLayer);
+          this.heatActive = false;
+          btn.classList.remove('active');
+          return;
+        }
+        try {
+          const data = await API.json('/api/events/history?limit=500&page=1');
+          const evts = data.events || [];
+          const pts = evts.filter(e => e.location?.lat && e.location?.lng).map(e => [e.location.lat, e.location.lng, (e.level || 1) / 3]);
+          if (!window.L.heatLayer) {
+            const s = document.createElement('script');
+            s.src = 'https://unpkg.com/leaflet.heat@0.2.0/dist/leaflet-heat.js';
+            s.onload = () => { this.heatLayer = L.heatLayer(pts, { radius: 30, blur: 25, maxZoom: 17 }).addTo(this.map); this.heatActive = true; btn.classList.add('active'); };
+            document.head.appendChild(s);
+          } else {
+            this.heatLayer = L.heatLayer(pts, { radius: 30, blur: 25, maxZoom: 17 }).addTo(this.map);
+            this.heatActive = true; btn.classList.add('active');
+          }
+        } catch (e) { console.error(e); }
+      }
+    };
+  </script>
+  <script>
+    /* ══════════════════════════════════════════════════
+       STATS VIEW
+    ══════════════════════════════════════════════════ */
+    const StatsView = {
+      charts: {},
+      async load() {
+        const days = document.getElementById('stats-days').value;
+        try {
+          const d = await API.json('/api/events/stats?days=' + days);
+          const s = d.summary || {};
+          document.getElementById('kpi-total').textContent = s.total || 0;
+          document.getElementById('kpi-critical').textContent = s.critical || 0;
+          document.getElementById('kpi-unresolved').textContent = s.unresolved || 0;
+          document.getElementById('kpi-today').textContent = s.today || 0;
+          this.renderDailyChart(d.by_day || [], d.period_days);
+          this.renderTypeChart(d.by_type || []);
+          this.renderLevelChart(d.by_level || []);
+          this.renderCamChart(d.top_cameras || []);
+        } catch (e) { console.error('[Stats]', e); }
+      },
+
+      destroyChart(id) { if (this.charts[id]) { this.charts[id].destroy(); delete this.charts[id]; } },
+
+      renderDailyChart(byDay, days) {
+        this.destroyChart('daily');
+        const allDays = [], fireData = [], floodData = [], trafficData = [];
+        const today = new Date();
+        for (let i = (days || 7) - 1; i >= 0; i--) {
+          const d = new Date(today); d.setDate(d.getDate() - i);
+          const key = d.toISOString().slice(0, 10);
+          allDays.push(key.slice(5));
+          const fDay = byDay.filter(r => r._id.day === key);
+          fireData.push(fDay.find(r => r._id.type === 'fire')?.count || 0);
+          floodData.push(fDay.find(r => r._id.type === 'flood')?.count || 0);
+          trafficData.push(fDay.find(r => r._id.type === 'traffic_jam')?.count || 0);
+        }
+        const ctx = document.getElementById('chart-daily').getContext('2d');
+        this.charts.daily = new Chart(ctx, {
+          type: 'bar', data: {
+            labels: allDays, datasets: [
+              { label: '🔥 Hỏa hoạn', data: fireData, backgroundColor: 'rgba(255,68,68,.7)', borderRadius: 4 },
+              { label: '🌊 Lũ lụt', data: floodData, backgroundColor: 'rgba(59,143,255,.7)', borderRadius: 4 },
+              { label: '🚗 Giao thông', data: trafficData, backgroundColor: 'rgba(255,176,59,.7)', borderRadius: 4 },
+            ]
+          }, options: { responsive: true, plugins: { legend: { labels: { color: '#e6edf3', boxWidth: 12 } } }, scales: { x: { ticks: { color: '#8b949e' }, grid: { color: '#21262d' } }, y: { ticks: { color: '#8b949e', stepSize: 1 }, grid: { color: '#21262d' } } } }
+        });
+      },
+
+      renderTypeChart(byType) {
+        this.destroyChart('type');
+        const labels = byType.map(r => ({ fire: '🔥 Hỏa hoạn', flood: '🌊 Lũ lụt', traffic_jam: '🚗 Giao thông' }[r._id] || r._id));
+        const data = byType.map(r => r.count);
+        const colors = byType.map(r => ({ fire: 'rgba(255,68,68,.8)', flood: 'rgba(59,143,255,.8)', traffic_jam: 'rgba(255,176,59,.8)' }[r._id] || '#666'));
+        const ctx = document.getElementById('chart-type').getContext('2d');
+        this.charts.type = new Chart(ctx, { type: 'doughnut', data: { labels, datasets: [{ data, backgroundColor: colors, borderWidth: 0 }] }, options: { responsive: true, plugins: { legend: { position: 'right', labels: { color: '#e6edf3', padding: 12 } } }, cutout: '65%' } });
+      },
+
+      renderLevelChart(byLevel) {
+        this.destroyChart('level');
+        const levels = [1, 2, 3];
+        const labels = ['Lv1 Thông tin', 'Lv2 Cảnh báo', 'Lv3 Khẩn cấp'];
+        const colors = ['rgba(255,176,59,.8)', 'rgba(59,143,255,.8)', 'rgba(255,68,68,.8)'];
+        const data = levels.map(l => byLevel.find(r => r._id === l)?.count || 0);
+        const ctx = document.getElementById('chart-level').getContext('2d');
+        this.charts.level = new Chart(ctx, { type: 'bar', data: { labels, datasets: [{ label: 'Số sự kiện', data, backgroundColor: colors, borderRadius: 6 }] }, options: { indexAxis: 'y', responsive: true, plugins: { legend: { display: false } }, scales: { x: { ticks: { color: '#8b949e', stepSize: 1 }, grid: { color: '#21262d' } }, y: { ticks: { color: '#e6edf3' }, grid: { color: '#21262d' } } } } });
+      },
+
+      renderCamChart(topCams) {
+        this.destroyChart('cam');
+        const ctx = document.getElementById('chart-cam').getContext('2d');
+        this.charts.cam = new Chart(ctx, { type: 'bar', data: { labels: topCams.map(c => c._id), datasets: [{ label: 'Sự kiện', data: topCams.map(c => c.count), backgroundColor: 'rgba(88,166,255,.7)', borderRadius: 6 }] }, options: { responsive: true, plugins: { legend: { display: false } }, scales: { x: { ticks: { color: '#8b949e' }, grid: { color: '#21262d' } }, y: { ticks: { color: '#8b949e', stepSize: 1 }, grid: { color: '#21262d' } } } } });
+      }
+    };
+    document.getElementById('stats-days').addEventListener('change', () => StatsView.load());
+    document.getElementById('refresh-stats-btn').addEventListener('click', () => StatsView.load());
+
+    /* ══════════════════════════════════════════════════
+       CAMERAS VIEW
+    ══════════════════════════════════════════════════ */
+    const CamerasView = {
+      data: [],
+      async load() {
+        try {
+          const d = await API.json('/api/cameras');
+          this.data = d.cameras || [];
+          this.render(this.data);
+        } catch (e) { console.error('[Cameras]', e); }
+      },
+      render(cams) {
+        const tbody = document.getElementById('cam-tbody');
+        if (!cams.length) { tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;padding:30px;color:var(--muted)">Không có camera nào.</td></tr>'; return; }
+        const isAdm = Auth.isAdmin();
+        tbody.innerHTML = cams.map(c => `
+      <tr>
+        <td style="font-family:monospace;font-size:12px">${c.camera_id}</td>
+        <td><b>${c.name}</b></td>
+        <td style="font-size:12px;color:var(--muted)">${c.location?.address || c.location?.lat?.toFixed(4) + ',' + c.location?.lng?.toFixed(4) || 'N/A'}</td>
+        <td><span class="status-dot ${c.status}"></span>${c.status}</td>
+        <td style="font-size:12px;color:var(--muted)">${c.last_seen ? fmtTime(c.last_seen) : 'Chưa kết nối'}</td>
+        <td>
+          ${isAdm ? `<button class="btn sm" onclick="CamerasView.editCam('${c.camera_id}')">✏️ Sửa</button>
+          <button class="btn sm danger" onclick="CamerasView.regenToken('${c.camera_id}')">🔑 Token</button>
+          <button class="btn sm danger" onclick="CamerasView.deleteCam('${c.camera_id}')">🗑️</button>` : '<span style="color:var(--muted);font-size:12px">Xem</span>'}
+        </td>
+      </tr>`).join('');
+      },
+      filter() {
+        const q = document.getElementById('cam-search').value.toLowerCase();
+        const st = document.getElementById('cam-filter-status').value;
+        this.render(this.data.filter(c =>
+          (!q || c.name.toLowerCase().includes(q) || c.camera_id.toLowerCase().includes(q)) &&
+          (!st || c.status === st)
+        ));
+      },
+      openAddModal() {
+        const overlay = openModal(`
+      <h2>➕ Thêm Camera Mới</h2>
+      <div class="form-group"><label>Camera ID *</label><input id="m-cid" placeholder="VD: CAM_001"/></div>
+      <div class="form-group"><label>Tên Camera *</label><input id="m-cname" placeholder="VD: Camera ngã tư A"/></div>
+      <div class="form-row">
+        <div class="form-group"><label>Vĩ độ (Lat) *</label><input id="m-lat" type="number" placeholder="11.9444"/></div>
+        <div class="form-group"><label>Kinh độ (Lng) *</label><input id="m-lng" type="number" placeholder="108.4441"/></div>
+      </div>
+      <div class="form-group"><label>Địa chỉ</label><input id="m-addr" placeholder="Số 1, đường ABC..."/></div>
+      <div class="modal-footer">
+        <button class="btn" onclick="closeModal()">Hủy</button>
+        <button class="btn primary" id="m-save-cam">Tạo Camera</button>
+      </div>`);
+        overlay.querySelector('#m-save-cam').onclick = async () => {
+          const body = {
+            camera_id: document.getElementById('m-cid').value.trim(), name: document.getElementById('m-cname').value.trim(),
+            location: { lat: parseFloat(document.getElementById('m-lat').value), lng: parseFloat(document.getElementById('m-lng').value), address: document.getElementById('m-addr').value.trim() }
+          };
+          if (!body.camera_id || !body.name || !body.location.lat || !body.location.lng) { alert('Vui lòng điền đầy đủ thông tin bắt buộc.'); return; }
+          const r = await API.post('/api/cameras', body); const d = await r.json();
+          if (!r.ok) { alert(d.error || 'Lỗi tạo camera'); return; }
+          closeModal();
+          openModal(`<h2>✅ Camera đã tạo thành công!</h2>
+        <p style="font-size:13px;color:var(--muted);margin-bottom:12px">Lưu API Token này ngay — sẽ không hiển thị lại!</p>
+        <div class="token-box">${d.api_token}</div>
+        <p class="warning-text">⚠️ Sao chép token này vào file .env của AI module: API_TOKEN=&lt;token&gt;</p>
+        <div class="modal-footer"><button class="btn primary" onclick="navigator.clipboard.writeText('${d.api_token}');alert('Đã copy!')">📋 Copy Token</button><button class="btn" onclick="closeModal();CamerasView.load()">Đóng</button></div>`);
+        };
+      },
+      async deleteCam(id) {
+        if (!confirm(`Xóa camera "${id}"?`)) return;
+        const r = await API.delete('/api/cameras/' + id); const d = await r.json();
+        if (r.ok) this.load(); else alert(d.error);
+      },
+      async regenToken(id) {
+        if (!confirm(`Tạo lại API token cho camera "${id}"? Token cũ sẽ hết hiệu lực ngay.`)) return;
+        const r = await API.post('/api/cameras/' + id + '/regenerate-token', {}); const d = await r.json();
+        if (!r.ok) { alert(d.error); return; }
+        openModal(`<h2>🔑 Token mới cho ${id}</h2>
+      <div class="token-box">${d.api_token}</div>
+      <p class="warning-text">⚠️ Cập nhật API_TOKEN trong .env của AI module!</p>
+      <div class="modal-footer"><button class="btn primary" onclick="navigator.clipboard.writeText('${d.api_token}');alert('Đã copy!')">📋 Copy</button><button class="btn" onclick="closeModal()">Đóng</button></div>`);
+      },
+      editCam(id) {
+        const cam = this.data.find(c => c.camera_id === id); if (!cam) return;
+        const overlay = openModal(`
+      <h2>✏️ Sửa Camera: ${id}</h2>
+      <div class="form-group"><label>Tên</label><input id="e-name" value="${cam.name}"/></div>
+      <div class="form-row">
+        <div class="form-group"><label>Lat</label><input id="e-lat" type="number" value="${cam.location?.lat || ''}"/></div>
+        <div class="form-group"><label>Lng</label><input id="e-lng" type="number" value="${cam.location?.lng || ''}"/></div>
+      </div>
+      <div class="form-group"><label>Địa chỉ</label><input id="e-addr" value="${cam.location?.address || ''}"/></div>
+      <div class="form-group"><label>Trạng thái</label>
+        <select id="e-status"><option ${cam.status === 'online' ? 'selected' : ''}>online</option><option ${cam.status === 'offline' ? 'selected' : ''}>offline</option><option ${cam.status === 'maintenance' ? 'selected' : ''}>maintenance</option></select>
+      </div>
+      <div class="form-group"><label>Active</label>
+        <select id="e-active"><option value="true" ${cam.active ? 'selected' : ''}>Kích hoạt</option><option value="false" ${!cam.active ? 'selected' : ''}>Vô hiệu</option></select>
+      </div>
+      <div class="modal-footer">
+        <button class="btn" onclick="closeModal()">Hủy</button>
+        <button class="btn primary" id="e-save">Lưu</button>
+      </div>`);
+        overlay.querySelector('#e-save').onclick = async () => {
+          const r = await API.patch('/api/cameras/' + id, {
+            name: document.getElementById('e-name').value, status: document.getElementById('e-status').value, active: document.getElementById('e-active').value === 'true',
+            location: { lat: parseFloat(document.getElementById('e-lat').value), lng: parseFloat(document.getElementById('e-lng').value), address: document.getElementById('e-addr').value }
+          });
+          const d = await r.json(); if (!r.ok) { alert(d.error); return; }
+          closeModal(); this.load();
+        };
+      }
+    };
+    document.getElementById('add-cam-btn')?.addEventListener('click', () => CamerasView.openAddModal());
+    document.getElementById('cam-search').addEventListener('input', () => CamerasView.filter());
+    document.getElementById('cam-filter-status').addEventListener('change', () => CamerasView.filter());
+  </script>
+  <script>
+    /* ══════════════════════════════════════════════════
+       HISTORY VIEW
+    ══════════════════════════════════════════════════ */
+    const HistoryView = {
+      currentPage: 1,
+
+      load(page) {
+        this.currentPage = page || 1;
+        const params = new URLSearchParams();
+        params.set('page', this.currentPage);
+        params.set('limit', 20);
+        const from = document.getElementById('h-from').value;
+        const to = document.getElementById('h-to').value;
+        const type = document.getElementById('h-type').value;
+        const level = document.getElementById('h-level').value;
+        const res = document.getElementById('h-resolved').value;
+        if (from) params.set('from', new Date(from).toISOString());
+        if (to) params.set('to', new Date(to).toISOString());
+        if (type) params.set('type', type);
+        if (level) params.set('level', level);
+        if (res) params.set('is_resolved', res);
+        API.json('/api/events/history?' + params.toString()).then(d => this.render(d)).catch(console.error);
+      },
+
+      render(d) {
+        const tbody = document.getElementById('hist-tbody');
+        const evts = d.events || [];
+        const lvLabels = { 1: 'Thông tin', 2: 'Cảnh báo', 3: 'Khẩn cấp' };
+        const typeIcons = { fire: '🔥', flood: '🌊', traffic_jam: '🚗' };
+        const canResolve = !!Auth.user();
+        if (!evts.length) { tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;padding:30px;color:var(--muted)">Không tìm thấy sự kiện nào.</td></tr>'; }
+        else {
+          tbody.innerHTML = evts.map(e => `
+        <tr>
+          <td style="font-size:12px;font-family:monospace;white-space:nowrap">${fmtTime(e.timestamp)}</td>
+          <td>${typeIcons[e.event_type] || '⚠️'} ${e.event_type}</td>
+          <td><span class="lv-badge l${e.level || 1}">Lv${e.level || 1} ${lvLabels[e.level] || ''}</span></td>
+          <td style="font-size:12px">${e.camera_id}</td>
+          <td style="font-size:12px;color:var(--muted)">${e.location?.address || (e.location?.lat ? e.location.lat.toFixed(4) + ',' + e.location.lng.toFixed(4) : 'N/A')}</td>
+          <td style="font-size:12px">${e.confidence ? (e.confidence * 100).toFixed(0) + '%' : '-'}</td>
+          <td>${e.is_resolved ? '<span style="color:var(--green)">✅ Xong</span>' : '<span style="color:var(--traffic)">⏳ Chờ</span>'}</td>
+          <td>${canResolve && !e.is_resolved ? `<button class="btn sm" onclick="HistoryView.resolve('${e._id}')">✅ Xử lý</button>` : ''}</td>
+        </tr>`).join('');
+        }
+        this.renderPagination(d.page, d.pages, d.total);
+      },
+
+      renderPagination(page, pages, total) {
+        const wrap = document.getElementById('hist-pagination');
+        if (!pages || pages <= 1) { wrap.innerHTML = `<span style="font-size:12px;color:var(--muted)">Tổng: ${total || 0} sự kiện</span>`; return; }
+        let html = `<span style="font-size:12px;color:var(--muted);margin-right:8px">Tổng: ${total} | Trang ${page}/${pages}</span>`;
+        html += `<button class="page-btn" onclick="HistoryView.load(1)" ${page <= 1 ? 'disabled' : ''}>«</button>`;
+        html += `<button class="page-btn" onclick="HistoryView.load(${page - 1})" ${page <= 1 ? 'disabled' : ''}>‹</button>`;
+        const start = Math.max(1, page - 2), end = Math.min(pages, page + 2);
+        for (let i = start; i <= end; i++) html += `<button class="page-btn ${i === page ? 'active' : ''}" onclick="HistoryView.load(${i})">${i}</button>`;
+        html += `<button class="page-btn" onclick="HistoryView.load(${page + 1})" ${page >= pages ? 'disabled' : ''}>›</button>`;
+        html += `<button class="page-btn" onclick="HistoryView.load(${pages})" ${page >= pages ? 'disabled' : ''}>»</button>`;
+        wrap.innerHTML = html;
+      },
+
+      async resolve(id) {
+        if (!Auth.user()) { showAuthScreen('login'); return; }
+        const r = await API.patch('/api/events/' + id + '/resolve', {});
+        if (r.ok) this.load(this.currentPage); else { const d = await r.json(); alert(d.error); }
+      },
+
+      exportCSV() {
+        const rows = [['Thời gian', 'Loại', 'Cấp', 'Camera ID', 'Địa điểm', 'Tin cậy', 'Đã xử lý']];
+        document.querySelectorAll('#hist-tbody tr').forEach(tr => {
+          const cells = [...tr.querySelectorAll('td')];
+          if (cells.length >= 7) rows.push(cells.slice(0, 7).map(td => '"' + td.innerText.replace(/"/g, '""') + '"'));
+        });
+        const blob = new Blob([rows.map(r => r.join(',')).join('\n')], { type: 'text/csv;charset=utf-8;' });
+        const a = document.createElement('a'); a.href = URL.createObjectURL(blob);
+        a.download = 'events_' + new Date().toISOString().slice(0, 10) + '.csv'; a.click();
+      }
+    };
+    document.getElementById('h-search-btn').addEventListener('click', () => HistoryView.load(1));
+    document.getElementById('export-btn').addEventListener('click', () => HistoryView.exportCSV());
+
+    /* ══════════════════════════════════════════════════
+       CHATBOT VIEW
+    ══════════════════════════════════════════════════ */
+    const ChatbotView = {
+      addMsg(role, text) {
+        const wrap = document.getElementById('chat-msgs');
+        const div = document.createElement('div');
+        div.className = 'chat-msg ' + role;
+        div.textContent = text;
+        wrap.appendChild(div);
+        wrap.scrollTop = wrap.scrollHeight;
+        return div;
+      },
+      async send() {
+        if (!Auth.user()) {
+          this.addMsg('bot', 'Vui lòng đăng nhập hoặc đăng kí để dùng chatbot AI.');
+          showAuthScreen('login');
+          return;
+        }
+        const inp = document.getElementById('chat-input');
+        const msg = inp.value.trim(); if (!msg) return;
+        inp.value = '';
+        this.addMsg('user', msg);
+        const loading = this.addMsg('bot', '⏳ Đang xử lý...');
+        loading.classList.add('loading');
+        try {
+          const r = await API.post('/api/chatbot/ask', { message: msg });
+          const d = await r.json();
+          loading.remove();
+          this.addMsg('bot', d.reply || d.error || 'Không có phản hồi.');
+        } catch (e) { loading.remove(); this.addMsg('bot', '❌ Lỗi kết nối: ' + e.message); }
+      }
+    };
+    document.getElementById('chat-send').addEventListener('click', () => ChatbotView.send());
+    document.getElementById('chat-input').addEventListener('keydown', e => { if (e.key === 'Enter') ChatbotView.send(); });
+
+    /* ══════════════════════════════════════════════════
+       USERS VIEW (admin only)
+    ══════════════════════════════════════════════════ */
+    const UsersView = {
+      async load() {
+        try {
+          const d = await API.json('/api/auth/users');
+          this.render(d.users || []);
+        } catch (e) { console.error('[Users]', e); }
+      },
+      render(users) {
+        const tbody = document.getElementById('users-tbody');
+        tbody.innerHTML = users.map(u => `
+      <tr>
+        <td><b>${u.username}</b></td>
+        <td style="font-size:12px">${u.email}</td>
+        <td style="font-size:12px">${u.full_name || '-'}</td>
+        <td><span class="role-badge ${u.role}">${u.role}</span></td>
+        <td>${u.is_active ? '<span style="color:var(--green)">✅ Active</span>' : '<span style="color:var(--muted)">⛔ Disabled</span>'}</td>
+        <td style="font-size:12px;color:var(--muted)">${u.last_login ? fmtTime(u.last_login) : 'Chưa đăng nhập'}</td>
+        <td>
+          <button class="btn sm" onclick="UsersView.toggleActive('${u._id}',${u.is_active})">${u.is_active ? '⛔ Vô hiệu' : '✅ Kích hoạt'}</button>
+          <select class="user-role-select" onchange="UsersView.changeRole('${u._id}',this.value)">
+            <option ${u.role === 'operator' ? 'selected' : ''} value="operator">Operator</option>
+            <option ${u.role === 'admin' ? 'selected' : ''} value="admin">Admin</option>
+          </select>
+        </td>
+      </tr>`).join('');
+      },
+      async toggleActive(id, current) {
+        const r = await API.patch('/api/auth/users/' + id, { is_active: !current });
+        if (r.ok) this.load();
+      },
+      async changeRole(id, role) {
+        if (!confirm(`Đổi quyền thành "${role}"?`)) return;
+        const r = await API.patch('/api/auth/users/' + id, { role });
+        if (!r.ok) { const d = await r.json(); alert(d.error); } else this.load();
+      },
+      openCreateModal() {
+        const overlay = openModal(`
+      <h2>➕ Tạo Tài Khoản Mới</h2>
+      <div class="form-row">
+        <div class="form-group"><label>Username *</label><input id="nu-user" placeholder="nguyen.van.a"/></div>
+        <div class="form-group"><label>Email *</label><input id="nu-email" type="email" placeholder="a@example.com"/></div>
+      </div>
+      <div class="form-group"><label>Họ và tên</label><input id="nu-name" placeholder="Nguyễn Văn A"/></div>
+      <div class="form-row">
+        <div class="form-group"><label>Mật khẩu *</label><input id="nu-pass" type="password" placeholder="Tối thiểu 8 ký tự"/></div>
+        <div class="form-group"><label>Quyền</label><select id="nu-role"><option value="operator">Operator</option><option value="admin">Admin</option></select></div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn" onclick="closeModal()">Hủy</button>
+        <button class="btn primary" id="nu-save">Tạo tài khoản</button>
+      </div>`);
+        overlay.querySelector('#nu-save').onclick = async () => {
+          const body = {
+            username: document.getElementById('nu-user').value.trim(), email: document.getElementById('nu-email').value.trim(),
+            password: document.getElementById('nu-pass').value, full_name: document.getElementById('nu-name').value.trim(), role: document.getElementById('nu-role').value
+          };
+          if (!body.username || !body.email || !body.password) { alert('Vui lòng điền đầy đủ thông tin bắt buộc.'); return; }
+          const r = await API.post('/api/auth/register', body); const d = await r.json();
+          if (!r.ok) { alert(d.error); return; }
+          closeModal(); this.load();
+          showToast('flood', 'Tạo tài khoản thành công', `@${body.username} (${body.role})`);
+        };
+      }
+    };
+    document.getElementById('add-user-btn')?.addEventListener('click', () => UsersView.openCreateModal());
+
+    /* ══════════════════════════════════════════════════
+       SOCKET.IO (real-time)
+    ══════════════════════════════════════════════════ */
+    function initSocket() {
+      if (typeof io === 'undefined') return;
+      if (window._socket) return;
       try {
         const socket = io({ transports: ['websocket', 'polling'] });
-        window.socket = socket;
+        window._socket = socket;
+        const dot = document.getElementById('conn-dot');
+        socket.on('connect', () => { dot.classList.add('online'); dot.title = 'WebSocket: Connected'; });
+        socket.on('disconnect', () => { dot.classList.remove('online'); dot.title = 'WebSocket: Disconnected'; });
+        socket.on('alert', data => handleRealtime(data));
+        socket.on('new-event', data => handleRealtime(data));
+      } catch (e) { console.warn('[Socket]', e); }
+    }
 
-        socket.on('connect', () => {
-          console.log('[Socket] Connected');
-          badge.className = 'connection-badge connected';
-          text.textContent = 'CONNECTED';
-          if (window.MY_LOCATION) {
-             socket.emit('update-location', { camera_id: 'USB_CAM_001', lat: window.MY_LOCATION.lat, lng: window.MY_LOCATION.lng, address: 'Vị trí máy tính hiện tại' });
-          }
-        });
-
-        socket.on('disconnect', () => {
-          console.log('[Socket] Disconnected');
-          badge.className = 'connection-badge disconnected';
-          text.textContent = 'DISCONNECTED';
-        });
-
-        socket.on('alert', (data) => {
-          console.log('[Alert]', data);
-          handleEvent(data);
-        });
-
-        socket.on('new-event', (data) => {
-          console.log('[Event]', data);
-          handleEvent(data);
-        });
-      } catch {
-        console.log('[Socket] Not available');
-        badge.className = 'connection-badge disconnected';
-        text.textContent = 'NO SERVER';
+    function handleRealtime(data) {
+      MapView.addEvent(data);
+      let type = data.type || data.event_type || 'traffic';
+      if (type === 'traffic_jam') type = 'traffic';
+      const titles = { fire: '🔥 PHÁT HIỆN HỎA HOẠN!', flood: '🌊 CẢNH BÁO LŨ LỤT!', traffic: '🚗 ÙN TẮC GIAO THÔNG' };
+      showToast(data.type || data.event_type || 'traffic', titles[type] || '⚠️ CẢNH BÁO', '📍 ' + (data.location || data.address || data.camera_id || 'Khu vực theo dõi'));
+      if (data.level === 3) {
+        try { new Audio('data:audio/wav;base64,UklGRnoGAABXQVZFZm10IBAAAA').play().catch(() => { }); } catch { }
       }
     }
 
-    /* ═══ INIT ═══ */
-    if ("Notification" in window && Notification.permission !== "granted" && Notification.permission !== "denied") {
-      Notification.requestPermission();
+    /* ══════════════════════════════════════════════════
+       UTILS
+    ══════════════════════════════════════════════════ */
+    function fmtTime(str) {
+      try {
+        const d = new Date(str);
+        return d.toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit', second: '2-digit' }) + ' ' + d.toLocaleDateString('vi-VN');
+      } catch { return str || ''; }
     }
-    fetchExistingEvents();
-    // Socket.IO will be initialized after the script loads
+
+    /* ══════════════════════════════════════════════════
+       BOOT
+    ══════════════════════════════════════════════════ */
+    initApp();
   </script>
-  <script src="/socket.io/socket.io.js" onerror="
-    console.log('[Socket.IO] Not loaded');
-    document.getElementById('connection-badge').className='connection-badge disconnected';
-    document.getElementById('connection-text').textContent='OFFLINE';
-  "></script>
-  <script>if (typeof io !== 'undefined') initSocket();</script>
 </body>
+
 </html>
