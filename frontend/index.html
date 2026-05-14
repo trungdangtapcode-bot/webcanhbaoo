@@ -1,357 +1,107 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="vi">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <meta name="description" content="Smart Alert System — Real-time traffic, flood & fire detection dashboard" />
   <title>Smart Alert System</title>
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.css" />
+  <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.Default.css" />
   <style>
     :root {
-      --bg-primary: #0d1117;
-      --bg-secondary: #161b22;
-      --bg-tertiary: #21262d;
-      --border: #30363d;
-      --text-primary: #e6edf3;
-      --text-secondary: #8b949e;
-      --text-muted: #484f58;
-      --accent-fire: #ff3b3b;
-      --accent-flood: #3b8fff;
-      --accent-traffic: #ffb03b;
-      --accent-green: #3bff6f;
-      --sidebar-width: 320px;
-      --glow-fire: 0 0 20px rgba(255,59,59,0.4);
-      --glow-flood: 0 0 20px rgba(59,143,255,0.4);
-      --glow-traffic: 0 0 20px rgba(255,176,59,0.4);
+      --bg-primary: #0d1117; --bg-secondary: #161b22; --bg-tertiary: #21262d;
+      --border: #30363d; --text-primary: #e6edf3; --text-secondary: #8b949e; --text-muted: #484f58;
+      --accent-fire: #ff3b3b; --accent-flood: #3b8fff; --accent-traffic: #ffb03b; --accent-green: #3bff6f;
+      --sidebar-width: 340px;
     }
-
     * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { font-family: -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif; background: var(--bg-primary); color: var(--text-primary); height: 100vh; overflow: hidden; display: flex; }
 
-    body {
-      font-family: -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif;
-      background: var(--bg-primary);
-      color: var(--text-primary);
-      height: 100vh;
-      overflow: hidden;
-      display: flex;
-    }
+    /* Sidebar */
+    #sidebar { width: var(--sidebar-width); min-width: var(--sidebar-width); background: var(--bg-primary); border-right: 1px solid var(--border); display: flex; flex-direction: column; z-index: 1000; height: 100vh; }
+    #sidebar-header { padding: 16px 20px; border-bottom: 1px solid var(--border); background: linear-gradient(135deg, var(--bg-secondary), var(--bg-primary)); }
+    #sidebar-header h1 { font-size: 16px; font-weight: 700; display: flex; align-items: center; gap: 8px; }
+    #sidebar-header h1 .logo-icon { font-size: 22px; filter: drop-shadow(0 0 6px rgba(59,255,111,0.5)); }
+    #sidebar-header p { font-size: 11px; color: var(--text-secondary); margin-top: 4px; font-family: 'Courier New', monospace; }
+    .connection-badge { display: inline-flex; align-items: center; gap: 5px; font-size: 10px; padding: 3px 8px; border-radius: 12px; margin-top: 8px; font-family: monospace; font-weight: 600; }
+    .connection-badge.connected { background: rgba(59,255,111,0.12); color: var(--accent-green); border: 1px solid rgba(59,255,111,0.2); }
+    .connection-badge.disconnected { background: rgba(255,59,59,0.12); color: var(--accent-fire); border: 1px solid rgba(255,59,59,0.2); }
+    .connection-dot { width: 6px; height: 6px; border-radius: 50%; background: currentColor; animation: pulse-dot 2s infinite; }
 
-    /* ─── Sidebar ─── */
-    #sidebar {
-      width: var(--sidebar-width);
-      min-width: var(--sidebar-width);
-      background: var(--bg-primary);
-      border-right: 1px solid var(--border);
-      display: flex;
-      flex-direction: column;
-      z-index: 1000;
-      height: 100vh;
-    }
-
-    #sidebar-header {
-      padding: 16px 20px;
-      border-bottom: 1px solid var(--border);
-      background: linear-gradient(135deg, var(--bg-secondary), var(--bg-primary));
-    }
-
-    #sidebar-header h1 {
-      font-size: 16px;
-      font-weight: 700;
-      letter-spacing: 0.5px;
-      display: flex;
-      align-items: center;
-      gap: 8px;
-    }
-
-    #sidebar-header h1 .logo-icon {
-      font-size: 22px;
-      filter: drop-shadow(0 0 6px rgba(59,255,111,0.5));
-    }
-
-    #sidebar-header p {
-      font-size: 11px;
-      color: var(--text-secondary);
-      margin-top: 4px;
-      font-family: 'Courier New', monospace;
-    }
-
-    .connection-badge {
-      display: inline-flex;
-      align-items: center;
-      gap: 5px;
-      font-size: 10px;
-      padding: 3px 8px;
-      border-radius: 12px;
-      margin-top: 8px;
-      font-family: monospace;
-      font-weight: 600;
-    }
-
-    .connection-badge.connected {
-      background: rgba(59,255,111,0.12);
-      color: var(--accent-green);
-      border: 1px solid rgba(59,255,111,0.2);
-    }
-
-    .connection-badge.disconnected {
-      background: rgba(255,59,59,0.12);
-      color: var(--accent-fire);
-      border: 1px solid rgba(255,59,59,0.2);
-    }
-
-    .connection-dot {
-      width: 6px; height: 6px;
-      border-radius: 50%;
-      background: currentColor;
-      animation: pulse-dot 2s infinite;
-    }
-
-    /* ─── Camera List ─── */
-    #camera-section {
-      padding: 12px 16px;
-      border-bottom: 1px solid var(--border);
-    }
-
-    .section-title {
-      font-size: 10px;
-      text-transform: uppercase;
-      letter-spacing: 1.5px;
-      color: var(--text-secondary);
-      margin-bottom: 10px;
-      font-weight: 600;
-    }
-
-    .camera-item {
-      display: flex;
-      align-items: center;
-      gap: 10px;
-      padding: 8px 12px;
-      border-radius: 8px;
-      cursor: pointer;
-      transition: background 0.2s;
-      margin-bottom: 4px;
-    }
-
-    .camera-item:hover { background: var(--bg-tertiary); }
-
-    .camera-status-dot {
-      width: 8px; height: 8px;
-      border-radius: 50%;
-      background: var(--accent-green);
-      flex-shrink: 0;
-      box-shadow: 0 0 6px rgba(59,255,111,0.5);
-    }
-
-    .camera-status-dot.alert-traffic { background: var(--accent-traffic); box-shadow: var(--glow-traffic); }
-    .camera-status-dot.alert-fire { background: var(--accent-fire); box-shadow: var(--glow-fire); }
-    .camera-status-dot.alert-flood { background: var(--accent-flood); box-shadow: var(--glow-flood); }
-
-    .camera-info { flex: 1; min-width: 0; }
-    .camera-name { font-size: 13px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-    .camera-id { font-size: 10px; color: var(--text-muted); font-family: monospace; }
-
-    /* ─── Alert Log ─── */
-    #alert-section {
-      flex: 1;
-      display: flex;
-      flex-direction: column;
-      overflow: hidden;
-      padding: 12px 0;
-    }
-
-    #filter-bar {
-      display: flex;
-      gap: 4px;
-      padding: 0 16px;
-      margin-bottom: 10px;
-    }
-
-    .filter-btn {
-      flex: 1;
-      padding: 6px 4px;
-      font-size: 10px;
-      font-weight: 600;
-      text-transform: uppercase;
-      letter-spacing: 0.5px;
-      border: 1px solid var(--border);
-      border-radius: 6px;
-      background: transparent;
-      color: var(--text-secondary);
-      cursor: pointer;
-      transition: all 0.2s;
-      font-family: inherit;
-    }
-
-    .filter-btn:hover { border-color: var(--text-secondary); }
-    .filter-btn.active { background: var(--bg-tertiary); color: var(--text-primary); border-color: var(--text-primary); }
-    .filter-btn.active[data-filter="traffic_jam"] { border-color: var(--accent-traffic); color: var(--accent-traffic); }
-    .filter-btn.active[data-filter="fire"] { border-color: var(--accent-fire); color: var(--accent-fire); }
-    .filter-btn.active[data-filter="flood"] { border-color: var(--accent-flood); color: var(--accent-flood); }
-
-    #alert-log {
-      flex: 1;
-      overflow-y: auto;
-      padding: 0 12px;
-    }
-
-    #alert-log::-webkit-scrollbar { width: 4px; }
-    #alert-log::-webkit-scrollbar-track { background: transparent; }
-    #alert-log::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
-
-    .alert-row {
-      display: flex;
-      align-items: flex-start;
-      gap: 10px;
-      padding: 10px;
-      border-radius: 8px;
-      margin-bottom: 6px;
-      background: var(--bg-secondary);
-      border-left: 3px solid var(--border);
-      animation: slideIn 0.3s ease-out;
-      cursor: pointer;
-      transition: background 0.15s;
-    }
-
-    .alert-row:hover { background: var(--bg-tertiary); }
-    .alert-row[data-type="traffic_jam"] { border-left-color: var(--accent-traffic); }
-    .alert-row[data-type="fire"] { border-left-color: var(--accent-fire); }
-    .alert-row[data-type="flood"] { border-left-color: var(--accent-flood); }
-
-    .alert-icon { font-size: 18px; flex-shrink: 0; margin-top: 2px; }
-    .alert-content { flex: 1; min-width: 0; }
-    .alert-title { font-size: 12px; font-weight: 600; }
-    .alert-camera { font-size: 11px; color: var(--text-secondary); margin-top: 2px; }
-    .alert-time { font-size: 10px; color: var(--text-muted); font-family: monospace; margin-top: 3px; }
-
-    .alert-severity {
-      font-size: 9px;
-      padding: 2px 6px;
-      border-radius: 4px;
-      font-weight: 700;
-      text-transform: uppercase;
-      letter-spacing: 0.5px;
-      flex-shrink: 0;
-    }
-
-    .severity-critical { background: rgba(255,59,59,0.2); color: var(--accent-fire); }
-    .severity-high { background: rgba(255,140,59,0.2); color: #ff8c3b; }
-    .severity-medium { background: rgba(255,176,59,0.2); color: var(--accent-traffic); }
-    .severity-low { background: rgba(59,255,111,0.15); color: var(--accent-green); }
-
-    .empty-state {
-      text-align: center;
-      padding: 40px 20px;
-      color: var(--text-muted);
-      font-size: 12px;
-    }
-
-    .empty-state .empty-icon { font-size: 32px; margin-bottom: 8px; opacity: 0.5; }
-
-    /* ─── Map ─── */
-    #map-container {
-      flex: 1;
-      position: relative;
-    }
-
-    #map { width: 100%; height: 100%; }
-
-    .leaflet-popup-content-wrapper {
-      background: var(--bg-secondary) !important;
-      color: var(--text-primary) !important;
-      border-radius: 12px !important;
-      border: 1px solid var(--border) !important;
-      box-shadow: 0 8px 32px rgba(0,0,0,0.5) !important;
-    }
-
-    .leaflet-popup-tip { background: var(--bg-secondary) !important; }
-
-    .popup-content { min-width: 220px; }
-    .popup-header { font-size: 14px; font-weight: 700; margin-bottom: 6px; }
-    .popup-meta { font-size: 11px; color: var(--text-secondary); margin-bottom: 4px; font-family: monospace; }
-    .popup-image { width: 100%; border-radius: 8px; margin-top: 8px; border: 1px solid var(--border); }
-
-    .popup-badge {
-      display: inline-block;
-      font-size: 10px;
-      padding: 2px 8px;
-      border-radius: 4px;
-      font-weight: 700;
-      text-transform: uppercase;
-      margin-top: 6px;
-    }
-
-    .popup-badge.traffic_jam { background: rgba(255,176,59,0.2); color: var(--accent-traffic); }
-    .popup-badge.fire { background: rgba(255,59,59,0.2); color: var(--accent-fire); }
-    .popup-badge.flood { background: rgba(59,143,255,0.2); color: var(--accent-flood); }
-
-    /* ─── Marker blink ─── */
-    @keyframes marker-blink {
-      0%, 100% { opacity: 1; transform: scale(1); }
-      50% { opacity: 0.4; transform: scale(1.3); }
-    }
-
-    .marker-blink .marker-emoji { animation: marker-blink 0.6s ease-in-out 8; }
-
-    .marker-emoji {
-      font-size: 28px;
-      filter: drop-shadow(0 2px 6px rgba(0,0,0,0.6));
-      transition: all 0.3s;
-      cursor: pointer;
-    }
-
-    /* ─── Animations ─── */
-    @keyframes slideIn {
-      from { opacity: 0; transform: translateX(-10px); }
-      to { opacity: 1; transform: translateX(0); }
-    }
-
-    @keyframes pulse-dot {
-      0%, 100% { opacity: 1; }
-      50% { opacity: 0.4; }
-    }
-
-    /* ─── Stats bar ─── */
-    #stats-bar {
-      display: flex;
-      gap: 6px;
-      padding: 10px 16px;
-      border-bottom: 1px solid var(--border);
-    }
-
-    .stat-card {
-      flex: 1;
-      padding: 8px;
-      border-radius: 8px;
-      background: var(--bg-secondary);
-      text-align: center;
-      border: 1px solid var(--border);
-    }
-
-    .stat-value {
-      font-size: 20px;
-      font-weight: 700;
-      font-family: 'Courier New', monospace;
-    }
-
-    .stat-label {
-      font-size: 9px;
-      text-transform: uppercase;
-      letter-spacing: 1px;
-      color: var(--text-muted);
-      margin-top: 2px;
-    }
-
+    /* Stats */
+    #stats-bar { display: flex; flex-direction: column; background: var(--bg-secondary); border-bottom: 1px solid var(--border); }
+    .stats-row { display: flex; padding: 12px 16px; gap: 12px; }
+    #clear-data-btn:hover { background: rgba(255,59,59,0.2) !important; border-color: rgba(255,59,59,0.5) !important; color: #ff5555 !important; }
+    .stat-card { flex: 1; background: var(--bg-tertiary); border-radius: 8px; padding: 10px; text-align: center; border: 1px solid var(--border); }
+    .stat-value { font-size: 20px; font-weight: 700; font-family: 'Courier New', monospace; }
+    .stat-label { font-size: 9px; text-transform: uppercase; letter-spacing: 1px; color: var(--text-muted); margin-top: 2px; }
     .stat-card.fire .stat-value { color: var(--accent-fire); }
     .stat-card.flood .stat-value { color: var(--accent-flood); }
     .stat-card.traffic .stat-value { color: var(--accent-traffic); }
+
+    /* Alert / Event List */
+    #event-section { flex: 1; display: flex; flex-direction: column; overflow: hidden; padding: 12px 0; }
+    .section-title { font-size: 10px; text-transform: uppercase; letter-spacing: 1.5px; color: var(--text-secondary); margin-bottom: 10px; font-weight: 600; padding: 0 16px; }
+    #event-list { flex: 1; overflow-y: auto; padding: 0 8px; }
+    #event-list::-webkit-scrollbar { width: 4px; }
+    #event-list::-webkit-scrollbar-track { background: transparent; }
+    #event-list::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
+    .event-item { display: flex; align-items: flex-start; gap: 10px; padding: 10px 12px; border-radius: 8px; margin-bottom: 4px; animation: slideIn 0.3s ease; border: 1px solid var(--border); background: var(--bg-secondary); }
+    .event-item:hover { background: var(--bg-tertiary); }
+    .event-icon { font-size: 20px; flex-shrink: 0; margin-top: 2px; }
+    .event-info { flex: 1; min-width: 0; }
+    .event-type { font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; }
+    .event-type.fire { color: var(--accent-fire); }
+    .event-type.flood { color: var(--accent-flood); }
+    .event-type.traffic { color: var(--accent-traffic); }
+    .event-detail { font-size: 11px; color: var(--text-secondary); margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .event-time { font-size: 10px; color: var(--text-muted); margin-top: 3px; font-family: 'Courier New', monospace; }
+    .no-events { text-align: center; padding: 40px 20px; color: var(--text-muted); font-size: 12px; }
+
+    /* Map */
+    #map-container { flex: 1; position: relative; }
+    #map { width: 100%; height: 100%; }
+
+    /* Leaflet popup */
+    .leaflet-popup-content-wrapper { background: var(--bg-secondary) !important; color: var(--text-primary) !important; border-radius: 12px !important; border: 1px solid var(--border) !important; box-shadow: 0 8px 32px rgba(0,0,0,0.5) !important; }
+    .leaflet-popup-tip { background: var(--bg-secondary) !important; }
+    .popup-content { min-width: 240px; }
+    .popup-header { font-size: 14px; font-weight: 700; margin-bottom: 4px; }
+    .popup-meta { font-size: 11px; color: var(--text-secondary); margin-bottom: 3px; }
+
+    /* Marker cluster override for dark theme */
+    .marker-cluster-small { background: rgba(59,255,111,0.3) !important; }
+    .marker-cluster-small div { background: rgba(59,255,111,0.6) !important; color: #fff !important; font-weight: 700; }
+    .marker-cluster-medium { background: rgba(255,176,59,0.3) !important; }
+    .marker-cluster-medium div { background: rgba(255,176,59,0.6) !important; color: #fff !important; font-weight: 700; }
+    .marker-cluster-large { background: rgba(255,59,59,0.3) !important; }
+    .marker-cluster-large div { background: rgba(255,59,59,0.6) !important; color: #fff !important; font-weight: 700; }
+
+    .marker-emoji { font-size: 24px; filter: drop-shadow(0 2px 6px rgba(0,0,0,0.6)); cursor: pointer; }
+
+    /* Alert Toast */
+    #alert-toast-container { position: fixed; top: 20px; right: 20px; z-index: 9999; display: flex; flex-direction: column; gap: 10px; pointer-events: none; }
+    .alert-toast { pointer-events: auto; display: flex; align-items: center; gap: 12px; padding: 14px 20px; border-radius: 12px; color: #fff; font-weight: 600; font-size: 14px; box-shadow: 0 8px 32px rgba(0,0,0,0.5); animation: toastIn 0.4s ease, toastOut 0.4s ease 4.6s forwards; min-width: 320px; max-width: 460px; backdrop-filter: blur(12px); border: 1px solid rgba(255,255,255,0.15); }
+    .alert-toast.fire { background: linear-gradient(135deg, rgba(255,59,59,0.9), rgba(200,30,30,0.95)); }
+    .alert-toast.flood { background: linear-gradient(135deg, rgba(59,143,255,0.9), rgba(30,80,200,0.95)); }
+    .alert-toast.traffic { background: linear-gradient(135deg, rgba(255,176,59,0.9), rgba(200,130,20,0.95)); }
+    .alert-toast-icon { font-size: 28px; }
+    .alert-toast-body { flex: 1; }
+    .alert-toast-title { font-size: 15px; font-weight: 700; }
+    .alert-toast-detail { font-size: 11px; opacity: 0.85; margin-top: 2px; }
+    @keyframes toastIn { from { opacity: 0; transform: translateX(80px); } to { opacity: 1; transform: translateX(0); } }
+    @keyframes toastOut { from { opacity: 1; } to { opacity: 0; transform: translateY(-20px); } }
+
+    @keyframes pulse-dot { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
+    @keyframes slideIn { from { opacity: 0; transform: translateY(-5px); } to { opacity: 1; transform: translateY(0); } }
   </style>
 </head>
 <body>
-  <!-- ─── Sidebar ─── -->
   <aside id="sidebar">
     <div id="sidebar-header">
       <h1><span class="logo-icon">🛡️</span> Smart Alert System</h1>
-      <p>Real-time Detection Dashboard</p>
+      <p>Real-time Alert Dashboard</p>
       <div class="connection-badge disconnected" id="connection-badge">
         <span class="connection-dot"></span>
         <span id="connection-text">CONNECTING...</span>
@@ -359,378 +109,295 @@
     </div>
 
     <div id="stats-bar">
-      <div class="stat-card fire"><div class="stat-value" id="stat-fire">0</div><div class="stat-label">Fire</div></div>
-      <div class="stat-card flood"><div class="stat-value" id="stat-flood">0</div><div class="stat-label">Flood</div></div>
-      <div class="stat-card traffic"><div class="stat-value" id="stat-traffic">0</div><div class="stat-label">Traffic</div></div>
+      <div class="stats-row">
+        <div class="stat-card fire"><div class="stat-value" id="stat-fire">0</div><div class="stat-label">Fire</div></div>
+        <div class="stat-card flood"><div class="stat-value" id="stat-flood">0</div><div class="stat-label">Flood</div></div>
+        <div class="stat-card traffic"><div class="stat-value" id="stat-traffic">0</div><div class="stat-label">Giao thông</div></div>
+      </div>
+      <button id="clear-data-btn" style="margin: 10px 16px; padding: 8px; background: rgba(255,255,255,0.1); border: 1px solid rgba(255,255,255,0.2); color: white; border-radius: 6px; cursor: pointer; font-weight: bold; transition: all 0.2s;">🗑️ Xóa Lịch Sử</button>
     </div>
 
-    <div id="camera-section">
-      <div class="section-title">📷 Cameras</div>
-      <div id="camera-list"></div>
-    </div>
-
-    <div id="alert-section">
-      <div style="padding: 0 16px;">
-        <div class="section-title">🚨 Alert Log</div>
-      </div>
-      <div id="filter-bar">
-        <button class="filter-btn active" data-filter="all" id="filter-all">All</button>
-        <button class="filter-btn" data-filter="traffic_jam" id="filter-traffic">🚗 Traffic</button>
-        <button class="filter-btn" data-filter="fire" id="filter-fire">🔥 Fire</button>
-        <button class="filter-btn" data-filter="flood" id="filter-flood">🌊 Flood</button>
-      </div>
-      <div id="alert-log">
-        <div class="empty-state">
-          <div class="empty-icon">📡</div>
-          <div>Waiting for alerts...</div>
-        </div>
+    <div id="event-section">
+      <div class="section-title">🔔 Sự kiện gần đây</div>
+      <div id="event-list">
+        <div class="no-events">Chưa có sự kiện nào.<br>Hệ thống đang theo dõi...</div>
       </div>
     </div>
   </aside>
 
-  <!-- ─── Map ─── -->
   <main id="map-container">
     <div id="map"></div>
   </main>
 
+  <!-- Alert Toast Container -->
+  <div id="alert-toast-container"></div>
+
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-  <script src="/socket.io/socket.io.js"></script>
+  <script src="https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js"></script>
   <script>
-    /* ═══════════════════════════════════════════
-       CONFIG
-    ═══════════════════════════════════════════ */
-    const HCM_CENTER = [10.7769, 106.7009];
+    /* ═══ CONFIG ═══ */
+    let MAP_CENTER = [11.9444, 108.4441];
     const MAP_ZOOM = 13;
-    const ALERT_ICONS = { traffic_jam: '🚗', fire: '🔥', flood: '🌊' };
-    const NORMAL_ICON = '🟢';
 
-    /* ═══════════════════════════════════════════
-       STATE
-    ═══════════════════════════════════════════ */
-    const cameras = new Map();   // camera_id → { data, marker, status }
-    const alerts = [];           // all alerts
-    let activeFilter = 'all';
-    const stats = { fire: 0, flood: 0, traffic_jam: 0 };
+    const EVENT_ICONS = { fire: '🔥', flood: '🌊', traffic: '🚗' };
+    const EVENT_COLORS = { fire: 'var(--accent-fire)', flood: 'var(--accent-flood)', traffic: 'var(--accent-traffic)' };
 
-    /* ═══════════════════════════════════════════
-       LEAFLET MAP
-    ═══════════════════════════════════════════ */
-    const map = L.map('map', {
-      zoomControl: false,
-      attributionControl: false,
-    }).setView(HCM_CENTER, MAP_ZOOM);
+    /* ═══ STATE ═══ */
+    const eventMarkers = {};
+    let clusterGroup;
+    const stats = { fire: 0, flood: 0, traffic: 0 };
 
+    /* ═══ MAP ═══ */
+    const map = L.map('map', { zoomControl: false, attributionControl: false }).setView(MAP_CENTER, MAP_ZOOM);
     L.control.zoom({ position: 'topright' }).addTo(map);
+    L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', { maxZoom: 19, subdomains: 'abcd' }).addTo(map);
 
-    L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
-      maxZoom: 19,
-      subdomains: 'abcd',
-    }).addTo(map);
+    clusterGroup = L.markerClusterGroup({ maxClusterRadius: 50, spiderfyOnMaxZoom: true, showCoverageOnHover: false });
 
-    /* ═══════════════════════════════════════════
-       MARKER HELPERS
-    ═══════════════════════════════════════════ */
-    function createEmojiIcon(emoji) {
-      return L.divIcon({
-        html: `<span class="marker-emoji">${emoji}</span>`,
-        className: '',
-        iconSize: [32, 32],
-        iconAnchor: [16, 16],
-        popupAnchor: [0, -20],
-      });
+    /* ═══ GEOLOCATION — Ask user for browser location ═══ */
+    let userLocationMarker = null;
+    if ('geolocation' in navigator) {
+      navigator.geolocation.getCurrentPosition(
+        (pos) => {
+          const { latitude, longitude } = pos.coords;
+          MAP_CENTER = [latitude, longitude];
+          map.setView(MAP_CENTER, 14);
+          userLocationMarker = L.marker(MAP_CENTER, {
+            icon: L.divIcon({ html: '<span style="font-size:28px;filter:drop-shadow(0 2px 8px rgba(59,255,111,0.7))">📍</span>', className: '', iconSize: [28,28], iconAnchor: [14,14] })
+          }).addTo(map).bindPopup('<b>📍 Vị trí hiện tại của bạn</b>');
+          console.log('[Geo] Location:', latitude, longitude);
+          window.MY_LOCATION = { lat: latitude, lng: longitude };
+          if (window.socket && window.socket.connected) {
+             window.socket.emit('update-location', { camera_id: 'USB_CAM_001', lat: latitude, lng: longitude, address: 'Vị trí máy tính hiện tại' });
+          }
+        },
+        (err) => console.log('[Geo] Permission denied or error:', err.message),
+        { enableHighAccuracy: true, timeout: 10000 }
+      );
+    }
+    map.addLayer(clusterGroup);
+
+    /* ═══ HELPERS ═══ */
+    function createIcon(emoji) {
+      return L.divIcon({ html: `<span class="marker-emoji">${emoji}</span>`, className: '', iconSize: [28, 28], iconAnchor: [14, 14], popupAnchor: [0, -16] });
     }
 
-    function addCameraMarker(cam) {
-      const marker = L.marker([cam.location.lat, cam.location.lng], {
-        icon: createEmojiIcon(NORMAL_ICON),
-      }).addTo(map);
+    function formatTime(dateStr) {
+      try {
+        const d = new Date(dateStr);
+        return d.toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit', second: '2-digit' }) + ' ' + d.toLocaleDateString('vi-VN');
+      } catch { return dateStr; }
+    }
+
+    /* ═══ ADD EVENT TO MAP ═══ */
+    function addEventToMap(evt) {
+      if (!evt.lat || !evt.lng) return;
+
+      let type = evt.type || evt.event_type || 'traffic';
+      if (type === 'traffic_jam') type = 'traffic';
+      const icon = createIcon(EVENT_ICONS[type] || '⚠️');
+      const marker = L.marker([evt.lat, evt.lng], { icon });
 
       marker.bindPopup(`
         <div class="popup-content">
-          <div class="popup-header">${cam.name}</div>
-          <div class="popup-meta">${cam.camera_id}</div>
-          <div class="popup-meta">${cam.location.address || ''}</div>
-          <div class="popup-badge" style="background:rgba(59,255,111,0.15);color:var(--accent-green);">NORMAL</div>
+          <div class="popup-header">${EVENT_ICONS[type] || '⚠️'} ${(type || '').toUpperCase()}</div>
+          <div class="popup-meta">📍 ${evt.location || evt.address || 'N/A'}</div>
+          <div class="popup-meta">📝 ${evt.description || evt.detail || ''}</div>
+          <div class="popup-meta">🕐 ${formatTime(evt.timestamp || evt.createdAt)}</div>
         </div>
-      `);
+      `, { maxWidth: 300 });
 
-      cameras.set(cam.camera_id, { data: cam, marker, status: 'normal' });
+      clusterGroup.addLayer(marker);
+
+      const evtId = evt._id || evt.id || Date.now();
+      eventMarkers[evtId] = marker;
     }
 
-    function updateMarkerAlert(cameraId, alertData) {
-      const cam = cameras.get(cameraId);
-      if (!cam) return;
+    /* ═══ EVENT LIST (sidebar) ═══ */
+    function addEventToList(evt) {
+      const listEl = document.getElementById('event-list');
+      // Remove "no events" placeholder
+      const placeholder = listEl.querySelector('.no-events');
+      if (placeholder) placeholder.remove();
 
-      const emoji = ALERT_ICONS[alertData.event_type] || '⚠️';
-      cam.marker.setIcon(createEmojiIcon(emoji));
-      cam.status = alertData.event_type;
-
-      // Blink animation
-      const el = cam.marker.getElement();
-      if (el) {
-        el.classList.add('marker-blink');
-        setTimeout(() => el.classList.remove('marker-blink'), 5000);
-      }
-
-      // Update popup
-      let imgTag = '';
-      if (alertData.image_base64) {
-        const src = alertData.image_base64.startsWith('data:')
-          ? alertData.image_base64
-          : `data:image/jpeg;base64,${alertData.image_base64}`;
-        imgTag = `<img class="popup-image" src="${src}" alt="Detection" />`;
-      }
-
-      cam.marker.setPopupContent(`
-        <div class="popup-content">
-          <div class="popup-header">${alertData.camera_name || cameraId}</div>
-          <div class="popup-meta">${cameraId}</div>
-          <div class="popup-badge ${alertData.event_type}">
-            ${ALERT_ICONS[alertData.event_type] || ''} ${alertData.event_type.replace('_', ' ')}
-          </div>
-          <div class="popup-meta" style="margin-top:6px;">${new Date(alertData.timestamp).toLocaleString()}</div>
-          ${imgTag}
+      let type = evt.type || evt.event_type || 'traffic';
+      if (type === 'traffic_jam') type = 'traffic';
+      const div = document.createElement('div');
+      div.className = 'event-item';
+      div.innerHTML = `
+        <span class="event-icon">${EVENT_ICONS[type] || '⚠️'}</span>
+        <div class="event-info">
+          <div class="event-type ${type}">${type}</div>
+          <div class="event-detail">${evt.location || evt.address || evt.description || 'Sự kiện mới'}</div>
+          <div class="event-time">${formatTime(evt.timestamp || evt.createdAt || new Date().toISOString())}</div>
         </div>
-      `);
-
-      cam.marker.openPopup();
-
-      // Reset to normal after 60s
-      setTimeout(() => {
-        cam.marker.setIcon(createEmojiIcon(NORMAL_ICON));
-        cam.status = 'normal';
-        updateCameraDot(cameraId, 'normal');
-      }, 60000);
-    }
-
-    /* ═══════════════════════════════════════════
-       CAMERA LIST
-    ═══════════════════════════════════════════ */
-    function renderCameraList() {
-      const el = document.getElementById('camera-list');
-      el.innerHTML = '';
-      cameras.forEach((cam, id) => {
-        const div = document.createElement('div');
-        div.className = 'camera-item';
-        div.id = `cam-item-${id}`;
-        div.innerHTML = `
-          <span class="camera-status-dot" id="cam-dot-${id}"></span>
-          <div class="camera-info">
-            <div class="camera-name">${cam.data.name}</div>
-            <div class="camera-id">${id}</div>
-          </div>
-        `;
-        div.onclick = () => {
-          map.flyTo([cam.data.location.lat, cam.data.location.lng], 16);
-          cam.marker.openPopup();
-        };
-        el.appendChild(div);
-      });
-    }
-
-    function updateCameraDot(cameraId, eventType) {
-      const dot = document.getElementById(`cam-dot-${cameraId}`);
-      if (!dot) return;
-      dot.className = 'camera-status-dot';
-      if (eventType === 'traffic_jam') dot.classList.add('alert-traffic');
-      else if (eventType === 'fire') dot.classList.add('alert-fire');
-      else if (eventType === 'flood') dot.classList.add('alert-flood');
-    }
-
-    /* ═══════════════════════════════════════════
-       ALERT LOG
-    ═══════════════════════════════════════════ */
-    function addAlertRow(alertData) {
-      const log = document.getElementById('alert-log');
-      const empty = log.querySelector('.empty-state');
-      if (empty) empty.remove();
-
-      const icons = { traffic_jam: '🚗', fire: '🔥', flood: '🌊' };
-      const labels = { traffic_jam: 'Traffic Jam', fire: 'Fire Detected', flood: 'Flood Warning' };
-
-      const row = document.createElement('div');
-      row.className = 'alert-row';
-      row.dataset.type = alertData.event_type;
-      row.id = `alert-${Date.now()}`;
-      row.innerHTML = `
-        <div class="alert-icon">${icons[alertData.event_type] || '⚠️'}</div>
-        <div class="alert-content">
-          <div class="alert-title">${labels[alertData.event_type] || alertData.event_type}</div>
-          <div class="alert-camera">${alertData.camera_name || alertData.camera_id}</div>
-          <div class="alert-time">${new Date(alertData.timestamp).toLocaleTimeString()}</div>
-        </div>
-        <span class="alert-severity severity-${alertData.severity}">${alertData.severity}</span>
       `;
-
-      row.onclick = () => {
-        const cam = cameras.get(alertData.camera_id);
-        if (cam) {
-          map.flyTo([alertData.lat, alertData.lng], 16);
-          cam.marker.openPopup();
+      div.onclick = () => {
+        if (evt.lat && evt.lng) {
+          map.flyTo([evt.lat, evt.lng], 16);
+          const evtId = evt._id || evt.id;
+          if (evtId && eventMarkers[evtId]) {
+            eventMarkers[evtId].openPopup();
+          }
         }
       };
+      div.style.cursor = evt.lat ? 'pointer' : 'default';
 
-      log.prepend(row);
-      alerts.unshift(alertData);
+      // Prepend (newest first)
+      listEl.prepend(div);
 
-      // Keep max 100 rows
-      while (log.children.length > 100) log.lastChild.remove();
-
-      applyFilter();
-    }
-
-    /* ═══════════════════════════════════════════
-       FILTERS
-    ═══════════════════════════════════════════ */
-    document.querySelectorAll('.filter-btn').forEach(btn => {
-      btn.addEventListener('click', () => {
-        document.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
-        btn.classList.add('active');
-        activeFilter = btn.dataset.filter;
-        applyFilter();
-      });
-    });
-
-    function applyFilter() {
-      document.querySelectorAll('.alert-row').forEach(row => {
-        if (activeFilter === 'all' || row.dataset.type === activeFilter) {
-          row.style.display = '';
-        } else {
-          row.style.display = 'none';
-        }
-      });
-    }
-
-    /* ═══════════════════════════════════════════
-       STATS
-    ═══════════════════════════════════════════ */
-    function updateStats(eventType) {
-      if (stats[eventType] !== undefined) {
-        stats[eventType]++;
-        const mapping = { fire: 'stat-fire', flood: 'stat-flood', traffic_jam: 'stat-traffic' };
-        const el = document.getElementById(mapping[eventType]);
-        if (el) el.textContent = stats[eventType];
+      // Keep max 50 items
+      while (listEl.children.length > 50) {
+        listEl.removeChild(listEl.lastChild);
       }
     }
 
-    /* ═══════════════════════════════════════════
-       AUDIO BEEP (Web Audio API)
-    ═══════════════════════════════════════════ */
-    let audioCtx = null;
-    function playBeep(type) {
-      if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-      const osc = audioCtx.createOscillator();
-      const gain = audioCtx.createGain();
-      osc.connect(gain);
-      gain.connect(audioCtx.destination);
-
-      const freqs = { fire: 880, flood: 523, traffic_jam: 660 };
-      osc.frequency.value = freqs[type] || 660;
-      osc.type = 'sine';
-      gain.gain.value = 0.15;
-      gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.5);
-
-      osc.start();
-      osc.stop(audioCtx.currentTime + 0.5);
+    /* ═══ UPDATE STATS ═══ */
+    function updateStats(type) {
+      if (stats[type] !== undefined) {
+        stats[type]++;
+        document.getElementById(`stat-${type}`).textContent = stats[type];
+      }
     }
 
-    /* ═══════════════════════════════════════════
-       SOCKET.IO
-    ═══════════════════════════════════════════ */
-    const socket = io({ transports: ['websocket', 'polling'] });
+    /* ═══ SHOW ALERT TOAST ═══ */
+    function showAlertToast(type, evt) {
+      const container = document.getElementById('alert-toast-container');
+      const icons = { fire: '🔥', flood: '🌊', traffic: '🚗' };
+      const titles = { fire: 'PHÁT HIỆN HỎA HOẠN!', flood: 'CẢNH BÁO LŨ LỤT!', traffic: 'ÙN TẮC GIAO THÔNG!' };
+      const loc = evt.location || evt.address || evt.camera_name || 'Khu vực theo dõi';
 
-    socket.on('connect', () => {
-      const badge = document.getElementById('connection-badge');
-      const text = document.getElementById('connection-text');
-      badge.className = 'connection-badge connected';
-      text.textContent = 'LIVE';
-    });
+      const toast = document.createElement('div');
+      toast.className = `alert-toast ${type}`;
+      toast.innerHTML = `
+        <span class="alert-toast-icon">${icons[type] || '⚠️'}</span>
+        <div class="alert-toast-body">
+          <div class="alert-toast-title">${titles[type] || 'CẢNH BÁO!'}</div>
+          <div class="alert-toast-detail">📍 ${loc} — ${formatTime(evt.timestamp || new Date().toISOString())}</div>
+        </div>
+      `;
+      container.appendChild(toast);
+      // Auto-remove after 5s
+      setTimeout(() => { if (toast.parentNode) toast.remove(); }, 5000);
 
-    socket.on('disconnect', () => {
-      const badge = document.getElementById('connection-badge');
-      const text = document.getElementById('connection-text');
-      badge.className = 'connection-badge disconnected';
-      text.textContent = 'DISCONNECTED';
-    });
+      // Fly map to event location
+      if (evt.lat && evt.lng) {
+        map.flyTo([evt.lat, evt.lng], 15);
+      }
+    }
 
-    socket.on('alert', (data) => {
-      console.log('[Alert]', data);
-      updateMarkerAlert(data.camera_id, data);
-      updateCameraDot(data.camera_id, data.event_type);
-      addAlertRow(data);
-      updateStats(data.event_type);
-      playBeep(data.event_type);
-    });
+    /* ═══ HANDLE NEW EVENT ═══ */
+    function handleEvent(evt) {
+      addEventToMap(evt);
+      addEventToList(evt);
+      let type = evt.type || evt.event_type || 'traffic';
+      if (type === 'traffic_jam') type = 'traffic';
+      updateStats(type);
 
-    /* ═══════════════════════════════════════════
-       INIT — Fetch cameras + historical events
-    ═══════════════════════════════════════════ */
-    async function loadHistoricalEvents() {
+      // Toast alert on screen
+      showAlertToast(type, evt);
+
+      // Browser Push Notification
+      const titles = { fire: '🔥 BÁO CHÁY!', flood: '🌊 CẢNH BÁO LŨ LỤT!', traffic: '🚗 ÙN TẮC GIAO THÔNG' };
+      const title = titles[type] || '⚠️ CẢNH BÁO';
+      const loc = evt.location || evt.address || evt.camera_name || 'Khu vực theo dõi';
+      
+      if ('Notification' in window && Notification.permission === 'granted') {
+        new Notification(title, { body: `Phát hiện sự cố tại: ${loc}` });
+      }
+    }
+
+    /* ═══ FETCH EXISTING EVENTS ═══ */
+    async function fetchExistingEvents() {
       try {
-        const res = await fetch('/api/events?limit=50');
-        const json = await res.json();
-        const events = (json.events || []).reverse(); // oldest first so prepend order is correct
-        const cameraMap = {};
-        cameras.forEach((cam, id) => { cameraMap[id] = cam.data; });
-
+        const res = await fetch('/api/events');
+        const data = await res.json();
+        const events = Array.isArray(data) ? data : (data.events || data.data || []);
         events.forEach(evt => {
-          const cam = cameraMap[evt.camera_id];
-          const alertData = {
-            camera_id: evt.camera_id,
-            event_type: evt.event_type,
-            severity: evt.severity,
-            camera_name: cam ? cam.name : evt.camera_id,
-            lat: cam ? cam.location.lat : 0,
-            lng: cam ? cam.location.lng : 0,
-            timestamp: evt.timestamp,
-            metadata: evt.metadata || {},
-          };
-          addAlertRow(alertData);
-          updateStats(evt.event_type);
-          updateCameraDot(evt.camera_id, evt.event_type);
-        });
-
-        // Update marker for most recent alert per camera
-        const latestPerCamera = {};
-        (json.events || []).forEach(evt => {
-          if (!latestPerCamera[evt.camera_id]) {
-            latestPerCamera[evt.camera_id] = evt;
+          addEventToMap(evt);
+          addEventToList(evt);
+          let type = evt.type || evt.event_type || 'traffic';
+          if (type === 'traffic_jam') type = 'traffic';
+          if (type && stats[type] !== undefined) {
+            stats[type]++;
           }
         });
-        Object.values(latestPerCamera).forEach(evt => {
-          const cam = cameraMap[evt.camera_id];
-          if (cam) {
-            const emoji = ALERT_ICONS[evt.event_type] || NORMAL_ICON;
-            const camEntry = cameras.get(evt.camera_id);
-            if (camEntry) camEntry.marker.setIcon(createEmojiIcon(emoji));
-          }
+        // Update stat displays
+        Object.keys(stats).forEach(type => {
+          document.getElementById(`stat-${type}`).textContent = stats[type];
         });
       } catch (err) {
-        console.warn('[Init] Could not fetch historical events:', err.message);
+        console.log('[Events] Could not fetch existing events:', err.message);
       }
     }
 
-    async function init() {
+    /* ═══ CLEAR DATA ═══ */
+    document.getElementById('clear-data-btn').addEventListener('click', async () => {
       try {
-        const res = await fetch('/api/cameras');
-        const json = await res.json();
-        (json.cameras || []).forEach(cam => addCameraMarker(cam));
-        renderCameraList();
+        await fetch('/api/events', { method: 'DELETE' });
+        // Clear UI
+        document.getElementById('event-list').innerHTML = '<div class="no-events">Không có sự kiện nào.</div>';
+        clusterGroup.clearLayers();
+        for (let key in eventMarkers) delete eventMarkers[key];
+        stats.fire = 0; stats.flood = 0; stats.traffic = 0;
+        Object.keys(stats).forEach(type => document.getElementById(`stat-${type}`).textContent = stats[type]);
       } catch (err) {
-        console.warn('[Init] Could not fetch cameras:', err.message);
-        const demoCams = [
-          { camera_id: 'CAM_001', name: 'Nguyễn Huệ — Lê Lợi', location: { lat: 10.7739, lng: 106.7030, address: 'District 1' } },
-          { camera_id: 'CAM_002', name: 'Điện Biên Phủ — Hai Bà Trưng', location: { lat: 10.7865, lng: 106.6953, address: 'District 3' } },
-          { camera_id: 'CAM_003', name: 'Bình Triệu Bridge', location: { lat: 10.8231, lng: 106.7114, address: 'Thủ Đức' } },
-        ];
-        demoCams.forEach(cam => addCameraMarker(cam));
-        renderCameraList();
+        console.error('Failed to clear data:', err);
       }
-      // Load historical events from DB
-      await loadHistoricalEvents();
+    });
+
+    /* ═══ SOCKET.IO (for real-time alerts) ═══ */
+    function initSocket() {
+      const badge = document.getElementById('connection-badge');
+      const text = document.getElementById('connection-text');
+
+      try {
+        const socket = io({ transports: ['websocket', 'polling'] });
+        window.socket = socket;
+
+        socket.on('connect', () => {
+          console.log('[Socket] Connected');
+          badge.className = 'connection-badge connected';
+          text.textContent = 'CONNECTED';
+          if (window.MY_LOCATION) {
+             socket.emit('update-location', { camera_id: 'USB_CAM_001', lat: window.MY_LOCATION.lat, lng: window.MY_LOCATION.lng, address: 'Vị trí máy tính hiện tại' });
+          }
+        });
+
+        socket.on('disconnect', () => {
+          console.log('[Socket] Disconnected');
+          badge.className = 'connection-badge disconnected';
+          text.textContent = 'DISCONNECTED';
+        });
+
+        socket.on('alert', (data) => {
+          console.log('[Alert]', data);
+          handleEvent(data);
+        });
+
+        socket.on('new-event', (data) => {
+          console.log('[Event]', data);
+          handleEvent(data);
+        });
+      } catch {
+        console.log('[Socket] Not available');
+        badge.className = 'connection-badge disconnected';
+        text.textContent = 'NO SERVER';
+      }
     }
 
-    init();
+    /* ═══ INIT ═══ */
+    if ("Notification" in window && Notification.permission !== "granted" && Notification.permission !== "denied") {
+      Notification.requestPermission();
+    }
+    fetchExistingEvents();
+    // Socket.IO will be initialized after the script loads
   </script>
+  <script src="/socket.io/socket.io.js" onerror="
+    console.log('[Socket.IO] Not loaded');
+    document.getElementById('connection-badge').className='connection-badge disconnected';
+    document.getElementById('connection-text').textContent='OFFLINE';
+  "></script>
+  <script>if (typeof io !== 'undefined') initSocket();</script>
 </body>
 </html>

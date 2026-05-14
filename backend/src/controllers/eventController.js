@@ -25,6 +25,8 @@ async function createEvent(req, res) {
       water_ratio,
       image_base64,
       timestamp,
+      lat,
+      lng,
     } = req.body;
 
     // --- Validation ---
@@ -41,11 +43,13 @@ async function createEvent(req, res) {
       });
     }
 
-    // --- Look up camera (DB or demo fallback) ---
+    // --- Look up camera (DB first, then demo fallback) ---
     let camera;
     if (isDatabaseConnected()) {
       camera = await Camera.findOne({ camera_id });
-    } else {
+    }
+    // Fallback to demo cameras if not found in DB
+    if (!camera) {
       camera = DEMO_CAMERAS.find((c) => c.camera_id === camera_id);
     }
 
@@ -56,6 +60,8 @@ async function createEvent(req, res) {
     let shouldAlert = false;
     let severity = 'medium';
     let metadata = {};
+
+    console.log(`[EventController] Received: type=${event_type}, camera=${camera_id}, confidence=${confidence}, lat=${lat}, lng=${lng}`);
 
     // --- Service logic by event type ---
     switch (event_type) {
@@ -89,14 +95,26 @@ async function createEvent(req, res) {
       }
 
       case 'fire': {
-        // Fire: any confidence >= 0.6 triggers alert
-        shouldAlert = confidence >= 0.6;
+        // Fire: AI module already confirms with consecutive frames,
+        // so any event received here is already validated → always alert
+        shouldAlert = confidence >= 0.3;
         if (confidence >= 0.85) severity = 'critical';
         else if (confidence >= 0.7) severity = 'high';
-        else severity = 'medium';
+        else if (confidence >= 0.5) severity = 'medium';
+        else severity = 'low';
         metadata = { confidence };
         break;
       }
+    }
+
+    console.log(`[EventController] shouldAlert=${shouldAlert}, severity=${severity}`);
+
+    if (!shouldAlert) {
+      return res.status(200).json({
+        success: true,
+        alert_triggered: false,
+        message: 'Ping received, conditions not met for alert.'
+      });
     }
 
     // --- Save event to MongoDB (if connected) ---
@@ -125,17 +143,22 @@ async function createEvent(req, res) {
 
     // --- Emit alert if triggered ---
     if (shouldAlert) {
-      alertService.emitAlert({
+      const alertLat = lat !== undefined && lat !== null ? lat : camera.location.lat;
+      const alertLng = lng !== undefined && lng !== null ? lng : camera.location.lng;
+      const alertPayload = {
         camera_id,
         event_type,
         severity,
         image_base64: image_base64 || null,
-        lat: camera.location.lat,
-        lng: camera.location.lng,
+        lat: alertLat,
+        lng: alertLng,
+        location: camera.location.address || camera.name,
         camera_name: camera.name,
         timestamp: eventDoc.timestamp,
         metadata,
-      });
+      };
+      console.log(`[EventController] 🚨 Emitting alert: type=${event_type}, lat=${alertLat}, lng=${alertLng}`);
+      alertService.emitAlert(alertPayload);
     }
 
     return res.status(201).json({

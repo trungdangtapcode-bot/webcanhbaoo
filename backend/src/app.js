@@ -5,7 +5,10 @@ const morgan = require('morgan');
 const path = require('path');
 
 const eventsRouter = require('./routes/events');
-const camerasRouter = require('./routes/cameras');
+// [TEMPORARILY DISABLED] Camera feature removed
+// const camerasRouter = require('./routes/cameras');
+// const hanoiCamerasRouter = require('./routes/hanoiCameras');
+// const streamProxyRouter = require('./routes/streamProxy');
 
 const app = express();
 
@@ -21,7 +24,10 @@ app.use(express.static(path.join(__dirname, '../../frontend')));
 
 // --- API Routes ---
 app.use('/api/events', eventsRouter);
-app.use('/api/cameras', camerasRouter);
+// [TEMPORARILY DISABLED] Camera routes
+// app.use('/api/cameras', camerasRouter);
+// app.use('/api/hanoi-cameras', hanoiCamerasRouter);
+// app.use('/api/stream', streamProxyRouter);
 
 // --- Health check ---
 app.get('/api/health', (req, res) => {

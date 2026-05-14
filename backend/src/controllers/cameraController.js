@@ -4,6 +4,13 @@ const { isDatabaseConnected } = require('../config/database');
 // Demo cameras used when MongoDB is not available
 const DEMO_CAMERAS = [
   {
+    camera_id: 'USB_CAM_001',
+    name: 'USB Camera — Local',
+    location: { lat: 11.9444, lng: 108.4441, address: 'USB Camera - Da Lat' },
+    max_red_light_time: 10, // Lowered for quick testing
+    active: true,
+  },
+  {
     camera_id: 'CAM_001',
     name: 'Nguyễn Huệ — Lê Lợi',
     location: { lat: 10.7739, lng: 106.7030, address: 'Nguyễn Huệ Walking Street, District 1, HCMC' },

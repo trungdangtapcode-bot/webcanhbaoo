@@ -43,9 +43,24 @@ async function bootstrap() {
   // --- Initialize alert service with io ---
   alertService.init(io);
 
+  const { DEMO_CAMERAS } = require('./controllers/cameraController');
+
   // --- Socket.io connection handler ---
   io.on('connection', (socket) => {
     console.log(`[Socket.io] Client connected: ${socket.id}`);
+
+    socket.on('update-location', (data) => {
+      console.log(`[Socket.io] Received location update from frontend:`, data);
+      if (data && data.lat && data.lng) {
+        const cam = DEMO_CAMERAS.find(c => c.camera_id === (data.camera_id || 'USB_CAM_001'));
+        if (cam) {
+          cam.location.lat = data.lat;
+          cam.location.lng = data.lng;
+          if (data.address) cam.location.address = data.address;
+          console.log(`[Socket.io] Updated camera ${cam.camera_id} location to ${data.lat}, ${data.lng}`);
+        }
+      }
+    });
 
     socket.on('disconnect', (reason) => {
       console.log(`[Socket.io] Client disconnected: ${socket.id} (${reason})`);

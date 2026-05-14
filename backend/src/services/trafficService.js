@@ -2,7 +2,7 @@
  * Traffic Jam Detection — Sliding Window (120s)
  *
  * In-memory Map per camera_id stores timestamped frames.
- * Jam detected when avg_speed < 5 px/frame AND vehicle_count > 3
+ * Jam detected when avg_speed < 25 px/frame AND vehicle_count > 3
  * sustained longer than camera.max_red_light_time (default 90s).
  */
 
@@ -54,7 +54,7 @@ function evaluate(cameraId, data, maxRedLightTime = 90) {
   // Find how long the jam condition has been sustained (consecutive from latest)
   let sustainedStart = now;
   for (let i = window.length - 1; i >= 0; i--) {
-    if (window[i].avg_speed < 5 && window[i].vehicle_count > 3) {
+    if (window[i].avg_speed < 25 && window[i].vehicle_count >= 2) {
       sustainedStart = window[i].timestamp;
     } else {
       break;
@@ -62,7 +62,8 @@ function evaluate(cameraId, data, maxRedLightTime = 90) {
   }
 
   const durationSec = (now - sustainedStart) / 1000;
-  const isJam = avgSpeed < 5 && avgVehicles > 3 && durationSec >= maxRedLightTime;
+  // If the sustained duration of slow + dense traffic is longer than a red light, it's a jam!
+  const isJam = durationSec >= maxRedLightTime;
 
   let severity = 'low';
   if (isJam) {

@@ -1,0 +1,15 @@
+{
+    "venvPath": "c:/Users/Admin/.gemini/antigravity/scratch/smart-alert-system/ai_module",
+    "venv": "venv",
+    "extraPaths": [
+        "c:/Users/Admin/.gemini/antigravity/scratch/smart-alert-system/ai_module/venv/Lib/site-packages"
+    ],
+    "executionEnvironments": [
+        {
+            "root": "ai_module",
+            "extraPaths": [
+                "c:/Users/Admin/.gemini/antigravity/scratch/smart-alert-system/ai_module/venv/Lib/site-packages"
+            ]
+        }
+    ]
+}

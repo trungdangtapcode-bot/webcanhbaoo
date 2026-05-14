@@ -9,7 +9,7 @@ import sys
 import time
 import base64
 import logging
-import requests
+import requests  # type: ignore
 import cv2
 import numpy as np
 from dotenv import load_dotenv
@@ -22,7 +22,7 @@ RTSP_URL = os.getenv("RTSP_URL", "rtsp://admin:admin123@192.168.1.100:554/stream
 BACKEND_URL = os.getenv("BACKEND_URL", "http://localhost:3000/api/events")
 API_TOKEN = os.getenv("API_TOKEN", "")
 FRAME_INTERVAL = int(os.getenv("FRAME_INTERVAL", "5"))  # seconds
-CONFIDENCE_THRESHOLD = 0.6
+CONFIDENCE_THRESHOLD = 0.4
 CONFIRM_FRAMES = 3  # require 3 consecutive detections
 JPEG_QUALITY = 70
 RESIZE_DIM = (640, 640)
@@ -122,7 +122,10 @@ def main():
         for r in results:
             for box in r.boxes:
                 conf = float(box.conf[0])
-                if conf >= CONFIDENCE_THRESHOLD:
+                cls_id = int(box.cls[0])
+                cls_name = model.names[cls_id].lower()
+                
+                if conf >= CONFIDENCE_THRESHOLD and "fire" in cls_name:
                     fire_detected = True
                     max_conf = max(max_conf, conf)
 
