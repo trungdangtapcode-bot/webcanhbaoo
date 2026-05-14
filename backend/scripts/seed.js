@@ -1,74 +1,43 @@
 /**
- * Seed script — creates 3 demo cameras in HCM City area.
- * Usage: node scripts/seed.js
+ * Seed script: Tạo tài khoản admin mặc định
+ * Run: node scripts/seed.js
  */
+require('dotenv').config({ path: require('path').join(__dirname, '../.env') });
 
-require('dotenv').config();
+// Force Google DNS to bypass ISP DNS blocks (e.g. Viettel blocking MongoDB Atlas SRV)
 const dns = require('dns');
 dns.setServers(['8.8.8.8', '8.8.4.4', '1.1.1.1']);
-const mongoose = require('mongoose');
-const Camera = require('../src/models/Camera');
 
-const demoCameras = [
-  {
-    camera_id: 'CAM_001',
-    name: 'Nguyễn Huệ — Lê Lợi',
-    location: {
-      lat: 10.7739,
-      lng: 106.7030,
-      address: 'Nguyễn Huệ Walking Street, District 1, HCMC',
-    },
-    max_red_light_time: 90,
-    active: true,
-  },
-  {
-    camera_id: 'CAM_002',
-    name: 'Điện Biên Phủ — Hai Bà Trưng',
-    location: {
-      lat: 10.7865,
-      lng: 106.6953,
-      address: 'Điện Biên Phủ & Hai Bà Trưng intersection, District 3, HCMC',
-    },
-    max_red_light_time: 120,
-    active: true,
-  },
-  {
-    camera_id: 'CAM_003',
-    name: 'Bình Triệu Bridge',
-    location: {
-      lat: 10.8231,
-      lng: 106.7114,
-      address: 'Bình Triệu Bridge, Thủ Đức, HCMC',
-    },
-    max_red_light_time: 90,
-    active: true,
-  },
-];
+const mongoose = require('mongoose');
+const User = require('../src/models/User');
 
 async function seed() {
-  const uri = process.env.MONGODB_URI;
-  if (!uri) {
-    console.error('❌ MONGODB_URI not set. Copy .env.example to .env and configure it.');
-    process.exit(1);
+  console.log('[Seed] Connecting to MongoDB...');
+  await mongoose.connect(process.env.MONGODB_URI);
+
+  const existing = await User.findOne({ username: 'admin' });
+  if (existing) {
+    console.log('[Seed] Admin user already exists. Skipping.');
+    await mongoose.disconnect();
+    return;
   }
 
-  await mongoose.connect(uri);
-  console.log('✅ Connected to MongoDB');
+  const admin = await User.create({
+    username: 'admin',
+    email: 'admin@smartalert.local',
+    password: 'Admin@123456',      // Đổi mật khẩu sau khi đăng nhập lần đầu!
+    role: 'admin',
+    full_name: 'System Administrator',
+  });
 
-  for (const cam of demoCameras) {
-    const result = await Camera.findOneAndUpdate(
-      { camera_id: cam.camera_id },
-      cam,
-      { upsert: true, new: true }
-    );
-    console.log(`   📷 Seeded: ${result.camera_id} — ${result.name}`);
-  }
+  console.log('[Seed] ✅ Admin account created:');
+  console.log('   Username : admin');
+  console.log('   Password : Admin@123456  ← Đổi ngay sau khi đăng nhập!');
+  console.log('   Role     : admin');
+  console.log('   ID       :', admin._id.toString());
 
-  console.log(`\n✅ Seeded ${demoCameras.length} cameras successfully`);
   await mongoose.disconnect();
+  console.log('[Seed] Done.');
 }
 
-seed().catch((err) => {
-  console.error('❌ Seed failed:', err);
-  process.exit(1);
-});
+seed().catch(err => { console.error('[Seed] Fatal:', err); process.exit(1); });

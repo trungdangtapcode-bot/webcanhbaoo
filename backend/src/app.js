@@ -4,11 +4,12 @@ const helmet = require('helmet');
 const morgan = require('morgan');
 const path = require('path');
 
-const eventsRouter = require('./routes/events');
-// [TEMPORARILY DISABLED] Camera feature removed
-// const camerasRouter = require('./routes/cameras');
+const eventsRouter  = require('./routes/events');
+const camerasRouter = require('./routes/cameras');
+const authRouter    = require('./routes/auth');
+const chatbotRouter = require('./routes/chatbot');
 // const hanoiCamerasRouter = require('./routes/hanoiCameras');
-// const streamProxyRouter = require('./routes/streamProxy');
+// const streamProxyRouter  = require('./routes/streamProxy');
 
 const app = express();
 
@@ -23,9 +24,10 @@ app.use(express.urlencoded({ extended: true }));
 app.use(express.static(path.join(__dirname, '../../frontend')));
 
 // --- API Routes ---
-app.use('/api/events', eventsRouter);
-// [TEMPORARILY DISABLED] Camera routes
-// app.use('/api/cameras', camerasRouter);
+app.use('/api/auth',    authRouter);
+app.use('/api/cameras', camerasRouter);
+app.use('/api/events',  eventsRouter);
+app.use('/api/chatbot', chatbotRouter);
 // app.use('/api/hanoi-cameras', hanoiCamerasRouter);
 // app.use('/api/stream', streamProxyRouter);
 
