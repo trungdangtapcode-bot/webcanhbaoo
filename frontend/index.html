@@ -20,6 +20,15 @@
         document.documentElement.dataset.theme = "dark";
       }
     })();
+    (function requireAuth() {
+      try {
+        if (!localStorage.getItem("smart-alert-auth-session")) {
+          window.location.replace("login.html");
+        }
+      } catch (_err) {
+        window.location.replace("login.html");
+      }
+    })();
   </script>
   <style>
     :root {
@@ -42,7 +51,7 @@
       --green: #5ee083;
       --flood: #5bc7ff;
       --shadow: 0 18px 50px rgba(0, 0, 0, 0.34);
-      --sidebar-width: 370px;
+      --sidebar-width: 280px;
       --radius: 8px;
       --fast: 160ms ease;
     }
@@ -187,13 +196,19 @@
 
     .brand-title {
       margin: 0;
-      font-size: 18px;
-      line-height: 1.15;
+      font-size: 22px;
+      line-height: 1.1;
       font-weight: 760;
       letter-spacing: 0;
+      white-space: nowrap;
+    }
+
+    .brand-title span {
+      display: inline;
     }
 
     .brand-subtitle {
+      display: none;
       margin-top: 4px;
       color: var(--text-soft);
       font-size: 12px;
@@ -204,9 +219,11 @@
       display: inline-flex;
       align-items: center;
       gap: 7px;
-      min-width: 90px;
+      width: 34px;
+      min-width: 34px;
+      height: 34px;
       justify-content: center;
-      padding: 7px 9px;
+      padding: 0;
       border: 1px solid rgba(255, 91, 99, 0.42);
       border-radius: var(--radius);
       background: rgba(255, 91, 99, 0.09);
@@ -216,6 +233,15 @@
       line-height: 1;
       text-transform: uppercase;
       letter-spacing: 0;
+    }
+
+    #connection-text {
+      position: absolute;
+      width: 1px;
+      height: 1px;
+      overflow: hidden;
+      clip: rect(0, 0, 0, 0);
+      white-space: nowrap;
     }
 
     .connection-badge.connected {
@@ -229,6 +255,62 @@
       align-items: center;
       gap: 8px;
       flex: 0 0 auto;
+    }
+
+    .account-panel {
+      display: grid;
+      gap: 10px;
+      padding: 12px 14px;
+      border-bottom: 1px solid var(--border);
+      background: rgba(255, 255, 255, 0.018);
+    }
+
+    .account-profile {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .account-user {
+      min-width: 0;
+      padding: 10px;
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      background: var(--panel-soft);
+    }
+
+    .account-user-name {
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      color: var(--text);
+      font-size: 13px;
+      font-weight: 760;
+    }
+
+    .account-user-role {
+      margin-top: 3px;
+      color: var(--text-muted);
+      font-size: 11px;
+    }
+
+    .account-logout {
+      min-height: 38px;
+      padding: 0 11px;
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      background: var(--surface);
+      color: var(--text-soft);
+      font-size: 12px;
+      font-weight: 760;
+      transition: border-color var(--fast), background var(--fast), color var(--fast);
+    }
+
+    .account-logout:hover {
+      border-color: rgba(255, 91, 99, 0.45);
+      background: rgba(255, 91, 99, 0.1);
+      color: var(--red);
     }
 
     .theme-toggle {
@@ -494,7 +576,7 @@
 
     .workspace-nav {
       display: grid;
-      grid-template-columns: repeat(2, minmax(0, 1fr));
+      grid-template-columns: 1fr;
       gap: 8px;
       padding: 12px 14px;
       border-bottom: 1px solid var(--border);
@@ -523,6 +605,10 @@
       transition: border-color var(--fast), background var(--fast), color var(--fast);
     }
 
+    .workspace-tab {
+      justify-content: flex-start;
+    }
+
     html[data-theme="light"] .workspace-tab {
       background: #ffffff;
     }
@@ -546,6 +632,84 @@
 
     .workspace-panel[hidden] {
       display: none !important;
+    }
+
+    .sidebar > .workspace-panel {
+      position: fixed;
+      z-index: 620;
+      display: flex;
+      flex-direction: column;
+      top: 0;
+      right: 0;
+      bottom: 0;
+      left: var(--sidebar-width);
+      overflow: auto;
+      padding: 28px;
+      border-bottom: 0;
+      background: var(--bg);
+      animation: fade-in 140ms ease both;
+    }
+
+    .sidebar > .workspace-panel .section-head,
+    .sidebar > .workspace-panel .filter-bar,
+    .sidebar > .workspace-panel .news-tabs,
+    .sidebar > .workspace-panel .analytics-panel,
+    .sidebar > .workspace-panel .nearby-panel,
+    .sidebar > .workspace-panel .alert-log,
+    .sidebar > .workspace-panel .news-list {
+      width: 100%;
+      max-width: 980px;
+      margin-left: auto;
+      margin-right: auto;
+    }
+
+    .sidebar > #news-section .news-list,
+    .sidebar > #alert-section .alert-log {
+      flex: 1;
+      max-height: none;
+      min-height: calc(100vh - 176px);
+    }
+
+    .sidebar > #alert-section .alert-log .empty-state {
+      min-height: calc(100vh - 190px);
+    }
+
+    .main-workspace {
+      position: relative;
+      flex: 1;
+      min-width: 0;
+      height: 100%;
+      overflow: hidden;
+      background: var(--bg);
+    }
+
+    .camera-workspace {
+      display: grid;
+      grid-template-columns: minmax(320px, 390px) minmax(0, 1fr);
+      width: 100%;
+      height: 100%;
+      min-width: 0;
+    }
+
+    .main-camera-panel {
+      display: flex;
+      flex-direction: column;
+      min-width: 0;
+      min-height: 0;
+      padding: 16px;
+      border-right: 1px solid var(--border);
+      background: linear-gradient(180deg, rgba(16, 22, 29, 0.98), rgba(9, 13, 18, 0.98));
+      overflow: hidden;
+    }
+
+    html[data-theme="light"] .main-camera-panel {
+      background: linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(244, 247, 251, 0.98));
+    }
+
+    .main-camera-panel .camera-list {
+      flex: 1;
+      max-height: none;
+      min-height: 0;
     }
 
     .analytics-panel,
@@ -637,7 +801,8 @@
     html[data-theme="light"] .range-btn,
     html[data-theme="light"] .radius-btn,
     html[data-theme="light"] .secondary-action,
-    html[data-theme="light"] .toggle-action {
+    html[data-theme="light"] .toggle-action,
+    html[data-theme="light"] .account-logout {
       background: #ffffff;
     }
 
@@ -665,6 +830,39 @@
       display: grid;
       grid-template-columns: repeat(3, minmax(0, 1fr));
       gap: 8px;
+    }
+
+    .analytics-chart {
+      overflow: hidden;
+      min-height: 330px;
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      background:
+        linear-gradient(180deg, rgba(49, 214, 192, 0.045), transparent 42%),
+        var(--panel-soft);
+    }
+
+    .analytics-chart-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      padding: 13px 14px 0;
+      color: var(--text);
+      font-size: 13px;
+      font-weight: 760;
+    }
+
+    .analytics-chart-subtitle {
+      color: var(--text-muted);
+      font-size: 11px;
+      font-weight: 680;
+    }
+
+    .analytics-chart svg {
+      display: block;
+      width: 100%;
+      height: 280px;
     }
 
     .analytics-item {
@@ -1973,6 +2171,36 @@
         border-bottom: 1px solid var(--border);
       }
 
+      .sidebar > .workspace-panel {
+        position: static;
+        inset: auto;
+        min-height: 42vh;
+        padding: 16px;
+      }
+
+      .sidebar > #news-section .news-list,
+      .sidebar > #alert-section .alert-log,
+      .sidebar > #alert-section .alert-log .empty-state {
+        min-height: 260px;
+      }
+
+      .main-workspace {
+        min-height: 70vh;
+        height: auto;
+        overflow: visible;
+      }
+
+      .camera-workspace {
+        grid-template-columns: 1fr;
+        height: auto;
+      }
+
+      .main-camera-panel {
+        border-right: 0;
+        border-bottom: 1px solid var(--border);
+        overflow: visible;
+      }
+
       .sidebar-header {
         padding: 14px;
       }
@@ -2015,6 +2243,7 @@
 
       .map-container {
         min-height: 58vh;
+        height: 58vh;
       }
 
       .map-toolbar {
@@ -2093,7 +2322,7 @@
               </svg>
             </div>
             <div>
-              <h1 class="brand-title">Smart Alert</h1>
+              <h1 class="brand-title"><span>Smart</span> <span>Alert</span></h1>
               <div class="brand-subtitle">Traffic, flood, and fire detection</div>
             </div>
           </div>
@@ -2122,6 +2351,16 @@
           </div>
         </div>
       </header>
+
+      <section class="account-panel" aria-label="Account">
+        <div class="account-profile">
+          <div class="account-user">
+            <div class="account-user-name" id="account-user-name">Operator</div>
+            <div class="account-user-role">Signed in</div>
+          </div>
+          <button class="account-logout" id="account-logout" type="button">Logout</button>
+        </div>
+      </section>
 
       <section class="stat-grid" aria-label="Alert summary">
         <div class="stat-card">
@@ -2154,13 +2393,6 @@
       </section>
 
       <nav class="workspace-nav" aria-label="Dashboard sections">
-        <button class="workspace-tab active" type="button" data-workspace-tab="overview">
-          <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
-            <path d="M5 19V9M12 19V5M19 19v-7" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" />
-            <path d="M4 19h16" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" />
-          </svg>
-          Overview
-        </button>
         <button class="workspace-tab" type="button" data-workspace-tab="cameras">
           <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
             <path d="M4 8.5A2.5 2.5 0 0 1 6.5 6h11A2.5 2.5 0 0 1 20 8.5v7A2.5 2.5 0 0 1 17.5 18h-11A2.5 2.5 0 0 1 4 15.5v-7Z" stroke="currentColor" stroke-width="1.7" />
@@ -2168,12 +2400,26 @@
           </svg>
           Cameras
         </button>
+        <button class="workspace-tab" type="button" data-workspace-tab="overview">
+          <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+            <path d="M5 19V9M12 19V5M19 19v-7" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" />
+            <path d="M4 19h16" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" />
+          </svg>
+          Stats
+        </button>
         <button class="workspace-tab" type="button" data-workspace-tab="alerts">
           <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
             <path d="M12 3.5 21 20H3L12 3.5Z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" />
             <path d="M12 9v4.7" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" />
           </svg>
           Alerts
+        </button>
+        <button class="workspace-tab" type="button" data-workspace-tab="nearby">
+          <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+            <path d="M12 21s6-4.7 6-10a6 6 0 1 0-12 0c0 5.3 6 10 6 10Z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" />
+            <path d="M12 13.2a2.2 2.2 0 1 0 0-4.4 2.2 2.2 0 0 0 0 4.4Z" stroke="currentColor" stroke-width="1.8" />
+          </svg>
+          Nearby
         </button>
         <button class="workspace-tab" type="button" data-workspace-tab="news">
           <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
@@ -2184,7 +2430,7 @@
         </button>
       </nav>
 
-      <section class="section compact workspace-panel" id="analytics-section" data-workspace-panel="overview">
+      <section class="section compact workspace-panel" id="analytics-section" data-workspace-panel="overview" hidden>
         <div class="section-head">
           <div class="section-title">
             <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
@@ -2227,10 +2473,17 @@
               <div class="analytics-label">Hotspot camera</div>
             </div>
           </div>
+          <div class="analytics-chart">
+            <div class="analytics-chart-head">
+              <span>Incident trend</span>
+              <span class="analytics-chart-subtitle" id="analytics-chart-subtitle">No events</span>
+            </div>
+            <svg id="incident-line-chart" viewBox="0 0 980 280" role="img" aria-label="Incident trend line chart"></svg>
+          </div>
         </div>
       </section>
 
-      <section class="section compact workspace-panel" id="nearby-section" data-workspace-panel="overview">
+      <section class="section compact workspace-panel" id="nearby-section" data-workspace-panel="nearby" hidden>
         <div class="section-head">
           <div class="section-title">
             <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
@@ -2286,36 +2539,6 @@
         <div class="news-list" id="news-list"></div>
       </section>
 
-      <section class="section compact workspace-panel" id="camera-section" data-workspace-panel="cameras" hidden>
-        <div class="section-head">
-          <div class="section-title">
-            <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
-              <path d="M4 8.5A2.5 2.5 0 0 1 6.5 6h11A2.5 2.5 0 0 1 20 8.5v7A2.5 2.5 0 0 1 17.5 18h-11A2.5 2.5 0 0 1 4 15.5v-7Z" stroke="currentColor" stroke-width="1.7" />
-              <path d="M9.5 6 11 4h2l1.5 2" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" />
-              <path d="M12 14.6a2.6 2.6 0 1 0 0-5.2 2.6 2.6 0 0 0 0 5.2Z" stroke="currentColor" stroke-width="1.7" />
-            </svg>
-            Cameras
-          </div>
-          <span class="section-count" id="camera-count">0</span>
-        </div>
-        <div class="camera-search">
-          <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
-            <path d="m20 20-4.2-4.2M10.8 18a7.2 7.2 0 1 1 0-14.4 7.2 7.2 0 0 1 0 14.4Z" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" />
-          </svg>
-          <input id="camera-search" type="search" placeholder="Search camera or ID" autocomplete="off" />
-        </div>
-        <div class="scanner-panel" id="scanner-panel">
-          <div class="scanner-row">
-            <div>
-              <div class="scanner-state" id="scanner-state">AI scanner idle</div>
-              <div class="scanner-detail" id="scanner-detail">Worker pool is ready.</div>
-            </div>
-            <button class="toggle-action" id="scanner-toggle" type="button">Start scan</button>
-          </div>
-        </div>
-        <div class="camera-list" id="camera-list"></div>
-      </section>
-
       <section class="alert-section workspace-panel" id="alert-section" data-workspace-panel="alerts" hidden>
         <div class="section-head">
           <div class="section-title">
@@ -2346,8 +2569,39 @@
       </section>
     </aside>
 
-    <main class="map-container">
-      <div id="map"></div>
+    <main class="main-workspace">
+      <section class="camera-workspace workspace-panel" id="camera-workspace" data-workspace-panel="cameras">
+        <section class="section compact main-camera-panel" id="camera-section">
+          <div class="section-head">
+            <div class="section-title">
+              <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                <path d="M4 8.5A2.5 2.5 0 0 1 6.5 6h11A2.5 2.5 0 0 1 20 8.5v7A2.5 2.5 0 0 1 17.5 18h-11A2.5 2.5 0 0 1 4 15.5v-7Z" stroke="currentColor" stroke-width="1.7" />
+                <path d="M9.5 6 11 4h2l1.5 2" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" />
+                <path d="M12 14.6a2.6 2.6 0 1 0 0-5.2 2.6 2.6 0 0 0 0 5.2Z" stroke="currentColor" stroke-width="1.7" />
+              </svg>
+              Cameras
+            </div>
+            <span class="section-count" id="camera-count">0</span>
+          </div>
+          <div class="camera-search">
+            <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+              <path d="m20 20-4.2-4.2M10.8 18a7.2 7.2 0 1 1 0-14.4 7.2 7.2 0 0 1 0 14.4Z" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" />
+            </svg>
+            <input id="camera-search" type="search" placeholder="Search camera or ID" autocomplete="off" />
+          </div>
+          <div class="scanner-panel" id="scanner-panel">
+            <div class="scanner-row">
+              <div>
+                <div class="scanner-state" id="scanner-state">AI scanner idle</div>
+                <div class="scanner-detail" id="scanner-detail">Worker pool is ready.</div>
+              </div>
+              <button class="toggle-action" id="scanner-toggle" type="button">Start scan</button>
+            </div>
+          </div>
+          <div class="camera-list" id="camera-list"></div>
+        </section>
+        <div class="map-container">
+          <div id="map"></div>
       <div class="map-toolbar">
         <div class="toolbar-panel">
           <div class="toolbar-title">
@@ -2374,7 +2628,7 @@
           </div>
         </div>
       </div>
-      <aside class="map-insight">
+          <aside class="map-insight">
         <div class="map-insight-title">
           <span>Incident focus</span>
           <span class="section-count" id="incident-focus-count">0</span>
@@ -2382,7 +2636,9 @@
         <div class="map-insight-body" id="incident-focus-copy">
           Waiting for incoming detections from camera modules.
         </div>
-      </aside>
+          </aside>
+        </div>
+      </section>
     </main>
   </div>
 
@@ -2501,6 +2757,7 @@
     };
 
     const API_BASE = window.location.protocol === "file:" ? "http://localhost:3000" : "";
+    const AUTH_SESSION_KEY = "smart-alert-auth-session";
     const cameras = new Map();
     const alerts = [];
     const activeAlerts = new Map();
@@ -2508,7 +2765,7 @@
     const notifiedNearbyAlerts = new Set();
     let activeFilter = "all";
     let activeCameraId = null;
-    let activeWorkspacePanel = "overview";
+    let activeWorkspacePanel = "cameras";
     let streamRefreshTimer = null;
     let tileLayer = null;
     let statsRange = "24h";
@@ -2774,6 +3031,32 @@
       const label = document.getElementById("connection-text");
       badge.className = connected ? "connection-badge connected" : "connection-badge disconnected";
       label.textContent = text;
+      badge.title = text;
+      badge.setAttribute("aria-label", text);
+    }
+
+    function getCurrentUser() {
+      try {
+        const session = JSON.parse(localStorage.getItem(AUTH_SESSION_KEY) || "null");
+        if (!session?.email) return null;
+        return session;
+      } catch (_err) {
+        return null;
+      }
+    }
+
+    function renderAuthState() {
+      const user = getCurrentUser();
+      if (!user) {
+        window.location.replace("login.html");
+        return;
+      }
+      document.getElementById("account-user-name").textContent = user.name || user.email;
+    }
+
+    function logout() {
+      localStorage.removeItem(AUTH_SESSION_KEY);
+      window.location.href = "login.html";
     }
 
     function updateClock() {
@@ -3006,6 +3289,106 @@
       const busiest = Array.from(byCamera.values()).sort((a, b) => b.count - a.count)[0];
       document.getElementById("analytics-busiest").textContent =
         busiest ? maybeRepairMojibake(busiest.name) : "None";
+      renderIncidentLineChart();
+    }
+
+    function getChartWindow() {
+      const explicit = getStatsWindow();
+      const eventTimes = statsEvents
+        .map((event) => new Date(event.timestamp || event.last_seen).getTime())
+        .filter((time) => Number.isFinite(time));
+      const now = new Date();
+
+      if (explicit.from || explicit.to) {
+        const to = explicit.to || now;
+        const fallbackHours = statsRange === "7d" ? 24 * 7 : statsRange === "30d" ? 24 * 30 : 24;
+        const from = explicit.from || new Date(to.getTime() - fallbackHours * 60 * 60 * 1000);
+        return { from, to };
+      }
+
+      if (eventTimes.length) {
+        const min = Math.min(...eventTimes);
+        const max = Math.max(...eventTimes);
+        const span = Math.max(max - min, 60 * 60 * 1000);
+        return { from: new Date(min), to: new Date(max + span * 0.08) };
+      }
+
+      return { from: new Date(now.getTime() - 24 * 60 * 60 * 1000), to: now };
+    }
+
+    function formatChartLabel(date, bucketMs) {
+      if (bucketMs < 24 * 60 * 60 * 1000) {
+        return date.toLocaleTimeString(navigator.language || "vi-VN", { hour: "2-digit", minute: "2-digit" });
+      }
+      return date.toLocaleDateString(navigator.language || "vi-VN", { day: "2-digit", month: "2-digit" });
+    }
+
+    function buildIncidentBuckets() {
+      const { from, to } = getChartWindow();
+      const fromMs = from.getTime();
+      const toMs = Math.max(to.getTime(), fromMs + 60 * 60 * 1000);
+      const bucketCount = statsRange === "7d" ? 7 : statsRange === "30d" ? 10 : 12;
+      const bucketMs = (toMs - fromMs) / bucketCount;
+      const buckets = Array.from({ length: bucketCount }, (_, index) => {
+        const start = new Date(fromMs + bucketMs * index);
+        return { label: formatChartLabel(start, bucketMs), count: 0 };
+      });
+
+      statsEvents.forEach((event) => {
+        const time = new Date(event.timestamp || event.last_seen).getTime();
+        if (!Number.isFinite(time) || time < fromMs || time > toMs) return;
+        const index = Math.min(bucketCount - 1, Math.max(0, Math.floor((time - fromMs) / bucketMs)));
+        buckets[index].count += 1;
+      });
+
+      return buckets;
+    }
+
+    function renderIncidentLineChart() {
+      const svg = document.getElementById("incident-line-chart");
+      const subtitle = document.getElementById("analytics-chart-subtitle");
+      if (!svg || !subtitle) return;
+
+      const buckets = buildIncidentBuckets();
+      const maxValue = Math.max(1, ...buckets.map((bucket) => bucket.count));
+      const width = 980;
+      const height = 280;
+      const pad = { top: 28, right: 26, bottom: 46, left: 42 };
+      const plotWidth = width - pad.left - pad.right;
+      const plotHeight = height - pad.top - pad.bottom;
+      const xFor = (index) => pad.left + (plotWidth * index) / Math.max(1, buckets.length - 1);
+      const yFor = (value) => pad.top + plotHeight - (plotHeight * value) / maxValue;
+      const points = buckets.map((bucket, index) => `${xFor(index).toFixed(1)},${yFor(bucket.count).toFixed(1)}`).join(" ");
+      const areaPoints = `${pad.left},${pad.top + plotHeight} ${points} ${pad.left + plotWidth},${pad.top + plotHeight}`;
+      const total = buckets.reduce((sum, bucket) => sum + bucket.count, 0);
+      const yTicks = [0, Math.ceil(maxValue / 2), maxValue];
+
+      subtitle.textContent = total ? `${total} incidents in ${getRangeLabel()}` : `No incidents in ${getRangeLabel()}`;
+      svg.innerHTML = `
+        <defs>
+          <linearGradient id="incidentLineFill" x1="0" x2="0" y1="0" y2="1">
+            <stop offset="0%" stop-color="rgba(49,214,192,0.28)" />
+            <stop offset="100%" stop-color="rgba(49,214,192,0)" />
+          </linearGradient>
+        </defs>
+        <rect x="0" y="0" width="${width}" height="${height}" fill="transparent"></rect>
+        ${yTicks.map((tick) => `
+          <g>
+            <line x1="${pad.left}" y1="${yFor(tick).toFixed(1)}" x2="${pad.left + plotWidth}" y2="${yFor(tick).toFixed(1)}" stroke="rgba(110,123,136,0.24)" stroke-width="1" />
+            <text x="${pad.left - 12}" y="${(yFor(tick) + 4).toFixed(1)}" fill="currentColor" opacity="0.62" font-size="11" text-anchor="end">${tick}</text>
+          </g>
+        `).join("")}
+        <polyline points="${areaPoints}" fill="url(#incidentLineFill)" stroke="none"></polyline>
+        <polyline points="${points}" fill="none" stroke="#31d6c0" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"></polyline>
+        ${buckets.map((bucket, index) => `
+          <circle cx="${xFor(index).toFixed(1)}" cy="${yFor(bucket.count).toFixed(1)}" r="${bucket.count ? 4 : 3}" fill="${bucket.count ? "#31d6c0" : "#344251"}" stroke="rgba(9,13,18,0.9)" stroke-width="2">
+            <title>${bucket.label}: ${bucket.count}</title>
+          </circle>
+        `).join("")}
+        ${buckets.map((bucket, index) => index % Math.ceil(buckets.length / 6) === 0 || index === buckets.length - 1 ? `
+          <text x="${xFor(index).toFixed(1)}" y="${height - 18}" fill="currentColor" opacity="0.64" font-size="11" text-anchor="middle">${escapeHtml(bucket.label)}</text>
+        ` : "").join("")}
+      `;
     }
 
     async function loadStatisticsEvents() {
@@ -3349,7 +3732,7 @@
     }
 
     function setWorkspacePanel(panelName) {
-      activeWorkspacePanel = panelName || "overview";
+      activeWorkspacePanel = panelName || "cameras";
       document.querySelectorAll("[data-workspace-tab]").forEach((btn) => {
         const active = btn.dataset.workspaceTab === activeWorkspacePanel;
         btn.classList.toggle("active", active);
@@ -3359,7 +3742,10 @@
         panel.hidden = panel.dataset.workspacePanel !== activeWorkspacePanel;
       });
 
-      if (activeWorkspacePanel === "cameras") renderCameraList();
+      if (activeWorkspacePanel === "cameras") {
+        renderCameraList();
+        setTimeout(() => map.invalidateSize(), 80);
+      }
       if (activeWorkspacePanel === "alerts") applyFilter();
       if (activeWorkspacePanel === "news") loadNews();
     }
@@ -3632,6 +4018,14 @@
     document.getElementById("nearby-toggle").addEventListener("click", toggleNearbyNotifications);
     document.getElementById("scanner-toggle").addEventListener("click", toggleScanner);
     document.getElementById("news-refresh").addEventListener("click", () => loadNews({ refresh: true }));
+    document.getElementById("account-logout").addEventListener("click", logout);
+
+    document.querySelectorAll("[data-workspace-tab]").forEach((btn) => {
+      btn.addEventListener("click", () => setWorkspacePanel(btn.dataset.workspaceTab));
+    });
+
+    renderAuthState();
+    setWorkspacePanel("cameras");
 
     document.querySelectorAll("[data-workspace-tab]").forEach((btn) => {
       btn.addEventListener("click", () => setWorkspacePanel(btn.dataset.workspaceTab));
@@ -3679,6 +4073,7 @@
       const focusButton = event.target.closest("[data-focus-camera-id]");
       if (focusButton?.dataset.focusCameraId) {
         event.preventDefault();
+        setWorkspacePanel("cameras");
         focusCamera(focusButton.dataset.focusCameraId);
         return;
       }
