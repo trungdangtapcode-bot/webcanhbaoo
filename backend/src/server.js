@@ -9,6 +9,7 @@ const { Server } = require('socket.io');
 const app = require('./app');
 const { connectDatabase } = require('./config/database');
 const alertService = require('./services/alertService');
+const scannerService = require('./services/multiCameraScannerService');
 
 const PORT = process.env.PORT || 3000;
 
@@ -47,6 +48,12 @@ async function bootstrap() {
 
   // --- Initialize alert service with io ---
   alertService.init(io);
+
+  if (process.env.SCANNER_AUTOSTART === 'true') {
+    scannerService.start().catch((err) => {
+      console.error('[Scanner] autostart failed:', err);
+    });
+  }
 
   // --- Socket.io connection handler ---
   io.on('connection', (socket) => {
