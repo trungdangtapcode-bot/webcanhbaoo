@@ -332,6 +332,7 @@
     const GOOGLE_CLIENT_ID = "952069413746-0oh9didh5r9uflcsjiipbs2ipbfjhg6j.apps.googleusercontent.com";
     let authMode = "login";
     let googleTokenClient = null;
+    let googleRedirectStarted = false;
 
     function getStoredUsers() {
       try {
@@ -418,17 +419,70 @@
             setStatus("Could not read your Google profile.", true);
           }
         },
-        error_callback: () => setStatus("Google login could not be opened.", true),
+        error_callback: () => {
+          if (googleRedirectStarted) return;
+          startGoogleRedirectLogin();
+        },
       });
       return true;
     }
 
+    function getGoogleRedirectUri() {
+      return window.location.origin + window.location.pathname;
+    }
+
+    function startGoogleRedirectLogin() {
+      googleRedirectStarted = true;
+      const params = new URLSearchParams({
+        client_id: GOOGLE_CLIENT_ID,
+        redirect_uri: getGoogleRedirectUri(),
+        response_type: "token",
+        scope: "openid email profile",
+        prompt: "select_account",
+      });
+      window.location.href = "https://accounts.google.com/o/oauth2/v2/auth?" + params.toString();
+    }
+
     function requestGoogleLogin() {
+      setStatus("Opening Google login...");
       if (!initGoogleLogin()) {
-        setStatus("Google login is still loading. Refresh the page and try again.", true);
+        startGoogleRedirectLogin();
         return;
       }
-      googleTokenClient.requestAccessToken({ prompt: "select_account" });
+      try {
+        googleTokenClient.requestAccessToken({ prompt: "select_account" });
+      } catch (_err) {
+        startGoogleRedirectLogin();
+      }
+    }
+
+    async function finishGoogleRedirectLogin() {
+      const hash = new URLSearchParams(window.location.hash.replace(/^#/, ""));
+      const accessToken = hash.get("access_token");
+      const error = hash.get("error");
+      if (!accessToken && !error) return;
+
+      history.replaceState(null, document.title, window.location.pathname + window.location.search);
+      if (error) {
+        setStatus("Google login failed: " + error, true);
+        return;
+      }
+
+      try {
+        const res = await fetch("https://www.googleapis.com/oauth2/v3/userinfo", {
+          headers: { Authorization: "Bearer " + accessToken },
+        });
+        if (!res.ok) throw new Error("Google profile request failed");
+        const profile = await res.json();
+        setAuthSession({
+          name: profile.name || profile.email,
+          email: profile.email,
+          picture: profile.picture,
+          provider: "google",
+        });
+      } catch (_err) {
+        setStatus("Could not read your Google profile.", true);
+      }
     }
 
     function setAuthSession(user) {
@@ -505,6 +559,7 @@
     try {
       if (localStorage.getItem(AUTH_SESSION_KEY)) window.location.href = "index.html";
     } catch (_err) {}
+    finishGoogleRedirectLogin();
   </script>
 </body>
 </html>
