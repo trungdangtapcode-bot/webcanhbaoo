@@ -1,6 +1,6 @@
     const MAP_CENTER = [10.7769, 106.7009];
     const MAP_ZOOM = 13;
-    const HCMC_VIEWPORT = {
+    const CITY_VIEWPORT = {
       minLat: 10.35,
       maxLat: 11.15,
       minLng: 106.35,
@@ -77,6 +77,9 @@
     function applyTheme(theme, options = {}) {
       const nextTheme = theme === "light" ? "light" : "dark";
       document.documentElement.dataset.theme = nextTheme;
+      if (typeof window.syncWebAwesomeTheme === "function") {
+        window.syncWebAwesomeTheme(nextTheme);
+      }
       updateThemeButton(nextTheme);
       setMapTiles(nextTheme);
       if (options.persist !== false) {
@@ -358,14 +361,13 @@
             <div class="popup-icon">${iconSvg("camera")}</div>
             <div>
               <div class="popup-title">${escapeHtml(cam.name)}</div>
-              <div class="popup-meta">${escapeHtml(cam.camera_id)}</div>
               <div class="popup-meta">${escapeHtml(cam.location?.address || "No address")}</div>
             </div>
           </div>
           <div class="popup-badge">Normal</div>
           <button class="popup-action" type="button" data-camera-id="${id}">
             ${iconSvg("play")}
-            Open live stream
+            Watch live
           </button>
         </div>
       `;
@@ -383,8 +385,7 @@
           <div class="popup-heading">
             <div class="popup-icon">${iconSvg(alertData.event_type)}</div>
             <div>
-              <div class="popup-title">${escapeHtml(alertData.camera_name || alertData.camera_id)}</div>
-              <div class="popup-meta">${escapeHtml(alertData.camera_id)}</div>
+              <div class="popup-title">${escapeHtml(alertData.camera_name || "Selected camera")}</div>
               <div class="popup-meta">${formatDateTime(alertData.timestamp)}</div>
             </div>
           </div>
@@ -392,7 +393,7 @@
           ${imgTag}
           <button class="popup-action" type="button" data-camera-id="${cameraId}">
             ${iconSvg("play")}
-            Open live stream
+            Watch live
           </button>
         </div>
       `;
@@ -414,7 +415,7 @@
       let rendered = 0;
 
       cameras.forEach((cam, id) => {
-        const searchable = [cam.data.name, id, cam.data.location?.address].map(maybeRepairMojibake).join(" ").toLowerCase();
+        const searchable = [cam.data.name, cam.data.location?.address].map(maybeRepairMojibake).join(" ").toLowerCase();
         if (query && !searchable.includes(query)) return;
 
         const item = document.createElement("div");
@@ -425,10 +426,9 @@
             <span class="camera-status-dot" id="${cameraDotId(id)}"></span>
             <span class="camera-info">
               <span class="camera-name">${escapeHtml(cam.data.name)}</span>
-              <span class="camera-id">${escapeHtml(id)}</span>
             </span>
           </button>
-          <button class="camera-watch" type="button" title="Open live stream" aria-label="Open live stream" data-camera-id="${escapeAttr(id)}">
+          <button class="camera-watch" type="button" title="Watch live" aria-label="Watch live" data-camera-id="${escapeAttr(id)}">
             ${iconSvg("play")}
           </button>
         `;
@@ -442,7 +442,7 @@
           <div class="empty-state">
             ${iconSvg("camera")}
             <div class="empty-title">No cameras found</div>
-            <div class="empty-copy">Try another camera name, address, or ID.</div>
+            <div class="empty-copy">Try another camera name or area.</div>
           </div>
         `;
       }
@@ -788,8 +788,8 @@
       const isSnapshotStream = cam?.data?.stream_type === "snapshot" || Boolean(snapshotUrl);
       const sourceUrl = snapshotUrl || streamUrl || ("http://localhost:5000/video_feed/" + encodeURIComponent(camId));
 
-      document.getElementById("modal-cam-name").textContent = camName + " (" + camId + ")";
-      document.getElementById("stream-placeholder-title").textContent = isSnapshotStream ? "Connecting to HCMC camera" : "Waiting for stream";
+      document.getElementById("modal-cam-name").textContent = camName;
+      document.getElementById("stream-placeholder-title").textContent = isSnapshotStream ? "Connecting to live camera" : "Waiting for stream";
       document.getElementById("stream-placeholder-copy").textContent = isSnapshotStream
         ? "Live frames are loading through the local camera proxy."
         : "The AI video proxy will appear here when the camera feed is available.";
@@ -799,7 +799,7 @@
         shell.classList.add("stream-offline");
         document.getElementById("stream-placeholder-title").textContent = "Stream source unavailable";
         document.getElementById("stream-placeholder-copy").textContent = isSnapshotStream
-          ? "The HCMC traffic portal did not return a frame for this camera."
+          ? "The traffic portal did not return a frame for this camera."
           : "Start the AI proxy on localhost:5000 to view the processed camera feed.";
       };
 
@@ -1043,7 +1043,7 @@
           ? "AI scanner running"
           : "AI scanner waiting"
         : "AI scanner idle";
-      detailEl.textContent = workerText + " · " + cameraText + " · " + detectorText;
+      detailEl.textContent = workerText + " | " + cameraText + " | " + detectorText;
       toggle.textContent = running ? "Stop scan" : "Start scan";
       toggle.classList.toggle("enabled", running);
     }
@@ -1221,10 +1221,10 @@
         .map((cam) => [cam.data.location.lat, cam.data.location.lng])
         .filter(([lat, lng]) => Number.isFinite(lat) && Number.isFinite(lng));
       const cityPoints = cameraPoints.filter(([lat, lng]) =>
-        lat >= HCMC_VIEWPORT.minLat &&
-        lat <= HCMC_VIEWPORT.maxLat &&
-        lng >= HCMC_VIEWPORT.minLng &&
-        lng <= HCMC_VIEWPORT.maxLng
+        lat >= CITY_VIEWPORT.minLat &&
+        lat <= CITY_VIEWPORT.maxLat &&
+        lng >= CITY_VIEWPORT.minLng &&
+        lng <= CITY_VIEWPORT.maxLng
       );
       const points = cityPoints.length >= 3 ? cityPoints : cameraPoints;
 
@@ -1260,9 +1260,9 @@
         (json.cameras || []).forEach((cam) => addCameraMarker(cam));
       } catch (err) {
         [
-          { camera_id: "CAM_001", name: "Nguyen Hue - Le Loi", location: { lat: 10.7739, lng: 106.7030, address: "District 1, Ho Chi Minh City" } },
-          { camera_id: "CAM_002", name: "Dien Bien Phu - Hai Ba Trung", location: { lat: 10.7865, lng: 106.6953, address: "District 3, Ho Chi Minh City" } },
-          { camera_id: "CAM_003", name: "Binh Trieu Bridge", location: { lat: 10.8231, lng: 106.7114, address: "Thu Duc, Ho Chi Minh City" } },
+          { camera_id: "CAM_001", name: "Nguyen Hue - Le Loi", location: { lat: 10.7739, lng: 106.7030, address: "District 1" } },
+          { camera_id: "CAM_002", name: "Dien Bien Phu - Hai Ba Trung", location: { lat: 10.7865, lng: 106.6953, address: "District 3" } },
+          { camera_id: "CAM_003", name: "Binh Trieu Bridge", location: { lat: 10.8231, lng: 106.7114, address: "Thu Duc" } },
         ].forEach((cam) => addCameraMarker(cam));
       }
 
@@ -1395,6 +1395,12 @@
 let chatRouteLayer = null;
 let chatRouteMarkers = [];
 
+document.querySelector('#chat-panel .chat-header h3').textContent = 'AI Route Assistant';
+document.querySelector('#chat-body .chat-message.ai').textContent = 'Hello! I can help you plan a route. Where are you going?';
+document.getElementById('chat-input').placeholder = 'Type a question or destination...';
+document.getElementById('btn-force-route').title = 'Route to this destination';
+document.querySelector('#chat-form button[type="submit"]').textContent = 'Send';
+
 document.getElementById('chat-toggle').addEventListener('click', () => {
   const panel = document.getElementById('chat-panel');
   panel.hidden = !panel.hidden;
@@ -1486,4 +1492,14 @@ document.getElementById('chat-form').addEventListener('submit', async (e) => {
     input.focus();
   }
 });
-document.getElementById('camera-collapse-btn')?.addEventListener('click', () => { document.getElementById('camera-section').classList.toggle('collapsed'); });
+document.getElementById("camera-collapse-btn")?.addEventListener("click", (event) => {
+  const button = event.currentTarget;
+  const section = document.getElementById("camera-section");
+  const workspace = document.getElementById("camera-workspace");
+  const collapsed = section.classList.toggle("collapsed");
+  workspace?.classList.toggle("camera-list-collapsed", collapsed);
+  button.setAttribute("aria-expanded", String(!collapsed));
+  button.setAttribute("aria-label", collapsed ? "Show camera list" : "Hide camera list");
+  button.setAttribute("title", collapsed ? "Show camera list" : "Hide camera list");
+  window.setTimeout(() => map.invalidateSize(), 220);
+});

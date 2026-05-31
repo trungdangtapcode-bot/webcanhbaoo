@@ -1,12 +1,20 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" class="wa-theme-default wa-palette-default wa-brand-blue wa-dark">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <meta name="description" content="Smart Alert System - real-time traffic, flood, and fire detection dashboard" />
   <title>Smart Alert System</title>
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@awesome.me/webawesome@3.7.0/dist/styles/themes/default.css" />
   <script>
+    function syncWebAwesomeTheme(theme) {
+      const root = document.documentElement;
+      root.classList.add("wa-theme-default", "wa-palette-default", "wa-brand-blue");
+      root.classList.toggle("wa-light", theme === "light");
+      root.classList.toggle("wa-dark", theme !== "light");
+    }
+
     (function initStoredTheme() {
       try {
         const requestedTheme = new URLSearchParams(window.location.search).get("theme");
@@ -16,8 +24,10 @@
           ? requestedTheme
           : savedTheme || (prefersLight ? "light" : "dark");
         document.documentElement.dataset.theme = theme;
+        syncWebAwesomeTheme(theme);
       } catch (_err) {
         document.documentElement.dataset.theme = "dark";
+        syncWebAwesomeTheme("dark");
       }
     })();
     (function requireAuth() {
@@ -66,7 +76,7 @@
         <div class="status-row">
           <div class="status-tile">
             <div class="status-label">Coverage</div>
-            <div class="status-value">HCMC grid</div>
+            <div class="status-value">City grid</div>
           </div>
           <div class="status-tile">
             <div class="status-label">Last sync</div>
@@ -306,7 +316,7 @@
             </div>
             <div style="display:flex; gap:8px; align-items:center;">
               <span class="section-count" id="camera-count">0</span>
-              <button id="camera-collapse-btn" aria-label="Toggle camera list" style="background:none; border:none; color:var(--text-muted); cursor:pointer;">
+              <button class="camera-collapse-toggle" id="camera-collapse-btn" type="button" aria-label="Hide camera list" aria-expanded="true" title="Hide camera list">
                 <svg viewBox="0 0 24 24" fill="none" width="18" height="18">
                   <path d="M6 15l6-6 6 6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
                 </svg>
@@ -317,7 +327,7 @@
             <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
               <path d="m20 20-4.2-4.2M10.8 18a7.2 7.2 0 1 1 0-14.4 7.2 7.2 0 0 1 0 14.4Z" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" />
             </svg>
-            <input id="camera-search" type="search" placeholder="Search camera or ID" autocomplete="off" />
+            <input id="camera-search" type="search" placeholder="Search camera or area" autocomplete="off" />
           </div>
           <div class="scanner-panel" id="scanner-panel">
             <div class="scanner-row">
@@ -335,7 +345,7 @@
       <div class="map-toolbar">
         <div class="toolbar-panel">
           <div class="toolbar-title">
-            <h2>HCMC Operations Map</h2>
+            <h2>Operations Map</h2>
             <p id="operations-clock">--</p>
           </div>
           <div class="toolbar-actions">
