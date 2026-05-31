@@ -5,7 +5,6 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <meta name="description" content="Smart Alert login and registration" />
   <title>Smart Alert Login</title>
-  <script src="https://accounts.google.com/gsi/client" async defer></script>
   <script>
     (function initStoredTheme() {
       try {
@@ -243,8 +242,8 @@
       background: #ea4335;
     }
 
-    .social-icon.facebook {
-      background: #1877f2;
+    .social-icon.guest {
+      background: #5f6f7f;
     }
 
     .auth-field {
@@ -317,9 +316,9 @@
           <span class="social-icon google">G</span>
           Google
         </button>
-        <button class="social-button" type="button" data-social-provider="facebook">
-          <span class="social-icon facebook">f</span>
-          Facebook
+        <button class="social-button" id="guest-login" type="button">
+          <span class="social-icon guest">K</span>
+          Guest
         </button>
       </div>
     </section>
@@ -331,8 +330,6 @@
     const THEME_STORAGE_KEY = "smart-alert-theme";
     const GOOGLE_CLIENT_ID = "952069413746-0oh9didh5r9uflcsjiipbs2ipbfjhg6j.apps.googleusercontent.com";
     let authMode = "login";
-    let googleTokenClient = null;
-    let googleRedirectStarted = false;
 
     function getStoredUsers() {
       try {
@@ -381,50 +378,12 @@
         : "");
     }
 
-    function loginWithSocial(provider) {
-      const label = provider === "facebook" ? "Facebook" : "Google";
+    function loginAsGuest() {
       setAuthSession({
-        name: label + " User",
-        email: provider + "@social.local",
+        name: "Guest",
+        email: "guest@local",
+        provider: "guest",
       });
-    }
-
-    function initGoogleLogin() {
-      if (!window.google?.accounts?.oauth2) return false;
-      if (googleTokenClient) return true;
-
-      googleTokenClient = google.accounts.oauth2.initTokenClient({
-        client_id: GOOGLE_CLIENT_ID,
-        scope: "openid email profile",
-        prompt: "select_account",
-        callback: async (tokenResponse) => {
-          if (!tokenResponse?.access_token) {
-            setStatus("Google login was cancelled.", true);
-            return;
-          }
-
-          try {
-            const res = await fetch("https://www.googleapis.com/oauth2/v3/userinfo", {
-              headers: { Authorization: "Bearer " + tokenResponse.access_token },
-            });
-            if (!res.ok) throw new Error("Google profile request failed");
-            const profile = await res.json();
-            setAuthSession({
-              name: profile.name || profile.email,
-              email: profile.email,
-              picture: profile.picture,
-              provider: "google",
-            });
-          } catch (_err) {
-            setStatus("Could not read your Google profile.", true);
-          }
-        },
-        error_callback: () => {
-          if (googleRedirectStarted) return;
-          startGoogleRedirectLogin();
-        },
-      });
-      return true;
     }
 
     function getGoogleRedirectUri() {
@@ -432,7 +391,6 @@
     }
 
     function startGoogleRedirectLogin() {
-      googleRedirectStarted = true;
       const params = new URLSearchParams({
         client_id: GOOGLE_CLIENT_ID,
         redirect_uri: getGoogleRedirectUri(),
@@ -445,15 +403,7 @@
 
     function requestGoogleLogin() {
       setStatus("Opening Google login...");
-      if (!initGoogleLogin()) {
-        startGoogleRedirectLogin();
-        return;
-      }
-      try {
-        googleTokenClient.requestAccessToken({ prompt: "select_account" });
-      } catch (_err) {
-        startGoogleRedirectLogin();
-      }
+      startGoogleRedirectLogin();
     }
 
     async function finishGoogleRedirectLogin() {
@@ -489,6 +439,7 @@
       localStorage.setItem(AUTH_SESSION_KEY, JSON.stringify({
         email: user.email,
         name: user.name || user.email,
+        provider: user.provider || "local",
         signedInAt: new Date().toISOString(),
       }));
       window.location.href = "index.html";
@@ -544,13 +495,8 @@
       btn.addEventListener("click", () => setAuthMode(btn.dataset.authMode));
     });
 
-    document.querySelectorAll("[data-social-provider]").forEach((btn) => {
-      btn.addEventListener("click", () => {
-        loginWithSocial(btn.dataset.socialProvider);
-      });
-    });
-
     document.getElementById("google-login").addEventListener("click", requestGoogleLogin);
+    document.getElementById("guest-login").addEventListener("click", loginAsGuest);
     document.getElementById("auth-form").addEventListener("submit", submitAuthForm);
     document.getElementById("theme-toggle").addEventListener("click", () => {
       applyTheme(document.documentElement.dataset.theme === "light" ? "dark" : "light");
