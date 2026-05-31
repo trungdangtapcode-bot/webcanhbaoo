@@ -1,0 +1,42 @@
+name: CI/CD Deployment
+
+on:
+  push:
+    branches:
+      - main # Chạy workflow này mỗi khi có code mới đẩy lên nhánh main
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Deploy to VPS
+      uses: appleboy/ssh-action@v1.0.3
+      with:
+        host: ${{ secrets.VPS_HOST }}
+        username: ${{ secrets.VPS_USERNAME }}
+        key: ${{ secrets.VPS_SSH_KEY }}
+        script: |
+          # Di chuyển vào thư mục dự án
+          cd ~/webcanhbaoo
+          
+          # Cập nhật code mới nhất từ GitHub
+          git reset --hard
+          git pull origin main
+          
+          # Cài đặt thư viện mới cho Node.js (nếu có)
+          cd backend
+          npm install
+          
+          # Cài đặt thư viện mới cho Python (nếu có)
+          cd ../ai_module
+          source venv/bin/activate
+          pip install -r requirements.txt
+          
+          # Khởi động lại toàn bộ hệ thống qua PM2
+          pm2 restart all
+          
+          echo "🎉 Triển khai thành công!"
