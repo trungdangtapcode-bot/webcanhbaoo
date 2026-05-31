@@ -1,7 +1,9 @@
 """
 Flood Detection Module
-OpenCV HSV threshold: H 90-130, S 30-255, V 30-200
+Dual HSV threshold: muddy brown (H 5-35) + grey-blue urban water (H 90-130).
+Bottom-half ROI analysis to exclude sky/signage.
 water_ratio > 0.15 triggers WATCH, > 0.30 triggers ALERT.
+Only sends events on state change or when in WATCH/ALERT state.
 Dynamic polling: 300s (normal) → 30s (watch) → 10s (alert).
 Background subtraction to skip static frames.
 """
@@ -26,14 +28,21 @@ API_TOKEN = os.getenv("API_TOKEN", "")
 JPEG_QUALITY = 70
 RESIZE_DIM = (640, 640)
 
-# HSV range for muddy/brown water detection
-HSV_LOWER = np.array([5, 30, 30])
-HSV_UPPER = np.array([35, 200, 180])
+# ── Dual HSV ranges ──────────────────────────────────────────────────────────
+# Range 1: muddy/brown flood water
+MUDDY_LOWER = np.array([5,  30,  30])
+MUDDY_UPPER = np.array([35, 200, 180])
+# Range 2: grey-blue stagnant water on urban roads / after rain
+GREY_LOWER  = np.array([90,  15,  30])
+GREY_UPPER  = np.array([130, 150, 180])
+
+# Minimum connected-component area (px²) to filter out noise
+MIN_BLOB_AREA = int(os.getenv("FLOOD_MIN_BLOB_AREA", "800"))
 
 # Dynamic polling intervals (seconds)
 POLL_NORMAL = 300   # 5 minutes
-POLL_WATCH = 30     # 30 seconds
-POLL_ALERT = 10     # 10 seconds
+POLL_WATCH  = 30    # 30 seconds
+POLL_ALERT  = 10    # 10 seconds
 
 # Thresholds
 WATCH_THRESHOLD = 0.15
@@ -77,7 +86,7 @@ def resolve_stream_url(url: str) -> str:
     if not is_youtube_url(url):
         return url
 
-    log.info(f"Detected YouTube URL — extracting stream with yt-dlp...")
+    log.info("Detected YouTube URL — extracting stream with yt-dlp...")
     try:
         import yt_dlp
 
@@ -103,18 +112,37 @@ def resolve_stream_url(url: str) -> str:
 
 
 def compute_water_ratio(frame: np.ndarray) -> float:
-    """Compute ratio of water-colored pixels using HSV thresholding."""
-    hsv = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
-    mask = cv2.inRange(hsv, HSV_LOWER, HSV_UPPER)
+    """
+    Compute ratio of water-coloured pixels using dual-range HSV thresholding.
+    Only analyses the bottom 2/3 of the frame to exclude sky and signage.
+    Applies connected-component area filter to remove noise specks.
+    """
+    h, w = frame.shape[:2]
+    roi_start = h // 3          # analyse from top-third downward
+    frame_roi = frame[roi_start:, :]
+
+    hsv = cv2.cvtColor(frame_roi, cv2.COLOR_BGR2HSV)
+
+    mask = (
+        cv2.inRange(hsv, MUDDY_LOWER, MUDDY_UPPER)
+        | cv2.inRange(hsv, GREY_LOWER, GREY_UPPER)
+    )
 
     # Morphological cleanup
-    kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (5, 5))
-    mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, kernel)
+    kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (7, 7))
+    mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN,  kernel)
     mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, kernel)
 
-    water_pixels = cv2.countNonZero(mask)
-    total_pixels = frame.shape[0] * frame.shape[1]
-    return water_pixels / total_pixels
+    # Remove small blobs (noise, reflections on dry surfaces)
+    n_labels, labels, stats, _ = cv2.connectedComponentsWithStats(mask, connectivity=8)
+    filtered = np.zeros_like(mask)
+    for i in range(1, n_labels):
+        if stats[i, cv2.CC_STAT_AREA] >= MIN_BLOB_AREA:
+            filtered[labels == i] = 255
+
+    roi_area = frame_roi.shape[0] * w
+    water_pixels = float(cv2.countNonZero(filtered))
+    return water_pixels / float(roi_area) if roi_area > 0 else 0.0
 
 
 def send_event(data: dict):
@@ -143,7 +171,8 @@ def get_poll_interval(ratio: float) -> int:
 def main():
     log.info(f"Starting flood detection module for {CAMERA_ID}")
     log.info(f"RTSP: {RTSP_URL}")
-    log.info(f"HSV range: {HSV_LOWER} → {HSV_UPPER}")
+    log.info(f"Muddy HSV: {MUDDY_LOWER} → {MUDDY_UPPER}")
+    log.info(f"Grey HSV:  {GREY_LOWER} → {GREY_UPPER}")
     log.info(f"Thresholds: WATCH={WATCH_THRESHOLD}, ALERT={ALERT_THRESHOLD}")
 
     # ─── Resolve video source ───
@@ -164,7 +193,7 @@ def main():
             log.warning("Frame read failed — reconnecting in 5s")
             cap.release()
             time.sleep(5)
-            stream_url = resolve_stream_url(RTSP_URL) # Re-resolve in case it expired
+            stream_url = resolve_stream_url(RTSP_URL)  # Re-resolve in case it expired
             cap = cv2.VideoCapture(stream_url)
             continue
 
@@ -173,13 +202,14 @@ def main():
 
         if not has_significant_motion(prev_gray, gray):
             prev_gray = gray
-            poll = get_poll_interval(0)
+            # In WATCH/ALERT state, keep polling even without motion
+            poll = get_poll_interval(0) if current_state == "NORMAL" else get_poll_interval(WATCH_THRESHOLD)
             time.sleep(poll)
             continue
 
         prev_gray = gray
 
-        # ─── Compute water ratio ───
+        # ─── Compute water ratio (bottom-2/3 ROI, dual HSV) ───
         ratio = compute_water_ratio(frame)
 
         # Determine state
@@ -192,16 +222,22 @@ def main():
 
         log.info(f"Water ratio: {ratio:.4f} | State: {current_state} → {new_state}")
 
-        # ─── Send event ───
-        event = {
-            "camera_id": CAMERA_ID,
-            "event_type": "flood",
-            "confidence": round(min(ratio * 2, 1.0), 3),
-            "water_ratio": round(ratio, 4),
-            "image_base64": encode_frame(frame),
-            "timestamp": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
-        }
-        send_event(event)
+        # ─── Only send event when state changes OR when active (WATCH/ALERT) ───
+        state_changed = new_state != current_state
+        is_active = new_state in ("WATCH", "ALERT")
+
+        if state_changed or is_active:
+            event = {
+                "camera_id": CAMERA_ID,
+                "event_type": "flood",
+                "confidence": round(min(ratio * 2.5, 1.0), 3),
+                "water_ratio": round(ratio, 4),
+                "image_base64": encode_frame(frame),
+                "timestamp": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+                # Include active=False signal when going back to NORMAL
+                **({"active": False, "resolved": True} if new_state == "NORMAL" and state_changed else {}),
+            }
+            send_event(event)
 
         current_state = new_state
         poll = get_poll_interval(ratio)

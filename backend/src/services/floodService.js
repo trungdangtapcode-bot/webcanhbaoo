@@ -1,14 +1,20 @@
 /**
- * Flood Detection — State Machine
+ * Flood Detection — State Machine with Hysteresis
  *
  * States: NORMAL → WATCH → ALERT
- * Transitions:
+ *
+ * Upward transitions (strict thresholds):
  *   NORMAL → WATCH  when water_ratio >= 0.15
  *   WATCH  → ALERT  when water_ratio >= 0.30
- *   ALERT  → WATCH  when water_ratio <  0.30
- *   WATCH  → NORMAL when water_ratio <  0.15
+ *
+ * Downward transitions use LOWER hysteresis thresholds to avoid oscillation:
+ *   ALERT  → WATCH  when water_ratio <  0.22  (not 0.30)
+ *   WATCH  → NORMAL when water_ratio <  0.10  (not 0.15)
  *
  * Alerts emitted only on upward transitions (NORMAL→WATCH, WATCH→ALERT).
+ *
+ * WATCH confirmation: requires WATCH_CONFIRM_FRAMES consecutive WATCH readings
+ * before escalating to ALERT (prevents brief puddle reflections from alerting).
  */
 
 const STATES = {
@@ -17,12 +23,22 @@ const STATES = {
   ALERT: 'ALERT',
 };
 
-const THRESHOLDS = {
+// Up-thresholds (trigger escalation)
+const UP_THRESHOLDS = {
   WATCH: 0.15,
   ALERT: 0.30,
 };
 
-// Map<camera_id, { state, lastRatio, updatedAt }>
+// Down-thresholds (trigger de-escalation) — lower than up-thresholds (hysteresis)
+const DOWN_THRESHOLDS = {
+  WATCH_TO_NORMAL: 0.10,
+  ALERT_TO_WATCH:  0.22,
+};
+
+// Require this many consecutive WATCH frames before escalating to ALERT
+const WATCH_CONFIRM_FRAMES = 3;
+
+// Map<camera_id, { state, lastRatio, updatedAt, watchFrames }>
 const floodStates = new Map();
 
 /**
@@ -38,6 +54,7 @@ function evaluate(cameraId, waterRatio) {
       state: STATES.NORMAL,
       lastRatio: 0,
       updatedAt: Date.now(),
+      watchFrames: 0,
     });
   }
 
@@ -45,23 +62,49 @@ function evaluate(cameraId, waterRatio) {
   const prevState = entry.state;
   let newState = prevState;
 
-  if (waterRatio >= THRESHOLDS.ALERT) {
-    newState = STATES.ALERT;
-  } else if (waterRatio >= THRESHOLDS.WATCH) {
-    newState = STATES.WATCH;
-  } else {
-    newState = STATES.NORMAL;
+  // ── Compute next state with hysteresis ──────────────────────────────────
+  if (prevState === STATES.NORMAL) {
+    // Only escalate upward on strict up-threshold
+    if (waterRatio >= UP_THRESHOLDS.ALERT) {
+      newState = STATES.ALERT;
+    } else if (waterRatio >= UP_THRESHOLDS.WATCH) {
+      newState = STATES.WATCH;
+    }
+  } else if (prevState === STATES.WATCH) {
+    if (waterRatio >= UP_THRESHOLDS.ALERT) {
+      // Only escalate to ALERT after enough consecutive WATCH frames
+      entry.watchFrames += 1;
+      if (entry.watchFrames >= WATCH_CONFIRM_FRAMES) {
+        newState = STATES.ALERT;
+      }
+      // else: stay WATCH until confirmed
+    } else if (waterRatio < DOWN_THRESHOLDS.WATCH_TO_NORMAL) {
+      // De-escalate below hysteresis threshold
+      newState = STATES.NORMAL;
+      entry.watchFrames = 0;
+    } else {
+      // Still in WATCH range — stay WATCH
+      entry.watchFrames = 0;
+    }
+  } else if (prevState === STATES.ALERT) {
+    if (waterRatio < DOWN_THRESHOLDS.WATCH_TO_NORMAL) {
+      newState = STATES.NORMAL;
+      entry.watchFrames = 0;
+    } else if (waterRatio < DOWN_THRESHOLDS.ALERT_TO_WATCH) {
+      newState = STATES.WATCH;
+      entry.watchFrames = 0;
+    }
+    // else: stay ALERT
   }
 
   entry.state = newState;
   entry.lastRatio = waterRatio;
   entry.updatedAt = Date.now();
 
-  // Only emit alert on UPWARD transitions
+  // ── Emit alert only on upward transitions ───────────────────────────────
   const shouldAlert =
-    (prevState === STATES.NORMAL && newState === STATES.WATCH) ||
-    (prevState === STATES.WATCH && newState === STATES.ALERT) ||
-    (prevState === STATES.NORMAL && newState === STATES.ALERT);
+    (prevState === STATES.NORMAL && (newState === STATES.WATCH || newState === STATES.ALERT)) ||
+    (prevState === STATES.WATCH  && newState === STATES.ALERT);
 
   let severity = 'low';
   if (newState === STATES.ALERT) severity = 'high';

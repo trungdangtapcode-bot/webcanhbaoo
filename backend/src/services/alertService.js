@@ -15,12 +15,15 @@ function parsePositiveInt(value, fallback) {
   return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
 }
 
-const DEFAULT_TTL_MS = parsePositiveInt(process.env.ACTIVE_ALERT_TTL_MS, 120000);
+const DEFAULT_TTL_MS = parsePositiveInt(process.env.ACTIVE_ALERT_TTL_MS, 900000);
 const EVENT_TTL_MS = {
   fire: parsePositiveInt(process.env.FIRE_ALERT_TTL_MS, DEFAULT_TTL_MS),
   flood: parsePositiveInt(process.env.FLOOD_ALERT_TTL_MS, DEFAULT_TTL_MS),
   traffic_jam: parsePositiveInt(process.env.TRAFFIC_ALERT_TTL_MS, DEFAULT_TTL_MS),
 };
+
+// Minimum time between alert_update emissions for the same alert (avoid scan spam)
+const UPDATE_COOLDOWN_MS = parsePositiveInt(process.env.ALERT_UPDATE_COOLDOWN_MS, 5 * 60 * 1000);
 
 function getAlertTtlMs(eventType) {
   return EVENT_TTL_MS[eventType] || DEFAULT_TTL_MS;
@@ -36,7 +39,8 @@ function normalizeTimestamp(value) {
 }
 
 function serializeAlert(entry) {
-  const { timer: _timer, ...payload } = entry;
+  // Exclude internal fields: timer (setTimeout handle) and _lastEmittedAt (throttle tracker)
+  const { timer: _timer, _lastEmittedAt: _lea, ...payload } = entry;
   return payload;
 }
 
@@ -102,25 +106,43 @@ function upsertActiveAlert(alertData, options = {}) {
       ttl_ms: ttlMs,
     },
     timer: existing?.timer || null,
+    // Track last time we emitted an update so we can throttle update spam
+    _lastEmittedAt: existing?._lastEmittedAt || null,
   };
 
   activeAlerts.set(key, entry);
   scheduleExpiry(key, ttlMs);
 
   const payload = serializeAlert(entry);
-  const eventName = existing ? 'alert_update' : 'alert';
 
-  if (ioInstance) {
-    ioInstance.emit(eventName, payload);
-  } else {
-    console.error('[AlertService] Socket.io not initialized');
+  if (!existing) {
+    // Brand-new alert — always emit immediately
+    if (ioInstance) ioInstance.emit('alert', payload);
+    else console.error('[AlertService] Socket.io not initialized');
+    entry._lastEmittedAt = Date.now();
+    console.log(`[AlertService] alert: ${payload.event_type} @ ${payload.camera_id} (${payload.severity})`);
+    return { created: true, alert: payload };
   }
 
-  console.log(
-    `[AlertService] ${eventName}: ${payload.event_type} @ ${payload.camera_id} (${payload.severity})`
-  );
+  // Existing alert — check if we should emit an update
+  const severityRank = { low: 0, medium: 1, high: 2, critical: 3 };
+  const severityEscalated =
+    (severityRank[alertData.severity] ?? 1) > (severityRank[existing.severity] ?? 1);
+  const cooldownElapsed =
+    !entry._lastEmittedAt || (Date.now() - entry._lastEmittedAt) >= UPDATE_COOLDOWN_MS;
 
-  return { created: !existing, alert: payload };
+  if (severityEscalated || cooldownElapsed) {
+    if (ioInstance) ioInstance.emit('alert_update', payload);
+    else console.error('[AlertService] Socket.io not initialized');
+    entry._lastEmittedAt = Date.now();
+    console.log(`[AlertService] alert_update: ${payload.event_type} @ ${payload.camera_id} (${payload.severity})`);
+  } else {
+    console.log(
+      `[AlertService] alert_update suppressed (cooldown): ${payload.event_type} @ ${payload.camera_id}`
+    );
+  }
+
+  return { created: false, alert: payload };
 }
 
 /**

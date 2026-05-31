@@ -5,6 +5,7 @@ const { DEMO_CAMERAS } = require('./cameraController');
 const trafficService = require('../services/trafficService');
 const floodService = require('../services/floodService');
 const alertService = require('../services/alertService');
+const trafficVolumeService = require('../services/trafficVolumeService');
 
 const VALID_EVENT_TYPES = ['traffic_jam', 'fire', 'flood'];
 
@@ -162,6 +163,13 @@ async function createEvent(req, res) {
           vehicle_count,
           duration: result.duration,
         };
+        // Record vehicle count for volume tracking regardless of jam status
+        trafficVolumeService.recordCount(
+          camera_id,
+          vehicle_count || 0,
+          { lat: camera.location?.lat, lng: camera.location?.lng },
+          camera.name,
+        );
         break;
       }
 

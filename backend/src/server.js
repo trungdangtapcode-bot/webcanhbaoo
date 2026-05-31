@@ -10,6 +10,7 @@ const app = require('./app');
 const { connectDatabase } = require('./config/database');
 const alertService = require('./services/alertService');
 const scannerService = require('./services/multiCameraScannerService');
+const trafficVolumeService = require('./services/trafficVolumeService');
 
 const PORT = process.env.PORT || 3000;
 
@@ -48,6 +49,7 @@ async function bootstrap() {
 
   // --- Initialize alert service with io ---
   alertService.init(io);
+  trafficVolumeService.init(io);
 
   if (process.env.SCANNER_AUTOSTART === 'true') {
     scannerService.start().catch((err) => {

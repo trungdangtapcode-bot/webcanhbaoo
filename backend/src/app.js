@@ -8,6 +8,8 @@ const eventsRouter = require('./routes/events');
 const camerasRouter = require('./routes/cameras');
 const newsRouter = require('./routes/news');
 const scannerRouter = require('./routes/scanner');
+const trafficRouter = require('./routes/traffic');
+const chatRouter = require('./routes/chat');
 
 const app = express();
 
@@ -26,6 +28,8 @@ app.use('/api/events', eventsRouter);
 app.use('/api/cameras', camerasRouter);
 app.use('/api/news', newsRouter);
 app.use('/api/scanner', scannerRouter);
+app.use('/api/traffic', trafficRouter);
+app.use('/api/chat', chatRouter);
 
 // --- Health check ---
 app.get('/api/health', (req, res) => {

@@ -2,6 +2,7 @@ const Event = require('../models/Event');
 const Camera = require('../models/Camera');
 const { isDatabaseConnected } = require('../config/database');
 const alertService = require('./alertService');
+const trafficVolumeService = require('./trafficVolumeService');
 const { fetchSnapshot, getHcmCameras } = require('./hcmCameraService');
 
 const VALID_EVENT_TYPES = new Set(['traffic_jam', 'fire', 'flood']);
@@ -251,6 +252,17 @@ async function processCamera(camera, tickId) {
   for (const detection of detections) {
     published.push(await publishDetection(camera, detection, frame));
   }
+
+  // Record vehicle count for traffic volume tracking.
+  // Use the traffic_jam detection vehicle_count if present, otherwise 0.
+  const trafficDetection = detections.find((d) => d.event_type === 'traffic_jam' || d.event_type === 'traffic_volume');
+  const vehicleCount = trafficDetection?.vehicle_count ?? 0;
+  trafficVolumeService.recordCount(
+    camera.camera_id,
+    vehicleCount,
+    { lat: camera.location?.lat, lng: camera.location?.lng },
+    camera.name,
+  );
 
   return {
     camera_id: camera.camera_id,
