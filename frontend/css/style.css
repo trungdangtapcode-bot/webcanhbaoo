@@ -229,27 +229,40 @@
       flex: 0 0 auto;
     }
 
+    .mt-auto {
+      margin-top: auto;
+    }
+
     .account-panel {
-      display: grid;
-      gap: 10px;
-      padding: 12px 14px;
-      border-bottom: 1px solid var(--border);
-      background: rgba(255, 255, 255, 0.018);
+      padding: 16px 20px 24px;
     }
 
     .account-profile {
-      display: grid;
-      grid-template-columns: minmax(0, 1fr) auto;
+      display: flex;
       align-items: center;
-      gap: 8px;
+      gap: 12px;
+    }
+    
+    .account-avatar {
+      width: 32px;
+      height: 32px;
+      border-radius: 50%;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: var(--text-soft);
+      flex: 0 0 auto;
+    }
+    .account-avatar svg {
+      width: 16px;
+      height: 16px;
     }
 
     .account-user {
       min-width: 0;
-      padding: 10px;
-      border: 1px solid var(--border);
-      border-radius: var(--radius);
-      background: var(--panel-soft);
+      flex: 1;
     }
 
     .account-user-name {
@@ -261,26 +274,25 @@
       font-weight: 760;
     }
 
-    .account-user-role {
-      margin-top: 3px;
-      color: var(--text-muted);
-      font-size: 11px;
-    }
-
-    .account-logout {
-      min-height: 38px;
-      padding: 0 11px;
-      border: 1px solid var(--border);
+    .account-logout-icon {
+      width: 32px;
+      height: 32px;
       border-radius: var(--radius);
-      background: var(--surface);
-      color: var(--text-soft);
-      font-size: 12px;
-      font-weight: 760;
-      transition: border-color var(--fast), background var(--fast), color var(--fast);
+      background: transparent;
+      border: none;
+      color: var(--text-muted);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      transition: all var(--fast);
+      flex: 0 0 auto;
     }
-
-    .account-logout:hover {
-      border-color: rgba(255, 91, 99, 0.45);
+    .account-logout-icon svg {
+      width: 18px;
+      height: 18px;
+    }
+    .account-logout-icon:hover {
       background: rgba(255, 91, 99, 0.1);
       color: var(--red);
     }

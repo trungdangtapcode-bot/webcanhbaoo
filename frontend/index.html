@@ -86,16 +86,6 @@
         </div>
       </header>
 
-      <section class="account-panel" aria-label="Account">
-        <div class="account-profile">
-          <div class="account-user">
-            <div class="account-user-name" id="account-user-name">Operator</div>
-            <div class="account-user-role">Signed in</div>
-          </div>
-          <button class="account-logout" id="account-logout" type="button">Logout</button>
-        </div>
-      </section>
-
       <section class="stat-grid" aria-label="Alert summary">
         <div class="stat-card">
           <div class="stat-value" id="stat-cameras">0</div>
@@ -163,6 +153,20 @@
           News
         </button>
       </nav>
+
+      <section class="account-panel mt-auto" aria-label="Account">
+        <div class="account-profile">
+          <div class="account-avatar">
+            <svg viewBox="0 0 24 24" fill="none"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2M12 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8Z" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          </div>
+          <div class="account-user">
+            <div class="account-user-name" id="account-user-name">Operator</div>
+          </div>
+          <button class="account-logout-icon" id="account-logout" type="button" title="Logout">
+            <svg viewBox="0 0 24 24" fill="none"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          </button>
+        </div>
+      </section>
 
       <section class="section compact workspace-panel" id="analytics-section" data-workspace-panel="overview" hidden>
         <div class="section-head">
