@@ -26,7 +26,12 @@ async function bootstrap() {
   });
 
   // --- Redis adapter (optional — skip if REDIS_URL not set) ---
-  if (process.env.REDIS_URL) {
+  const redisUrl = process.env.REDIS_URL;
+  const redisDisabled =
+    process.env.DISABLE_REDIS === 'true' ||
+    ['0', 'false', 'off', 'disabled', 'none'].includes(String(redisUrl || '').toLowerCase());
+
+  if (redisUrl && !redisDisabled) {
     try {
       const { createRedisClients } = require('./config/redis');
       const { createAdapter } = require('@socket.io/redis-adapter');

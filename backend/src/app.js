@@ -6,6 +6,7 @@ const path = require('path');
 
 const eventsRouter = require('./routes/events');
 const camerasRouter = require('./routes/cameras');
+const newsRouter = require('./routes/news');
 
 const app = express();
 
@@ -22,6 +23,7 @@ app.use(express.static(path.join(__dirname, '../../frontend')));
 // --- API Routes ---
 app.use('/api/events', eventsRouter);
 app.use('/api/cameras', camerasRouter);
+app.use('/api/news', newsRouter);
 
 // --- Health check ---
 app.get('/api/health', (req, res) => {

@@ -28,6 +28,36 @@ const cameraSchema = new mongoose.Schema(
       type: Boolean,
       default: true,
     },
+    source: {
+      type: String,
+      default: 'local',
+      trim: true,
+      index: true,
+    },
+    external_id: {
+      type: String,
+      default: null,
+      trim: true,
+    },
+    stream_type: {
+      type: String,
+      enum: ['proxy', 'snapshot', 'hls', 'mjpeg'],
+      default: 'proxy',
+    },
+    stream_url: {
+      type: String,
+      default: null,
+      trim: true,
+    },
+    snapshot_url: {
+      type: String,
+      default: null,
+      trim: true,
+    },
+    metadata: {
+      type: mongoose.Schema.Types.Mixed,
+      default: {},
+    },
     token_hash: {
       type: String,
       default: null,
