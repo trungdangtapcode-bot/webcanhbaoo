@@ -29,7 +29,7 @@ import requests
 import time
 from collections import defaultdict, deque
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional, Tuple
 
 import cv2
 import numpy as np
@@ -58,6 +58,15 @@ FLOOD_MIN_AREA = int(os.getenv("DETECTOR_FLOOD_MIN_AREA", "800"))
 TRAFFIC_MIN_VEHICLES = int(os.getenv("DETECTOR_TRAFFIC_MIN_VEHICLES", "6"))
 # Minimum vehicle density (vehicles per 10 000 px²) to confirm jam
 TRAFFIC_MIN_DENSITY = float(os.getenv("DETECTOR_TRAFFIC_MIN_DENSITY", "0.015"))
+# Displacement thresholds (pixels) for speed classification between frames
+TRAFFIC_SPEED_STOPPED = float(os.getenv("DETECTOR_TRAFFIC_SPEED_STOPPED", "5.0"))
+TRAFFIC_SPEED_SLOW = float(os.getenv("DETECTOR_TRAFFIC_SPEED_SLOW", "15.0"))
+# Number of consecutive slow/stopped frames to confirm a traffic jam
+TRAFFIC_JAM_CONFIRM_FRAMES = int(os.getenv("DETECTOR_TRAFFIC_JAM_CONFIRM", "3"))
+# Number of consecutive flowing frames to clear a jam
+TRAFFIC_JAM_CLEAR_FRAMES = int(os.getenv("DETECTOR_TRAFFIC_JAM_CLEAR", "2"))
+# IoU threshold for matching vehicles between frames
+TRAFFIC_IOU_THRESHOLD = float(os.getenv("DETECTOR_TRAFFIC_IOU_THRESHOLD", "0.3"))
 
 YOLO_WEIGHTS = os.getenv("DETECTOR_YOLO_WEIGHTS", "yolov8n.pt")
 VEHICLE_CLASSES = {2, 3, 5, 7}
@@ -73,6 +82,215 @@ model = None
 
 # Per-camera fire frame counters: camera_id -> int
 _fire_counters: Dict[str, int] = defaultdict(int)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Traffic State Tracker (per-camera temporal analysis)
+# ─────────────────────────────────────────────────────────────────────────────
+
+class TrafficStateTracker:
+    """
+    Per-camera state cho traffic detection có temporal analysis.
+
+    Lưu trữ:
+    - Previous frame (grayscale) để tính optical flow
+    - Previous vehicle bounding boxes để match qua IoU
+    - Speed history (sliding window) để lọc nhiễu
+    - Jam confirmation counter (tương tự fire_counters)
+    - Clear counter (để giải phóng jam khi xe bắt đầu chạy lại)
+    """
+
+    def __init__(self, max_speed_history: int = 10):
+        self.prev_gray: Optional[np.ndarray] = None
+        self.prev_boxes: List[List[float]] = []  # [[x1,y1,x2,y2,conf], ...]
+        self.speed_history: deque = deque(maxlen=max_speed_history)
+        self.jam_counter: int = 0         # consecutive slow/stopped frames
+        self.clear_counter: int = 0       # consecutive flowing frames
+        self.is_jammed: bool = False       # current jam state
+        self.last_update: float = 0.0
+
+    def update(
+        self,
+        frame_gray: np.ndarray,
+        current_boxes: List[List[float]],
+        vehicle_count: int,
+    ) -> Dict[str, Any]:
+        """
+        So sánh frame hiện tại với frame trước, trả về thông tin tốc độ.
+
+        Returns dict:
+            avg_displacement: float — trung bình pixel displacement
+            matched_count: int — số xe matched giữa 2 frame
+            speed_class: str — "stopped" | "slow" | "flowing"
+            jam_counter: int — số frame liên tiếp bị chậm/dừng
+            clear_counter: int — số frame liên tiếp xe chạy bình thường
+            is_jammed: bool — trạng thái jam hiện tại
+        """
+        now = time.time()
+        result = {
+            "avg_displacement": 0.0,
+            "matched_count": 0,
+            "speed_class": "unknown",
+            "jam_counter": self.jam_counter,
+            "clear_counter": self.clear_counter,
+            "is_jammed": self.is_jammed,
+        }
+
+        # Nếu chưa có frame trước, lưu và return
+        if self.prev_gray is None or len(self.prev_boxes) == 0:
+            self.prev_gray = frame_gray
+            self.prev_boxes = current_boxes
+            self.last_update = now
+            result["speed_class"] = "no_history"
+            return result
+
+        # ─── IoU matching: match xe giữa 2 frame ───
+        matches = self._match_vehicles_iou(
+            self.prev_boxes, current_boxes, TRAFFIC_IOU_THRESHOLD
+        )
+
+        # ─── Tính centroid displacement ───
+        displacements = []
+        for prev_idx, curr_idx in matches:
+            prev_cx, prev_cy = self._centroid(self.prev_boxes[prev_idx])
+            curr_cx, curr_cy = self._centroid(current_boxes[curr_idx])
+            dx = curr_cx - prev_cx
+            dy = curr_cy - prev_cy
+            disp = float(np.sqrt(dx * dx + dy * dy))
+            displacements.append(disp)
+
+        avg_disp = float(np.mean(displacements)) if displacements else 0.0
+        self.speed_history.append(avg_disp)
+
+        # Dùng trung bình trượt của speed_history để lọc nhiễu
+        smoothed_speed = float(np.mean(self.speed_history))
+
+        # ─── Phân loại tốc độ ───
+        if smoothed_speed < TRAFFIC_SPEED_STOPPED:
+            speed_class = "stopped"
+        elif smoothed_speed < TRAFFIC_SPEED_SLOW:
+            speed_class = "slow"
+        else:
+            speed_class = "flowing"
+
+        # ─── Temporal confirmation logic ───
+        is_congested = speed_class in ("stopped", "slow") and vehicle_count >= TRAFFIC_MIN_VEHICLES
+
+        if is_congested:
+            self.jam_counter += 1
+            self.clear_counter = 0
+        else:
+            self.clear_counter += 1
+            self.jam_counter = max(0, self.jam_counter - 1)
+
+        # Trigger jam khi đủ N frame liên tiếp bị congested
+        if not self.is_jammed and self.jam_counter >= TRAFFIC_JAM_CONFIRM_FRAMES:
+            self.is_jammed = True
+            log.info(
+                "Traffic jam CONFIRMED after %d consecutive congested frames",
+                self.jam_counter,
+            )
+
+        # Clear jam khi đủ N frame liên tiếp flowing
+        if self.is_jammed and self.clear_counter >= TRAFFIC_JAM_CLEAR_FRAMES:
+            self.is_jammed = False
+            self.jam_counter = 0
+            log.info(
+                "Traffic jam CLEARED after %d consecutive flowing frames",
+                self.clear_counter,
+            )
+
+        # Cập nhật state
+        self.prev_gray = frame_gray
+        self.prev_boxes = current_boxes
+        self.last_update = now
+
+        result.update({
+            "avg_displacement": round(avg_disp, 2),
+            "smoothed_speed": round(smoothed_speed, 2),
+            "matched_count": len(matches),
+            "speed_class": speed_class,
+            "jam_counter": self.jam_counter,
+            "clear_counter": self.clear_counter,
+            "is_jammed": self.is_jammed,
+        })
+        return result
+
+    @staticmethod
+    def _centroid(box: List[float]) -> Tuple[float, float]:
+        """Tính tâm của bounding box [x1, y1, x2, y2, ...]."""
+        return (box[0] + box[2]) / 2.0, (box[1] + box[3]) / 2.0
+
+    @staticmethod
+    def _iou(box_a: List[float], box_b: List[float]) -> float:
+        """Tính Intersection over Union giữa 2 boxes."""
+        x1 = max(box_a[0], box_b[0])
+        y1 = max(box_a[1], box_b[1])
+        x2 = min(box_a[2], box_b[2])
+        y2 = min(box_a[3], box_b[3])
+
+        inter = max(0, x2 - x1) * max(0, y2 - y1)
+        area_a = (box_a[2] - box_a[0]) * (box_a[3] - box_a[1])
+        area_b = (box_b[2] - box_b[0]) * (box_b[3] - box_b[1])
+        union = area_a + area_b - inter
+
+        return inter / union if union > 0 else 0.0
+
+    def _match_vehicles_iou(
+        self,
+        prev_boxes: List[List[float]],
+        curr_boxes: List[List[float]],
+        iou_threshold: float,
+    ) -> List[Tuple[int, int]]:
+        """
+        Greedy IoU matching: match mỗi xe ở frame trước với xe gần nhất
+        ở frame hiện tại (IoU cao nhất >= threshold).
+
+        Returns list of (prev_idx, curr_idx) pairs.
+        """
+        if not prev_boxes or not curr_boxes:
+            return []
+
+        # Tính IoU matrix
+        n_prev = len(prev_boxes)
+        n_curr = len(curr_boxes)
+        iou_matrix = np.zeros((n_prev, n_curr), dtype=np.float32)
+
+        for i in range(n_prev):
+            for j in range(n_curr):
+                iou_matrix[i, j] = self._iou(prev_boxes[i], curr_boxes[j])
+
+        # Greedy matching: chọn cặp IoU cao nhất trước
+        matches = []
+        used_prev = set()
+        used_curr = set()
+
+        while True:
+            max_iou = iou_threshold
+            best_pair = None
+
+            for i in range(n_prev):
+                if i in used_prev:
+                    continue
+                for j in range(n_curr):
+                    if j in used_curr:
+                        continue
+                    if iou_matrix[i, j] > max_iou:
+                        max_iou = iou_matrix[i, j]
+                        best_pair = (i, j)
+
+            if best_pair is None:
+                break
+
+            matches.append(best_pair)
+            used_prev.add(best_pair[0])
+            used_curr.add(best_pair[1])
+
+        return matches
+
+
+# Per-camera traffic state trackers
+_traffic_trackers: Dict[str, TrafficStateTracker] = defaultdict(TrafficStateTracker)
 
 
 def load_yolo():
@@ -262,6 +480,39 @@ def _flood_mask(hsv: np.ndarray) -> np.ndarray:
     return filtered
 
 
+def _flood_texture_score(frame: np.ndarray) -> float:
+    """
+    Texture analysis bằng Gabor filter: nước thật có reflection + ripple pattern
+    (texture mịn, đồng đều) khác với mặt đường khô (texture thô).
+
+    Trả về score 0.0–1.0:
+    - Score thấp (< 0.3) → texture mịn → khả năng có nước
+    - Score cao (> 0.6) → texture thô → đường khô, không phải nước
+    """
+    h, w = frame.shape[:2]
+    roi = frame[h // 3:, :]  # bottom 2/3
+
+    gray = cv2.cvtColor(roi, cv2.COLOR_BGR2GRAY)
+
+    # Gabor filter ở nhiều hướng
+    texture_responses = []
+    for theta in [0, np.pi / 4, np.pi / 2, 3 * np.pi / 4]:
+        kernel = cv2.getGaborKernel(
+            ksize=(21, 21), sigma=4.0, theta=theta,
+            lambd=10.0, gamma=0.5, psi=0
+        )
+        response = cv2.filter2D(gray, cv2.CV_64F, kernel)
+        texture_responses.append(float(np.std(response)))
+
+    # Trung bình variance của texture ở các hướng
+    avg_texture = float(np.mean(texture_responses))
+
+    # Normalize: texture mịn (nước) cho score thấp, texture thô cho score cao
+    # Giá trị thực nghiệm: nước thường < 15, đường khô > 25
+    score = min(1.0, avg_texture / 40.0)
+    return score
+
+
 def detect_flood(frame: np.ndarray) -> Dict[str, Any] | None:
     hsv = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
     mask = _flood_mask(hsv)
@@ -274,7 +525,23 @@ def detect_flood(frame: np.ndarray) -> Dict[str, Any] | None:
     if water_ratio < FLOOD_WATCH_RATIO:
         return None
 
-    confidence = min(0.99, water_ratio * 2.2)
+    # ── Texture analysis: giảm false positive ──
+    # Nước thật có texture mịn (score thấp), đường ướt có texture thô (score cao)
+    texture_score = _flood_texture_score(frame)
+
+    # Nếu texture thô (score > 0.55) VÀ water_ratio thấp → có thể chỉ là đường ướt
+    if texture_score > 0.55 and water_ratio < FLOOD_ALERT_RATIO:
+        log.info(
+            "Flood candidate rejected: texture_score=%.3f (too rough for water), ratio=%.4f",
+            texture_score, water_ratio,
+        )
+        return None
+
+    # Điều chỉnh confidence dựa trên texture
+    # Texture mịn → tăng confidence, texture thô → giảm confidence
+    texture_modifier = max(0.7, 1.0 - texture_score * 0.5)
+    confidence = min(0.99, water_ratio * 2.2 * texture_modifier)
+
     severity = "high" if water_ratio >= FLOOD_ALERT_RATIO else "medium"
     return {
         "event_type": "flood",
@@ -283,16 +550,24 @@ def detect_flood(frame: np.ndarray) -> Dict[str, Any] | None:
         "water_ratio": round(water_ratio, 4),
         "metadata": {
             "water_ratio": round(water_ratio, 4),
-            "detector": "opencv_dual_hsv_roi",
+            "texture_score": round(texture_score, 3),
+            "detector": "opencv_dual_hsv_gabor_v2",
         },
     }
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Traffic Detection
+# Traffic Detection (upgraded with temporal analysis)
 # ─────────────────────────────────────────────────────────────────────────────
 
-def detect_traffic(frame: np.ndarray) -> Dict[str, Any] | None:
+def detect_traffic(frame: np.ndarray, camera_id: str = "unknown") -> Dict[str, Any] | None:
+    """
+    Nhận diện ùn tắc giao thông với temporal analysis:
+    1. YOLOv8 detect vehicles
+    2. IoU matching với frame trước → tính displacement (tốc độ)
+    3. Temporal confirmation: cần N frame liên tiếp chậm/dừng mới trigger jam
+    4. Groq Vision double-check (nếu có)
+    """
     yolo = load_yolo()
     if yolo is None:
         return None
@@ -300,6 +575,7 @@ def detect_traffic(frame: np.ndarray) -> Dict[str, Any] | None:
     results = yolo(frame, verbose=False, conf=0.35)
     vehicle_count = 0
     confidences: List[float] = []
+    vehicle_boxes: List[List[float]] = []
     frame_area = frame.shape[0] * frame.shape[1]
 
     for result in results:
@@ -307,42 +583,83 @@ def detect_traffic(frame: np.ndarray) -> Dict[str, Any] | None:
             cls_id = int(box.cls[0])
             if cls_id in VEHICLE_CLASSES:
                 vehicle_count += 1
-                confidences.append(float(box.conf[0]))
+                conf = float(box.conf[0])
+                confidences.append(conf)
+                x1, y1, x2, y2 = box.xyxy[0].tolist()
+                vehicle_boxes.append([x1, y1, x2, y2, conf])
 
     # Vehicle density: vehicles per 10 000 px² of frame
     vehicle_density = vehicle_count / (frame_area / 10000.0) if frame_area > 0 else 0.0
+    avg_confidence = float(np.mean(confidences)) if confidences else 0.65
 
-    confidence = float(np.mean(confidences)) if confidences else 0.65
+    # ─── Temporal analysis via TrafficStateTracker ───
+    tracker = _traffic_trackers[camera_id]
+    frame_gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+    tracking_info = tracker.update(frame_gray, vehicle_boxes, vehicle_count)
 
-    # Determine severity
-    if vehicle_count >= 15 or vehicle_density >= 0.025:
-        severity = "high"
-    elif vehicle_count >= TRAFFIC_MIN_VEHICLES and vehicle_density >= TRAFFIC_MIN_DENSITY:
+    avg_displacement = tracking_info["avg_displacement"]
+    speed_class = tracking_info["speed_class"]
+    is_jammed = tracking_info["is_jammed"]
+    jam_counter = tracking_info["jam_counter"]
+    matched_count = tracking_info["matched_count"]
+
+    log.info(
+        "Camera %s: vehicles=%d, displacement=%.1fpx, speed=%s, "
+        "jam_counter=%d/%d, matched=%d, jammed=%s",
+        camera_id, vehicle_count, avg_displacement, speed_class,
+        jam_counter, TRAFFIC_JAM_CONFIRM_FRAMES, matched_count, is_jammed,
+    )
+
+    # ─── Quyết định severity dựa trên temporal state ───
+    if is_jammed:
+        # Đã confirmed jam qua temporal analysis
+        if speed_class == "stopped" and vehicle_count >= 15:
+            severity = "critical"
+        elif speed_class == "stopped":
+            severity = "high"
+        else:
+            severity = "high"
+    elif speed_class == "slow" and vehicle_count >= TRAFFIC_MIN_VEHICLES:
+        # Chưa confirmed jam nhưng đang chậm → cảnh báo medium
         severity = "medium"
+    elif vehicle_count >= TRAFFIC_MIN_VEHICLES and vehicle_density >= TRAFFIC_MIN_DENSITY:
+        # Nhiều xe nhưng có thể đang chạy → normal traffic volume
+        severity = "normal"
     else:
         severity = "normal"
 
-    # User requested: only report traffic_jam if severity is high
-    if severity != "high":
+    # ─── Build metadata ───
+    metadata = {
+        "vehicle_count": vehicle_count,
+        "vehicle_density": round(vehicle_density, 4),
+        "avg_displacement_px": avg_displacement,
+        "smoothed_speed_px": tracking_info.get("smoothed_speed", 0.0),
+        "speed_class": speed_class,
+        "matched_vehicles": matched_count,
+        "jam_counter": jam_counter,
+        "jam_confirm_threshold": TRAFFIC_JAM_CONFIRM_FRAMES,
+        "is_jammed_temporal": is_jammed,
+        "detector": "yolov8_temporal_iou_v3",
+    }
+
+    # ─── Return: chỉ báo traffic_jam khi is_jammed hoặc severity >= high ───
+    if is_jammed:
         return {
-            "event_type": "traffic_volume",
-            "confidence": 1.0,
+            "event_type": "traffic_jam",
+            "confidence": round(max(avg_confidence, 0.70), 3),
             "severity": severity,
             "vehicle_count": vehicle_count,
-            "metadata": {"vehicle_count": vehicle_count}
+            "avg_speed": round(avg_displacement, 2),
+            "metadata": metadata,
         }
 
+    # Chưa confirmed jam → traffic_volume
     return {
-        "event_type": "traffic_jam",
-        "confidence": round(max(confidence, 0.65), 3),
-        "severity": "high",
+        "event_type": "traffic_volume",
+        "confidence": 1.0,
+        "severity": severity,
         "vehicle_count": vehicle_count,
-        "avg_speed": 0,
-        "metadata": {
-            "vehicle_count": vehicle_count,
-            "vehicle_density": round(vehicle_density, 4),
-            "detector": "yolov8_density_v2",
-        },
+        "metadata": metadata,
     }
 
 
@@ -425,27 +742,63 @@ def detect_incidents_with_groq(frame: np.ndarray) -> List[Dict[str, Any]]:
         log.error(f"Groq detection failed: {e}")
         return []
 
-def verify_traffic_jam_with_groq(frame: np.ndarray) -> bool:
+def verify_traffic_jam_with_groq(frame: np.ndarray, tracking_info: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Nâng cấp: Groq trả về JSON chi tiết thay vì chỉ YES/NO.
+    Bao gồm thông tin từ temporal analysis để Groq tham khảo.
+
+    Returns dict:
+        is_jam: bool
+        confidence: float (0.0–1.0)
+        reason: str
+    """
+    default_result = {"is_jam": True, "confidence": 0.8, "reason": "groq_unavailable_default_yes"}
+
+    if not GROQ_API_KEY:
+        return default_result
+
+    if not can_call_groq():
+        log.warning("Groq rate limit — skipping traffic verification")
+        return default_result
+
     try:
-        if not GROQ_API_KEY:
-            return True
-            
+        groq_request_times.append(time.time())
+
         _, buffer = cv2.imencode('.jpg', frame, [cv2.IMWRITE_JPEG_QUALITY, 80])
         img_b64 = base64.b64encode(buffer).decode('utf-8')
-        
-        prompt = (
-            "A computer vision model has detected a severe traffic jam in this image. "
-            "Please verify if there is actually a heavy traffic jam (cars stopped, extreme congestion). "
-            "Reply with exactly one word: YES if it is a severe traffic jam, or NO if the traffic is flowing or light."
+
+        # Context từ computer vision analysis
+        cv_context = (
+            f"Our computer vision system detected {tracking_info.get('vehicle_count', 0)} vehicles. "
+            f"Average vehicle displacement between frames: {tracking_info.get('avg_displacement_px', 0):.1f} pixels "
+            f"(lower = slower). Speed classification: {tracking_info.get('speed_class', 'unknown')}. "
+            f"Consecutive congested frames: {tracking_info.get('jam_counter', 0)}."
         )
-        
+
+        prompt = (
+            f"You are a traffic analysis expert. {cv_context}\n\n"
+            "Analyze this traffic camera image and determine if there is a REAL traffic jam. "
+            "Consider these factors:\n"
+            "1. Are vehicles STOPPED or barely moving? (not just many vehicles)\n"
+            "2. Are vehicles queued bumper-to-bumper in lanes?\n"
+            "3. What percentage of the road is occupied by vehicles?\n"
+            "4. Could this be normal heavy traffic that is still flowing?\n\n"
+            "Return a JSON object with:\n"
+            "- \"is_jam\": true/false\n"
+            "- \"confidence\": 0.0 to 1.0\n"
+            "- \"road_occupancy\": estimated percentage of road covered by vehicles\n"
+            "- \"reason\": brief explanation\n"
+            "ONLY output valid JSON."
+        )
+
         headers = {
             "Authorization": f"Bearer {GROQ_API_KEY}",
             "Content-Type": "application/json"
         }
-        
+
         payload = {
             "model": GROQ_VISION_MODEL,
+            "response_format": {"type": "json_object"},
             "messages": [
                 {
                     "role": "user",
@@ -456,19 +809,35 @@ def verify_traffic_jam_with_groq(frame: np.ndarray) -> bool:
                 }
             ],
             "temperature": 0.1,
-            "max_tokens": 10
+            "max_tokens": 200
         }
-        
-        resp = requests.post("https://api.groq.com/openai/v1/chat/completions", headers=headers, json=payload, timeout=10)
+
+        resp = requests.post(
+            "https://api.groq.com/openai/v1/chat/completions",
+            headers=headers, json=payload, timeout=15,
+        )
         resp.raise_for_status()
-        
-        answer = resp.json()["choices"][0]["message"]["content"].strip().upper()
-        is_jam = "YES" in answer
-        log.info(f"Groq traffic verification result: {answer} -> {is_jam}")
-        return is_jam
+
+        answer = resp.json()["choices"][0]["message"]["content"].strip()
+        data = json.loads(answer)
+
+        result = {
+            "is_jam": bool(data.get("is_jam", False)),
+            "confidence": float(data.get("confidence", 0.5)),
+            "road_occupancy": data.get("road_occupancy", None),
+            "reason": str(data.get("reason", "no_reason")),
+        }
+
+        log.info(
+            "Groq traffic verification: is_jam=%s, confidence=%.2f, reason=%s",
+            result["is_jam"], result["confidence"], result["reason"],
+        )
+        return result
+
     except Exception as e:
         log.error(f"Groq traffic verification failed: {e}")
-        return True # Default to True so we don't lose the YOLO detection if API fails
+        return default_result
+
 
 def detect(frame: np.ndarray, camera_id: str = "unknown") -> List[Dict[str, Any]]:
     detections = []
@@ -478,18 +847,56 @@ def detect(frame: np.ndarray, camera_id: str = "unknown") -> List[Dict[str, Any]
     if groq_events:
         detections.extend(groq_events)
 
-    # 2. Traffic Detection (YOLO)
-    traffic_result = detect_traffic(frame)
+    # 1b. OpenCV fallback for fire/flood when Groq is unavailable or rate-limited
+    if not groq_events:
+        # Fire (OpenCV)
+        fire_result = detect_fire(frame, camera_id)
+        if fire_result:
+            detections.append(fire_result)
+
+        # Flood (OpenCV + Gabor texture)
+        flood_result = detect_flood(frame)
+        if flood_result:
+            detections.append(flood_result)
+
+    # 2. Traffic Detection (YOLO + Temporal Analysis)
+    traffic_result = detect_traffic(frame, camera_id)
     if traffic_result:
-        if traffic_result.get("event_type") == "traffic_jam" and traffic_result.get("severity") == "high":
-            log.info("YOLO detected traffic jam. Double checking with Groq AI...")
-            if verify_traffic_jam_with_groq(frame):
+        if traffic_result.get("event_type") == "traffic_jam":
+            # Đã qua temporal confirmation → double-check với Groq
+            log.info(
+                "Traffic jam confirmed by temporal analysis (camera=%s). "
+                "Verifying with Groq AI...",
+                camera_id,
+            )
+            groq_verification = verify_traffic_jam_with_groq(
+                frame, traffic_result.get("metadata", {})
+            )
+
+            if groq_verification["is_jam"]:
                 traffic_result["metadata"]["verified_by_ai"] = True
+                traffic_result["metadata"]["ai_confidence"] = groq_verification["confidence"]
+                traffic_result["metadata"]["ai_reason"] = groq_verification["reason"]
+                if groq_verification.get("road_occupancy") is not None:
+                    traffic_result["metadata"]["ai_road_occupancy"] = groq_verification["road_occupancy"]
+
+                # Combine confidence: 60% temporal + 40% AI
+                temporal_conf = traffic_result["confidence"]
+                ai_conf = groq_verification["confidence"]
+                combined_conf = temporal_conf * 0.6 + ai_conf * 0.4
+                traffic_result["confidence"] = round(max(combined_conf, 0.65), 3)
+
                 detections.append(traffic_result)
             else:
-                log.info("Groq AI rejected the traffic jam. Downgrading to moderate volume.")
+                log.info(
+                    "Groq AI rejected the traffic jam (reason: %s). "
+                    "Downgrading to moderate volume.",
+                    groq_verification["reason"],
+                )
                 traffic_result["event_type"] = "traffic_volume"
                 traffic_result["severity"] = "moderate"
+                traffic_result["metadata"]["ai_rejected"] = True
+                traffic_result["metadata"]["ai_reason"] = groq_verification["reason"]
                 detections.append(traffic_result)
         else:
             detections.append(traffic_result)
@@ -508,7 +915,14 @@ class DetectorHandler(BaseHTTPRequestHandler):
 
     def do_GET(self):
         if self.path == "/health":
-            self._send_json(200, {"status": "ok", "yolo_enabled": ENABLE_YOLO})
+            self._send_json(200, {
+                "status": "ok",
+                "yolo_enabled": ENABLE_YOLO,
+                "traffic_jam_confirm_frames": TRAFFIC_JAM_CONFIRM_FRAMES,
+                "traffic_speed_stopped_threshold": TRAFFIC_SPEED_STOPPED,
+                "traffic_speed_slow_threshold": TRAFFIC_SPEED_SLOW,
+                "active_trackers": len(_traffic_trackers),
+            })
             return
         self._send_json(404, {"error": "not_found"})
 
@@ -538,6 +952,12 @@ def main():
     server = ThreadingHTTPServer((HOST, PORT), DetectorHandler)
     log.info("Detector API listening on http://%s:%s", HOST, PORT)
     log.info("Use AI_DETECTOR_URL=http://%s:%s/detect in backend", HOST, PORT)
+    log.info(
+        "Traffic config: jam_confirm=%d frames, speed_stopped=%.1fpx, "
+        "speed_slow=%.1fpx, iou_threshold=%.2f",
+        TRAFFIC_JAM_CONFIRM_FRAMES, TRAFFIC_SPEED_STOPPED,
+        TRAFFIC_SPEED_SLOW, TRAFFIC_IOU_THRESHOLD,
+    )
     server.serve_forever()
 
 
