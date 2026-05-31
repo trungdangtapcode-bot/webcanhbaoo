@@ -43,6 +43,7 @@
   <link rel="stylesheet" href="./css/style.css">
 </head>
 <body>
+  <div id="toast-container" class="toast-container"></div>
   <div class="app-shell">
     <aside class="sidebar" id="sidebar">
       <header class="sidebar-header">
@@ -328,6 +329,11 @@
               <path d="m20 20-4.2-4.2M10.8 18a7.2 7.2 0 1 1 0-14.4 7.2 7.2 0 0 1 0 14.4Z" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" />
             </svg>
             <input id="camera-search" type="search" placeholder="Search camera or area" autocomplete="off" />
+          </div>
+          <div class="camera-filters" id="camera-filters">
+            <button class="cam-filter-chip active" data-filter="all">All</button>
+            <button class="cam-filter-chip" data-filter="alerts">Alerts</button>
+            <button class="cam-filter-chip" data-filter="offline">Offline</button>
           </div>
           <div class="scanner-panel" id="scanner-panel">
             <div class="scanner-row">

@@ -612,14 +612,25 @@
       display: flex;
       flex-direction: column;
       top: 0;
-      right: 0;
+      width: 400px;
       bottom: 0;
       left: var(--sidebar-width);
       overflow: auto;
-      padding: 28px;
-      border-bottom: 0;
-      background: var(--bg);
-      animation: fade-in 140ms ease both;
+      padding: 24px;
+      border-right: 1px solid var(--border);
+      background: linear-gradient(180deg, rgba(16, 22, 29, 0.98), rgba(9, 13, 18, 0.98));
+      box-shadow: 16px 0 44px rgba(0, 0, 0, 0.28);
+      animation: slide-drawer 220ms ease both;
+    }
+
+    html[data-theme="light"] .sidebar > .workspace-panel {
+      background: linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(244, 247, 251, 0.98));
+      box-shadow: 16px 0 44px rgba(29, 49, 68, 0.12);
+    }
+
+    @keyframes slide-drawer {
+      0% { opacity: 0; transform: translateX(-20px); }
+      100% { opacity: 1; transform: translateX(0); }
     }
 
     .sidebar > .workspace-panel .section-head,
@@ -630,9 +641,7 @@
     .sidebar > .workspace-panel .alert-log,
     .sidebar > .workspace-panel .news-list {
       width: 100%;
-      max-width: 980px;
-      margin-left: auto;
-      margin-right: auto;
+      max-width: 100%;
     }
 
     .sidebar > #news-section .news-list,
@@ -2722,4 +2731,108 @@ html[data-theme="light"] .brand-mark {
   .chat-panel {
     width: calc(100vw - 28px);
   }
+}
+
+/* Toast Notifications */
+.toast-container {
+  position: fixed;
+  top: 24px;
+  right: 24px;
+  z-index: 9999;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  pointer-events: none;
+}
+.toast-item {
+  width: 340px;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 16px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.22);
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+  pointer-events: auto;
+  animation: toast-in 300ms cubic-bezier(0.2, 0.8, 0.2, 1);
+  transition: opacity 300ms ease, transform 300ms ease;
+}
+.toast-item.toast-leaving {
+  opacity: 0;
+  transform: translateX(100%);
+}
+.toast-icon {
+  width: 24px;
+  height: 24px;
+  flex: 0 0 auto;
+}
+.toast-content {
+  flex: 1;
+}
+.toast-title {
+  font-weight: 700;
+  font-size: 14px;
+  color: var(--text);
+  margin-bottom: 4px;
+}
+.toast-message {
+  font-size: 12px;
+  color: var(--text-soft);
+}
+.toast-close {
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  padding: 0;
+  display: grid;
+  place-items: center;
+}
+.toast-close svg {
+  width: 16px;
+  height: 16px;
+}
+@keyframes toast-in {
+  from { opacity: 0; transform: translateX(100%); }
+  to { opacity: 1; transform: translateX(0); }
+}
+
+html[data-theme="light"] .toast-item {
+  background: var(--panel);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.08);
+}
+
+/* Camera Filters */
+.camera-filters {
+  display: flex;
+  gap: 8px;
+  padding: 0 16px 12px;
+  border-bottom: 1px solid var(--border);
+}
+.cam-filter-chip {
+  padding: 4px 12px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  color: var(--text-soft);
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all var(--fast);
+}
+.cam-filter-chip:hover {
+  border-color: var(--border-strong);
+  color: var(--text);
+}
+.cam-filter-chip.active {
+  background: var(--teal-soft);
+  border-color: var(--teal);
+  color: var(--teal);
+}
+html[data-theme="light"] .cam-filter-chip {
+  background: #ffffff;
+}
+html[data-theme="light"] .cam-filter-chip.active {
+  background: var(--teal-soft);
 }

@@ -411,10 +411,15 @@
     function renderCameraList() {
       const list = document.getElementById("camera-list");
       const query = document.getElementById("camera-search").value.trim().toLowerCase();
+      const activeFilterEl = document.querySelector(".cam-filter-chip.active");
+      const filterMode = activeFilterEl ? activeFilterEl.dataset.filter : "all";
       list.innerHTML = "";
       let rendered = 0;
 
       cameras.forEach((cam, id) => {
+        if (filterMode === "alerts" && cam.status === "normal") return;
+        if (filterMode === "offline" && cam.status !== "offline") return;
+
         const searchable = [cam.data.name, cam.data.location?.address].map(maybeRepairMojibake).join(" ").toLowerCase();
         if (query && !searchable.includes(query)) return;
 
@@ -1375,6 +1380,9 @@
         recordStatsEvent(data);
         notifyNearbyAlert(data);
         playBeep(data.event_type);
+        if (data.severity !== "normal") {
+          showToast(data);
+        }
       });
       socket.on("alert_update", (data) => {
         updateMarkerAlert(data.camera_id, data, { blink: false, openPopup: false });
@@ -1502,4 +1510,39 @@ document.getElementById("camera-collapse-btn")?.addEventListener("click", (event
   button.setAttribute("aria-label", collapsed ? "Show camera list" : "Hide camera list");
   button.setAttribute("title", collapsed ? "Show camera list" : "Hide camera list");
   window.setTimeout(() => map.invalidateSize(), 220);
+});
+
+function showToast(alertData) {
+  const container = document.getElementById("toast-container");
+  if (!container) return;
+  const meta = getAlertMeta(alertData.event_type);
+  const toast = document.createElement("div");
+  toast.className = "toast-item";
+  toast.innerHTML = `
+    <div class="toast-icon" style="color: var(--${meta.color})">${iconSvg(alertData.event_type)}</div>
+    <div class="toast-content">
+      <div class="toast-title">${escapeHtml(meta.label)}</div>
+      <div class="toast-message">${escapeHtml(alertData.camera_name || alertData.camera_id)}</div>
+    </div>
+    <button class="toast-close" type="button" aria-label="Close alert">
+      <svg viewBox="0 0 24 24" fill="none"><path d="M18 6L6 18M6 6l12 12" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+    </button>
+  `;
+  container.appendChild(toast);
+  
+  const closeBtn = toast.querySelector(".toast-close");
+  const removeToast = () => {
+    toast.classList.add("toast-leaving");
+    toast.addEventListener("transitionend", () => toast.remove());
+  };
+  closeBtn.addEventListener("click", removeToast);
+  setTimeout(removeToast, 6000);
+}
+
+document.querySelectorAll(".cam-filter-chip").forEach(chip => {
+  chip.addEventListener("click", (e) => {
+    document.querySelectorAll(".cam-filter-chip").forEach(c => c.classList.remove("active"));
+    e.target.classList.add("active");
+    renderCameraList();
+  });
 });
