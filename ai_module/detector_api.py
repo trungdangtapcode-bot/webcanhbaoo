@@ -839,6 +839,131 @@ def verify_traffic_jam_with_groq(frame: np.ndarray, tracking_info: Dict[str, Any
         return default_result
 
 
+def analyze_traffic_with_groq(frame: np.ndarray, camera_id: str = "unknown") -> Dict[str, Any] | None:
+    """
+    Gửi ảnh camera cho Groq Vision AI để phân tích lưu lượng giao thông.
+    Dùng khi YOLO không khả dụng hoặc để bổ sung thêm thông tin.
+
+    Trả về traffic_volume event với:
+    - vehicle_count: số xe ước tính
+    - traffic_level: EMPTY / LOW / MODERATE / HIGH / GRIDLOCK
+    - road_occupancy: % mặt đường bị chiếm
+    """
+    if not GROQ_API_KEY:
+        return None
+
+    if not can_call_groq():
+        log.warning("Groq rate limit — skipping AI traffic analysis")
+        return None
+
+    try:
+        groq_request_times.append(time.time())
+
+        _, buffer = cv2.imencode('.jpg', frame, [cv2.IMWRITE_JPEG_QUALITY, 75])
+        img_b64 = base64.b64encode(buffer).decode('utf-8')
+
+        prompt = (
+            "You are a traffic analysis expert. Analyze this traffic camera image and estimate the traffic conditions.\n\n"
+            "Return a JSON object with:\n"
+            '- "vehicle_count": estimated number of vehicles visible (integer)\n'
+            '- "traffic_level": one of "EMPTY", "LOW", "MODERATE", "HIGH", "GRIDLOCK"\n'
+            '  - EMPTY: 0 vehicles or nearly empty road\n'
+            '  - LOW: a few vehicles, road is very clear\n'
+            '  - MODERATE: normal traffic flow, some vehicles\n'
+            '  - HIGH: heavy traffic, many vehicles, slow flow\n'
+            '  - GRIDLOCK: vehicles stopped, bumper-to-bumper, severe congestion\n'
+            '- "road_occupancy": estimated percentage (0-100) of road surface covered by vehicles\n'
+            '- "description": one short sentence describing the current traffic situation in Vietnamese\n\n'
+            "IMPORTANT: ONLY output valid JSON. Do not include markdown blocks."
+        )
+
+        headers = {
+            "Authorization": f"Bearer {GROQ_API_KEY}",
+            "Content-Type": "application/json"
+        }
+
+        payload = {
+            "model": GROQ_VISION_MODEL,
+            "response_format": {"type": "json_object"},
+            "messages": [
+                {
+                    "role": "user",
+                    "content": [
+                        {"type": "text", "text": prompt},
+                        {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{img_b64}"}}
+                    ]
+                }
+            ],
+            "temperature": 0.1,
+            "max_tokens": 200
+        }
+
+        log.info("Calling Groq for traffic volume analysis (camera=%s)...", camera_id)
+        resp = requests.post(
+            "https://api.groq.com/openai/v1/chat/completions",
+            headers=headers, json=payload, timeout=15,
+        )
+        resp.raise_for_status()
+
+        answer = resp.json()["choices"][0]["message"]["content"].strip()
+        data = json.loads(answer)
+
+        vehicle_count = int(data.get("vehicle_count", 0))
+        traffic_level = str(data.get("traffic_level", "MODERATE")).upper()
+        road_occupancy = data.get("road_occupancy", None)
+        description = str(data.get("description", ""))
+
+        # Validate traffic_level
+        valid_levels = {"EMPTY", "LOW", "MODERATE", "HIGH", "GRIDLOCK"}
+        if traffic_level not in valid_levels:
+            traffic_level = "MODERATE"
+
+        # Map traffic_level to severity
+        level_to_severity = {
+            "EMPTY": "normal",
+            "LOW": "normal",
+            "MODERATE": "normal",
+            "HIGH": "medium",
+            "GRIDLOCK": "high",
+        }
+        severity = level_to_severity.get(traffic_level, "normal")
+
+        log.info(
+            "Groq traffic analysis (camera=%s): %d vehicles, level=%s, occupancy=%s%%, desc=%s",
+            camera_id, vehicle_count, traffic_level,
+            road_occupancy, description[:60],
+        )
+
+        result = {
+            "event_type": "traffic_volume",
+            "confidence": 1.0,
+            "severity": severity,
+            "vehicle_count": vehicle_count,
+            "metadata": {
+                "vehicle_count": vehicle_count,
+                "traffic_level": traffic_level,
+                "road_occupancy": road_occupancy,
+                "description": description,
+                "detector": "groq_vision_traffic_v1",
+            },
+        }
+
+        # Nếu AI phát hiện GRIDLOCK → báo traffic_jam luôn
+        if traffic_level == "GRIDLOCK" and vehicle_count >= TRAFFIC_MIN_VEHICLES:
+            result["event_type"] = "traffic_jam"
+            result["confidence"] = 0.85
+            result["severity"] = "high"
+            result["avg_speed"] = 0
+            result["metadata"]["detector"] = "groq_vision_traffic_jam_v1"
+            log.info("Groq detected GRIDLOCK at camera=%s — reporting as traffic_jam", camera_id)
+
+        return result
+
+    except Exception as e:
+        log.error(f"Groq traffic analysis failed: {e}")
+        return None
+
+
 def detect(frame: np.ndarray, camera_id: str = "unknown") -> List[Dict[str, Any]]:
     detections = []
     
@@ -859,9 +984,11 @@ def detect(frame: np.ndarray, camera_id: str = "unknown") -> List[Dict[str, Any]
         if flood_result:
             detections.append(flood_result)
 
-    # 2. Traffic Detection (YOLO + Temporal Analysis)
+    # 2. Traffic Detection
     traffic_result = detect_traffic(frame, camera_id)
+
     if traffic_result:
+        # YOLO available — use temporal analysis result
         if traffic_result.get("event_type") == "traffic_jam":
             # Đã qua temporal confirmation → double-check với Groq
             log.info(
@@ -900,7 +1027,12 @@ def detect(frame: np.ndarray, camera_id: str = "unknown") -> List[Dict[str, Any]
                 detections.append(traffic_result)
         else:
             detections.append(traffic_result)
-                
+    else:
+        # 2b. YOLO không khả dụng → gửi ảnh cho AI phân tích lưu lượng
+        ai_traffic = analyze_traffic_with_groq(frame, camera_id)
+        if ai_traffic:
+            detections.append(ai_traffic)
+
     return detections
 
 

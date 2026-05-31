@@ -5,7 +5,7 @@ const alertService = require('./alertService');
 const trafficVolumeService = require('./trafficVolumeService');
 const { fetchSnapshot, getHcmCameras } = require('./hcmCameraService');
 
-const VALID_EVENT_TYPES = new Set(['traffic_jam', 'fire', 'flood']);
+const VALID_EVENT_TYPES = new Set(['traffic_jam', 'traffic_volume', 'fire', 'flood']);
 
 function parsePositiveInt(value, fallback) {
   const parsed = Number.parseInt(value, 10);
@@ -250,6 +250,10 @@ async function processCamera(camera, tickId) {
   const published = [];
 
   for (const detection of detections) {
+    // traffic_volume events are informational — only create alerts for incidents
+    if (detection.event_type === 'traffic_volume') {
+      continue;
+    }
     published.push(await publishDetection(camera, detection, frame));
   }
 
