@@ -492,6 +492,62 @@
       font-variant-numeric: tabular-nums;
     }
 
+    .workspace-nav {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 8px;
+      padding: 12px 14px;
+      border-bottom: 1px solid var(--border);
+      background: rgba(255, 255, 255, 0.02);
+    }
+
+    html[data-theme="light"] .workspace-nav {
+      background: rgba(232, 238, 246, 0.22);
+    }
+
+    .workspace-tab {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 7px;
+      min-width: 0;
+      min-height: 36px;
+      padding: 0 9px;
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      background: var(--surface);
+      color: var(--text-soft);
+      font-size: 12px;
+      font-weight: 760;
+      line-height: 1.15;
+      transition: border-color var(--fast), background var(--fast), color var(--fast);
+    }
+
+    html[data-theme="light"] .workspace-tab {
+      background: #ffffff;
+    }
+
+    .workspace-tab:hover {
+      border-color: var(--border-strong);
+      color: var(--text);
+    }
+
+    .workspace-tab.active {
+      border-color: rgba(49, 214, 192, 0.52);
+      background: var(--teal-soft);
+      color: var(--teal);
+    }
+
+    .workspace-tab svg {
+      width: 16px;
+      height: 16px;
+      flex: 0 0 auto;
+    }
+
+    .workspace-panel[hidden] {
+      display: none !important;
+    }
+
     .analytics-panel,
     .nearby-panel {
       display: grid;
@@ -1852,6 +1908,10 @@
         padding: 10px 14px;
       }
 
+      .workspace-nav {
+        padding: 10px 14px;
+      }
+
       .section {
         padding: 12px 14px;
       }
@@ -2054,7 +2114,7 @@
         <div class="status-row">
           <div class="status-tile">
             <div class="status-label">Coverage</div>
-            <div class="status-value">Hanoi grid</div>
+            <div class="status-value">HCMC grid</div>
           </div>
           <div class="status-tile">
             <div class="status-label">Last sync</div>
@@ -2093,7 +2153,38 @@
         </button>
       </section>
 
-      <section class="section compact" id="analytics-section">
+      <nav class="workspace-nav" aria-label="Dashboard sections">
+        <button class="workspace-tab active" type="button" data-workspace-tab="overview">
+          <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+            <path d="M5 19V9M12 19V5M19 19v-7" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" />
+            <path d="M4 19h16" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" />
+          </svg>
+          Overview
+        </button>
+        <button class="workspace-tab" type="button" data-workspace-tab="cameras">
+          <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+            <path d="M4 8.5A2.5 2.5 0 0 1 6.5 6h11A2.5 2.5 0 0 1 20 8.5v7A2.5 2.5 0 0 1 17.5 18h-11A2.5 2.5 0 0 1 4 15.5v-7Z" stroke="currentColor" stroke-width="1.7" />
+            <path d="M12 14.6a2.6 2.6 0 1 0 0-5.2 2.6 2.6 0 0 0 0 5.2Z" stroke="currentColor" stroke-width="1.7" />
+          </svg>
+          Cameras
+        </button>
+        <button class="workspace-tab" type="button" data-workspace-tab="alerts">
+          <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+            <path d="M12 3.5 21 20H3L12 3.5Z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" />
+            <path d="M12 9v4.7" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" />
+          </svg>
+          Alerts
+        </button>
+        <button class="workspace-tab" type="button" data-workspace-tab="news">
+          <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+            <path d="M5 5.5h10.5A2.5 2.5 0 0 1 18 8v10.5H6.5A2.5 2.5 0 0 1 4 16V6.5a1 1 0 0 1 1-1Z" stroke="currentColor" stroke-width="1.7" />
+            <path d="M8 10h6M8 13h6M8 16h3" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" />
+          </svg>
+          News
+        </button>
+      </nav>
+
+      <section class="section compact workspace-panel" id="analytics-section" data-workspace-panel="overview">
         <div class="section-head">
           <div class="section-title">
             <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
@@ -2139,7 +2230,7 @@
         </div>
       </section>
 
-      <section class="section compact" id="nearby-section">
+      <section class="section compact workspace-panel" id="nearby-section" data-workspace-panel="overview">
         <div class="section-head">
           <div class="section-title">
             <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
@@ -2167,7 +2258,7 @@
         </div>
       </section>
 
-      <section class="section compact news-section" id="news-section">
+      <section class="section compact news-section workspace-panel" id="news-section" data-workspace-panel="news" hidden>
         <div class="section-head">
           <div class="section-title">
             <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
@@ -2195,7 +2286,7 @@
         <div class="news-list" id="news-list"></div>
       </section>
 
-      <section class="section compact" id="camera-section">
+      <section class="section compact workspace-panel" id="camera-section" data-workspace-panel="cameras" hidden>
         <div class="section-head">
           <div class="section-title">
             <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
@@ -2225,7 +2316,7 @@
         <div class="camera-list" id="camera-list"></div>
       </section>
 
-      <section class="alert-section" id="alert-section">
+      <section class="alert-section workspace-panel" id="alert-section" data-workspace-panel="alerts" hidden>
         <div class="section-head">
           <div class="section-title">
             <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
@@ -2260,7 +2351,7 @@
       <div class="map-toolbar">
         <div class="toolbar-panel">
           <div class="toolbar-title">
-            <h2>Hanoi Operations Map</h2>
+            <h2>HCMC Operations Map</h2>
             <p id="operations-clock">--</p>
           </div>
           <div class="toolbar-actions">
@@ -2381,13 +2472,13 @@
     document.write('<script src="' + (window.location.protocol === "file:" ? "http://localhost:3000" : "") + '/socket.io/socket.io.js"><\/script>');
   </script>
   <script>
-    const MAP_CENTER = [21.0285, 105.8542];
+    const MAP_CENTER = [10.7769, 106.7009];
     const MAP_ZOOM = 13;
-    const HANOI_VIEWPORT = {
-      minLat: 20.72,
-      maxLat: 21.25,
-      minLng: 105.55,
-      maxLng: 106.12,
+    const HCMC_VIEWPORT = {
+      minLat: 10.35,
+      maxLat: 11.15,
+      minLng: 106.35,
+      maxLng: 107.05,
     };
     const THEME_STORAGE_KEY = "smart-alert-theme";
     const TILE_URLS = {
@@ -2417,6 +2508,7 @@
     const notifiedNearbyAlerts = new Set();
     let activeFilter = "all";
     let activeCameraId = null;
+    let activeWorkspacePanel = "overview";
     let streamRefreshTimer = null;
     let tileLayer = null;
     let statsRange = "24h";
@@ -3256,6 +3348,22 @@
       activeAlerts.forEach((alertData) => notifyNearbyAlert(alertData));
     }
 
+    function setWorkspacePanel(panelName) {
+      activeWorkspacePanel = panelName || "overview";
+      document.querySelectorAll("[data-workspace-tab]").forEach((btn) => {
+        const active = btn.dataset.workspaceTab === activeWorkspacePanel;
+        btn.classList.toggle("active", active);
+        btn.setAttribute("aria-selected", active ? "true" : "false");
+      });
+      document.querySelectorAll("[data-workspace-panel]").forEach((panel) => {
+        panel.hidden = panel.dataset.workspacePanel !== activeWorkspacePanel;
+      });
+
+      if (activeWorkspacePanel === "cameras") renderCameraList();
+      if (activeWorkspacePanel === "alerts") applyFilter();
+      if (activeWorkspacePanel === "news") loadNews();
+    }
+
     function renderScannerStatus(status) {
       const stateEl = document.getElementById("scanner-state");
       const detailEl = document.getElementById("scanner-detail");
@@ -3456,13 +3564,13 @@
       const cameraPoints = Array.from(cameras.values())
         .map((cam) => [cam.data.location.lat, cam.data.location.lng])
         .filter(([lat, lng]) => Number.isFinite(lat) && Number.isFinite(lng));
-      const hanoiPoints = cameraPoints.filter(([lat, lng]) =>
-        lat >= HANOI_VIEWPORT.minLat &&
-        lat <= HANOI_VIEWPORT.maxLat &&
-        lng >= HANOI_VIEWPORT.minLng &&
-        lng <= HANOI_VIEWPORT.maxLng
+      const cityPoints = cameraPoints.filter(([lat, lng]) =>
+        lat >= HCMC_VIEWPORT.minLat &&
+        lat <= HCMC_VIEWPORT.maxLat &&
+        lng >= HCMC_VIEWPORT.minLng &&
+        lng <= HCMC_VIEWPORT.maxLng
       );
-      const points = hanoiPoints.length >= 3 ? hanoiPoints : cameraPoints;
+      const points = cityPoints.length >= 3 ? cityPoints : cameraPoints;
 
       if (!points.length) {
         map.flyTo(MAP_CENTER, MAP_ZOOM);
@@ -3496,9 +3604,9 @@
         (json.cameras || []).forEach((cam) => addCameraMarker(cam));
       } catch (err) {
         [
-          { camera_id: "CAM_001", name: "Hoan Kiem Lake - Dinh Tien Hoang", location: { lat: 21.0287, lng: 105.8520, address: "Hoan Kiem, Hanoi" } },
-          { camera_id: "CAM_002", name: "Kim Ma - Nguyen Thai Hoc", location: { lat: 21.0313, lng: 105.8238, address: "Ba Dinh, Hanoi" } },
-          { camera_id: "CAM_003", name: "Nhat Tan Bridge - Vo Chi Cong", location: { lat: 21.0896, lng: 105.8109, address: "Tay Ho, Hanoi" } },
+          { camera_id: "CAM_001", name: "Nguyen Hue - Le Loi", location: { lat: 10.7739, lng: 106.7030, address: "District 1, Ho Chi Minh City" } },
+          { camera_id: "CAM_002", name: "Dien Bien Phu - Hai Ba Trung", location: { lat: 10.7865, lng: 106.6953, address: "District 3, Ho Chi Minh City" } },
+          { camera_id: "CAM_003", name: "Binh Trieu Bridge", location: { lat: 10.8231, lng: 106.7114, address: "Thu Duc, Ho Chi Minh City" } },
         ].forEach((cam) => addCameraMarker(cam));
       }
 
@@ -3524,6 +3632,10 @@
     document.getElementById("nearby-toggle").addEventListener("click", toggleNearbyNotifications);
     document.getElementById("scanner-toggle").addEventListener("click", toggleScanner);
     document.getElementById("news-refresh").addEventListener("click", () => loadNews({ refresh: true }));
+
+    document.querySelectorAll("[data-workspace-tab]").forEach((btn) => {
+      btn.addEventListener("click", () => setWorkspacePanel(btn.dataset.workspaceTab));
+    });
 
     document.querySelectorAll(".news-tab").forEach((btn) => {
       btn.addEventListener("click", async () => {
