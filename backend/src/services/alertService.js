@@ -6,6 +6,7 @@
  */
 
 let ioInstance = null;
+const alertQueueService = require('./alertQueueService');
 
 // Map<`${camera_id}:${event_type}`, activeAlert>
 const activeAlerts = new Map();
@@ -114,10 +115,11 @@ function upsertActiveAlert(alertData, options = {}) {
   scheduleExpiry(key, ttlMs);
 
   const payload = serializeAlert(entry);
+  const queueItem = alertQueueService.upsertFromAlert(payload);
 
   if (!existing) {
     // Brand-new alert — always emit immediately
-    if (ioInstance) ioInstance.emit('alert', payload);
+    if (ioInstance) ioInstance.emit('alert', { ...payload, queue_status: queueItem.status });
     else console.error('[AlertService] Socket.io not initialized');
     entry._lastEmittedAt = Date.now();
     console.log(`[AlertService] alert: ${payload.event_type} @ ${payload.camera_id} (${payload.severity})`);
@@ -132,7 +134,7 @@ function upsertActiveAlert(alertData, options = {}) {
     !entry._lastEmittedAt || (Date.now() - entry._lastEmittedAt) >= UPDATE_COOLDOWN_MS;
 
   if (severityEscalated || cooldownElapsed) {
-    if (ioInstance) ioInstance.emit('alert_update', payload);
+    if (ioInstance) ioInstance.emit('alert_update', { ...payload, queue_status: queueItem.status });
     else console.error('[AlertService] Socket.io not initialized');
     entry._lastEmittedAt = Date.now();
     console.log(`[AlertService] alert_update: ${payload.event_type} @ ${payload.camera_id} (${payload.severity})`);
@@ -171,9 +173,13 @@ function clearAlert(cameraId, eventType, options = {}) {
       ...(options.metadata || {}),
     },
   };
+  const queueItem = alertQueueService.markResolved(cameraId, eventType, {
+    clear_reason: payload.reason,
+    cleared_at: payload.timestamp,
+  });
 
   if (ioInstance) {
-    ioInstance.emit('alert_cleared', payload);
+    ioInstance.emit('alert_cleared', { ...payload, queue_status: queueItem?.status || 'resolved' });
   } else {
     console.error('[AlertService] Socket.io not initialized');
   }

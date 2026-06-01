@@ -169,6 +169,35 @@ function getVolumes({ minLevel } = {}) {
     .sort((a, b) => b.avgCount - a.avgCount);
 }
 
+function getVolume(cameraId) {
+  const entry = cameraVolumes.get(cameraId);
+  return entry ? serializeEntry(entry) : null;
+}
+
+function getHeatmapPoints() {
+  return getVolumes()
+    .filter((camera) => camera.lat != null && camera.lng != null)
+    .map((camera) => {
+      const levelWeight = {
+        NORMAL: 0.15,
+        MODERATE: 0.45,
+        HIGH: 0.75,
+        CRITICAL: 1,
+      }[camera.level] || 0.15;
+      const countWeight = Math.min((camera.avgCount || 0) / THRESHOLD_CRITICAL, 1);
+      return {
+        camera_id: camera.camera_id,
+        camera_name: camera.camera_name,
+        lat: camera.lat,
+        lng: camera.lng,
+        intensity: Math.max(levelWeight, countWeight),
+        level: camera.level,
+        avgCount: camera.avgCount,
+        lastUpdated: camera.lastUpdated,
+      };
+    });
+}
+
 /**
  * Get a summary suitable for the dashboard sidebar.
  * Returns counts per level and top N cameras by avg count.
@@ -193,6 +222,8 @@ module.exports = {
   init,
   recordCount,
   getVolumes,
+  getVolume,
+  getHeatmapPoints,
   getSummary,
   LEVELS,
 };

@@ -1,6 +1,14 @@
 const Camera = require('../models/Camera');
+const Event = require('../models/Event');
 const { isDatabaseConnected } = require('../config/database');
 const { fetchSnapshot, findHcmCamera, getHcmCameras } = require('../services/hcmCameraService');
+const {
+  checkCameraHealth,
+  getCachedHealth,
+  getCameraHealth,
+  getHealthSummary,
+} = require('../services/cameraHealthService');
+const trafficVolumeService = require('../services/trafficVolumeService');
 
 // Demo cameras used when MongoDB is not available
 const DEMO_CAMERAS = [
@@ -85,6 +93,87 @@ async function getHcmTrafficCameras(req, res) {
   } catch (err) {
     console.error('[CameraController] HCM cameras error:', err);
     return res.status(500).json({ error: 'Unable to load HCM cameras' });
+  }
+}
+
+/**
+ * GET /api/cameras/health
+ * Returns cached camera health states without hitting the upstream portal.
+ */
+async function getCameraHealthStatus(req, res) {
+  try {
+    return res.json({
+      cameras: getCameraHealth({
+        limit: req.query.limit,
+        offset: req.query.offset,
+      }),
+      summary: getHealthSummary(),
+    });
+  } catch (err) {
+    console.error('[CameraController] Camera health error:', err);
+    return res.status(500).json({ error: 'Unable to load camera health' });
+  }
+}
+
+/**
+ * POST /api/cameras/health/check
+ * Checks a bounded batch of camera snapshots and caches live/offline state.
+ */
+async function checkCameraHealthStatus(req, res) {
+  try {
+    const body = req.body || {};
+    const result = await checkCameraHealth({
+      cameraIds: body.camera_ids,
+      concurrency: body.concurrency,
+      limit: body.limit ?? req.query.limit,
+      offset: body.offset ?? req.query.offset,
+    });
+    return res.json(result);
+  } catch (err) {
+    console.error('[CameraController] Camera health check error:', err);
+    return res.status(500).json({ error: 'Unable to check camera health' });
+  }
+}
+
+/**
+ * GET /api/cameras/:cameraId/history
+ * Returns camera-specific history for the detail panel.
+ */
+async function getCameraHistory(req, res) {
+  try {
+    const { cameraId } = req.params;
+    const hours = Math.min(Math.max(Number.parseInt(req.query.hours, 10) || 24, 1), 24 * 14);
+    const from = new Date(Date.now() - hours * 60 * 60 * 1000);
+    let events = [];
+
+    if (isDatabaseConnected()) {
+      events = await Event.find({ camera_id: cameraId, timestamp: { $gte: from } })
+        .sort({ timestamp: -1 })
+        .limit(500)
+        .select('-image_base64')
+        .lean();
+    }
+
+    const counts = events.reduce((acc, event) => {
+      acc[event.event_type] = (acc[event.event_type] || 0) + 1;
+      return acc;
+    }, { traffic_jam: 0, fire: 0, flood: 0 });
+
+    return res.json({
+      camera_id: cameraId,
+      from: from.toISOString(),
+      hours,
+      events,
+      summary: {
+        total: events.length,
+        counts,
+        health: getCachedHealth(cameraId),
+        traffic_volume: trafficVolumeService.getVolume(cameraId),
+      },
+    });
+  } catch (err) {
+    console.error('[CameraController] Camera history error:', err);
+    return res.status(500).json({ error: 'Unable to load camera history' });
   }
 }
 
@@ -211,7 +300,10 @@ async function upsertCamera(req, res) {
 
 module.exports = {
   DEMO_CAMERAS,
+  checkCameraHealthStatus,
+  getCameraHistory,
   getCameraSnapshot,
+  getCameraHealthStatus,
   getCameras,
   getHcmTrafficCameras,
   syncHcmTrafficCameras,

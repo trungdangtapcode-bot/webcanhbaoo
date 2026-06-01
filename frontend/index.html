@@ -337,7 +337,9 @@
           <div class="camera-filters" id="camera-filters">
             <button class="cam-filter-chip active" data-filter="all">All</button>
             <button class="cam-filter-chip" data-filter="alerts">Alerts</button>
-            <button class="cam-filter-chip" data-filter="offline">Offline</button>
+            <button class="cam-filter-chip" data-filter="live">Live</button>
+            <button class="cam-filter-chip" data-filter="offline">Issues</button>
+            <button class="cam-filter-chip" data-filter="unchecked">Unchecked</button>
           </div>
           <div class="scanner-panel" id="scanner-panel">
             <div class="scanner-row">
@@ -346,6 +348,21 @@
                 <div class="scanner-detail" id="scanner-detail">Worker pool is ready.</div>
               </div>
               <button class="toggle-action" id="scanner-toggle" type="button">Start scan</button>
+            </div>
+            <div class="camera-health-row">
+              <div class="health-pill live">
+                <span id="health-live-count">0</span>
+                <small>Live</small>
+              </div>
+              <div class="health-pill offline">
+                <span id="health-offline-count">0</span>
+                <small>Issues</small>
+              </div>
+              <div class="health-pill unchecked">
+                <span id="health-unchecked-count">0</span>
+                <small>Unchecked</small>
+              </div>
+              <button class="toggle-action health-check-action" id="health-check" type="button">Check health</button>
             </div>
           </div>
           <div class="camera-list" id="camera-list"></div>
@@ -363,6 +380,12 @@
               <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
                 <path d="M8 4H4v4M16 4h4v4M8 20H4v-4M16 20h4v-4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" />
                 <path d="M9 9h6v6H9V9Z" stroke="currentColor" stroke-width="1.8" />
+              </svg>
+            </button>
+            <button class="icon-action enabled" id="heatmap-toggle" type="button" title="Toggle traffic heatmap" aria-label="Toggle traffic heatmap" aria-pressed="true">
+              <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                <path d="M12 21s6-4.8 6-10a6 6 0 0 0-12 0c0 5.2 6 10 6 10Z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" />
+                <path d="M12 13.5a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5Z" fill="currentColor" opacity=".28" />
               </svg>
             </button>
           </div>
@@ -496,12 +519,33 @@
         </div>
         <img id="video-stream" src="" alt="AI processed camera stream" />
       </div>
+      <div class="camera-history-panel" id="camera-history-panel">
+        <div class="camera-history-item">
+          <strong id="history-total">0</strong>
+          <span>24h alerts</span>
+        </div>
+        <div class="camera-history-item">
+          <strong id="history-traffic">0</strong>
+          <span>Traffic</span>
+        </div>
+        <div class="camera-history-item">
+          <strong id="history-volume">--</strong>
+          <span>Avg vehicles</span>
+        </div>
+        <div class="camera-history-item">
+          <strong id="history-stability">Unchecked</strong>
+          <span>Camera health</span>
+        </div>
+      </div>
     </div>
   </div>
 
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
   <script>
-    document.write('<script src="' + (window.location.protocol === "file:" ? "http://localhost:3000" : "") + '/socket.io/socket.io.js"><\/script>');
+    const socketBase = window.location.protocol === "file:" || ["4173", "5173"].includes(window.location.port)
+      ? "http://localhost:3000"
+      : "";
+    document.write('<script src="' + socketBase + '/socket.io/socket.io.js"><\/script>');
   </script>
   <script src="./js/app.js"></script>
 </body>

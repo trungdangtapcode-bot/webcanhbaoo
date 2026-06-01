@@ -26,13 +26,20 @@
       0x017e: 0x9e, 0x0178: 0x9f,
     };
 
-    const API_BASE = window.location.protocol === "file:" ? "http://localhost:3000" : "";
+    const API_BASE = window.location.protocol === "file:" || ["4173", "5173"].includes(window.location.port)
+      ? "http://localhost:3000"
+      : "";
     const AUTH_SESSION_KEY = "smart-alert-auth-session";
     const cameras = new Map();
     const alerts = [];
     const activeAlerts = new Map();
+    const alertQueue = new Map();
     const statsEvents = [];
     const notifiedNearbyAlerts = new Set();
+    let cameraHealthSummary = { live: 0, issues: 0, unchecked: 0, total: 0 };
+    let cameraHealthChecking = false;
+    let trafficHeatLayer = null;
+    let trafficHeatVisible = true;
     let activeFilter = "all";
     let activeCameraId = null;
     let activeWorkspacePanel = "cameras";
@@ -50,6 +57,7 @@
       attributionControl: false,
     }).setView(MAP_CENTER, MAP_ZOOM);
 
+    trafficHeatLayer = L.layerGroup().addTo(map);
     L.control.zoom({ position: "topright" }).addTo(map);
     setMapTiles(getCurrentTheme());
 
@@ -405,7 +413,73 @@
       }).addTo(map);
 
       marker.bindPopup(buildNormalPopup(cam));
-      cameras.set(cam.camera_id, { data: cam, marker, status: "normal" });
+      cameras.set(cam.camera_id, {
+        data: cam,
+        marker,
+        status: "normal",
+        health: null,
+        healthStatus: "unchecked",
+      });
+    }
+
+    function getHealthLabel(status) {
+      return {
+        black: "Black frame",
+        error: "Error",
+        live: "Live",
+        offline: "Error",
+        stale: "Stale frame",
+        timeout: "Timeout",
+        unchecked: "Unchecked",
+      }[status] || "Unchecked";
+    }
+
+    function isHealthIssue(status) {
+      return ["black", "error", "offline", "stale", "timeout"].includes(status);
+    }
+
+    function getCameraHealthCopy(cam) {
+      const status = cam.healthStatus || "unchecked";
+      const checkedAt = cam.health?.checked_at ? " - " + formatTime(cam.health.checked_at, false) : "";
+      const response = cam.health?.response_ms ? " - " + cam.health.response_ms + "ms" : "";
+      return getHealthLabel(status) + checkedAt + response;
+    }
+
+    function updateHealthSummaryUi(summary = cameraHealthSummary) {
+      const total = summary.total || cameras.size;
+      const live = summary.live || 0;
+      const issues = summary.issues ?? summary.offline ?? 0;
+      cameraHealthSummary = {
+        total,
+        live,
+        issues,
+        black: summary.black || 0,
+        error: summary.error || 0,
+        stale: summary.stale || 0,
+        timeout: summary.timeout || 0,
+        unchecked: Number.isFinite(summary.unchecked) && summary.total
+          ? summary.unchecked
+          : Math.max(total - live - issues, 0),
+      };
+
+      const liveEl = document.getElementById("health-live-count");
+      const offlineEl = document.getElementById("health-offline-count");
+      const uncheckedEl = document.getElementById("health-unchecked-count");
+      if (liveEl) liveEl.textContent = cameraHealthSummary.live;
+      if (offlineEl) offlineEl.textContent = cameraHealthSummary.issues;
+      if (uncheckedEl) uncheckedEl.textContent = cameraHealthSummary.unchecked;
+      document.getElementById("metric-active").textContent =
+        cameraHealthSummary.live || cameraHealthSummary.total || cameras.size;
+    }
+
+    function applyCameraHealth(healthItems = []) {
+      healthItems.forEach((item) => {
+        const cam = cameras.get(item.camera_id);
+        if (!cam) return;
+        cam.health = item;
+        cam.healthStatus = item.status || "unchecked";
+        if (cam.status === "normal") updateCameraDot(item.camera_id, cam.healthStatus);
+      });
     }
 
     function renderCameraList() {
@@ -418,7 +492,9 @@
 
       cameras.forEach((cam, id) => {
         if (filterMode === "alerts" && cam.status === "normal") return;
-        if (filterMode === "offline" && cam.status !== "offline") return;
+        if (filterMode === "live" && cam.healthStatus !== "live") return;
+        if (filterMode === "offline" && !isHealthIssue(cam.healthStatus)) return;
+        if (filterMode === "unchecked" && cam.healthStatus !== "unchecked") return;
 
         const searchable = [cam.data.name, cam.data.location?.address].map(maybeRepairMojibake).join(" ").toLowerCase();
         if (query && !searchable.includes(query)) return;
@@ -431,6 +507,7 @@
             <span class="camera-status-dot" id="${cameraDotId(id)}"></span>
             <span class="camera-info">
               <span class="camera-name">${escapeHtml(cam.data.name)}</span>
+              <span class="camera-id ${escapeAttr(cam.healthStatus || "unchecked")}">${escapeHtml(getCameraHealthCopy(cam))}</span>
             </span>
           </button>
           <button class="camera-watch" type="button" title="Watch live" aria-label="Watch live" data-camera-id="${escapeAttr(id)}">
@@ -438,7 +515,7 @@
           </button>
         `;
         list.appendChild(item);
-        updateCameraDot(id, cam.status);
+        updateCameraDot(id, cam.status === "normal" ? cam.healthStatus : cam.status);
         rendered += 1;
       });
 
@@ -454,7 +531,7 @@
 
       document.getElementById("camera-count").textContent = cameras.size;
       document.getElementById("stat-cameras").textContent = cameras.size;
-      document.getElementById("metric-active").textContent = cameras.size;
+      updateHealthSummaryUi(cameraHealthSummary);
       populateEmergencyCameraSelect();
     }
 
@@ -491,12 +568,16 @@
     function updateCameraDot(cameraId, eventType) {
       const dot = document.getElementById(cameraDotId(cameraId));
       const cam = cameras.get(cameraId);
-      if (cam) cam.status = eventType;
+      if (cam && ["normal", "traffic_jam", "fire", "flood"].includes(eventType)) cam.status = eventType;
       if (!dot) return;
       dot.className = "camera-status-dot";
       if (eventType === "traffic_jam") dot.classList.add("alert-traffic");
       else if (eventType === "fire") dot.classList.add("alert-fire");
       else if (eventType === "flood") dot.classList.add("alert-flood");
+      else if (eventType === "live") dot.classList.add("health-live");
+      else if (isHealthIssue(eventType)) dot.classList.add("health-offline");
+      else dot.classList.add("health-unchecked");
+      dot.title = ALERT_TYPES[eventType]?.label || getHealthLabel(eventType);
     }
 
     function renderCameraAlertState(cameraId, options = {}) {
@@ -508,7 +589,7 @@
         cam.marker.setIcon(createMarkerIcon("normal"));
         cam.marker.setPopupContent(buildNormalPopup(cam.data));
         cam.status = "normal";
-        updateCameraDot(cameraId, "normal");
+        updateCameraDot(cameraId, cam.healthStatus || "unchecked");
         return;
       }
 
@@ -703,6 +784,39 @@
         meta.label + " at " + maybeRepairMojibake(focusAlert.camera_name || focusAlert.camera_id) + " around " + formatTime(focusAlert.last_seen || focusAlert.timestamp, false) + ".";
     }
 
+    function queueKey(cameraId, eventType) {
+      return cameraId + "::" + eventType;
+    }
+
+    function getQueueStatusLabel(status) {
+      return {
+        new: "New",
+        in_progress: "In progress",
+        confirmed: "Confirmed",
+        false_alarm: "False alarm",
+        resolved: "Resolved",
+      }[status] || "New";
+    }
+
+    function getQueueStatus(cameraId, eventType, fallback = "new") {
+      return alertQueue.get(queueKey(cameraId, eventType))?.status || fallback;
+    }
+
+    function renderQueueStatusOptions(current) {
+      return ["new", "in_progress", "confirmed", "false_alarm", "resolved"]
+        .map((status) => `<option value="${status}"${status === current ? " selected" : ""}>${getQueueStatusLabel(status)}</option>`)
+        .join("");
+    }
+
+    function applyQueueStatusToRows() {
+      document.querySelectorAll(".alert-row").forEach((row) => {
+        const status = getQueueStatus(row.dataset.cameraId, row.dataset.type, row.dataset.queueStatus || "new");
+        row.dataset.queueStatus = status;
+        const select = row.querySelector(".alert-queue-select");
+        if (select && select.value !== status) select.value = status;
+      });
+    }
+
     function renderEmptyAlerts(message = "Waiting for incoming detections from camera modules.") {
       const log = document.getElementById("alert-log");
       log.innerHTML = `
@@ -721,7 +835,10 @@
       const meta = getAlertMeta(alertData.event_type);
 
       const row = document.createElement("div");
+      const queueStatus = alertData.queue_status || getQueueStatus(alertData.camera_id, alertData.event_type);
       row.className = "alert-row";
+      row.dataset.cameraId = alertData.camera_id;
+      row.dataset.queueStatus = queueStatus;
       row.dataset.type = alertData.event_type;
       row.innerHTML = `
         <div class="alert-icon">${iconSvg(alertData.event_type)}</div>
@@ -730,10 +847,16 @@
           <div class="alert-camera">${escapeHtml(alertData.camera_name || alertData.camera_id)}</div>
           <div class="alert-time">${formatTime(alertData.timestamp)} - ${formatDateTime(alertData.timestamp)}</div>
         </div>
-        <span class="alert-severity severity-${escapeAttr(alertData.severity || "medium")}">${escapeHtml(alertData.severity || "medium")}</span>
+        <div class="alert-actions">
+          <span class="alert-severity severity-${escapeAttr(alertData.severity || "medium")}">${escapeHtml(alertData.severity || "medium")}</span>
+          <select class="alert-queue-select" data-camera-id="${escapeAttr(alertData.camera_id)}" data-event-type="${escapeAttr(alertData.event_type)}" aria-label="Alert queue status">
+            ${renderQueueStatusOptions(queueStatus)}
+          </select>
+        </div>
       `;
 
-      row.addEventListener("click", () => {
+      row.addEventListener("click", (event) => {
+        if (event.target.closest(".alert-queue-select")) return;
         const cam = cameras.get(alertData.camera_id);
         if (cam) {
           focusCamera(alertData.camera_id);
@@ -743,6 +866,11 @@
       });
 
       log.prepend(row);
+      alertQueue.set(queueKey(alertData.camera_id, alertData.event_type), {
+        camera_id: alertData.camera_id,
+        event_type: alertData.event_type,
+        status: queueStatus,
+      });
       alerts.unshift(alertData);
       while (log.querySelectorAll(".alert-row").length > 100) {
         log.querySelector(".alert-row:last-of-type")?.remove();
@@ -819,7 +947,32 @@
         stream.src = sourceUrl;
       }
 
+      loadCameraHistory(camId);
       document.getElementById("video-modal").classList.add("active");
+    }
+
+    async function loadCameraHistory(cameraId) {
+      const totalEl = document.getElementById("history-total");
+      const trafficEl = document.getElementById("history-traffic");
+      const volumeEl = document.getElementById("history-volume");
+      const stabilityEl = document.getElementById("history-stability");
+      if (totalEl) totalEl.textContent = "...";
+      if (trafficEl) trafficEl.textContent = "...";
+      if (volumeEl) volumeEl.textContent = "--";
+      if (stabilityEl) stabilityEl.textContent = getHealthLabel(cameras.get(cameraId)?.healthStatus || "unchecked");
+
+      const json = await fetchJsonOrNull(`/api/cameras/${encodeURIComponent(cameraId)}/history?hours=24`);
+      if (!json) {
+        if (totalEl) totalEl.textContent = "0";
+        if (trafficEl) trafficEl.textContent = "0";
+        return;
+      }
+
+      const summary = json.summary || {};
+      if (totalEl) totalEl.textContent = summary.total || 0;
+      if (trafficEl) trafficEl.textContent = summary.counts?.traffic_jam || 0;
+      if (volumeEl) volumeEl.textContent = summary.traffic_volume?.avgCount ?? "--";
+      if (stabilityEl) stabilityEl.textContent = getHealthLabel(summary.health?.status || cameras.get(cameraId)?.healthStatus || "unchecked");
     }
 
     function closeVideoModal() {
@@ -1058,6 +1211,52 @@
       if (status) renderScannerStatus(status);
     }
 
+    async function loadCameraHealth() {
+      const json = await fetchJsonOrNull("/api/cameras/health?limit=all");
+      if (!json) {
+        updateHealthSummaryUi();
+        return;
+      }
+      applyCameraHealth(json.cameras || []);
+      updateHealthSummaryUi(json.summary);
+      renderCameraList();
+    }
+
+    async function refreshCameraHealth() {
+      if (cameraHealthChecking) return;
+      const button = document.getElementById("health-check");
+      const unchecked = Array.from(cameras.entries())
+        .filter(([_id, cam]) => cam.healthStatus === "unchecked")
+        .slice(0, 60)
+        .map(([id]) => id);
+      const cameraIds = unchecked.length
+        ? unchecked
+        : Array.from(cameras.keys()).slice(0, 60);
+
+      cameraHealthChecking = true;
+      if (button) {
+        button.disabled = true;
+        button.textContent = "Checking...";
+      }
+      try {
+        const json = await postJsonOrNull("/api/cameras/health/check", {
+          camera_ids: cameraIds,
+          concurrency: 6,
+        });
+        if (json) {
+          applyCameraHealth(json.results || []);
+          updateHealthSummaryUi(json.summary);
+          renderCameraList();
+        }
+      } finally {
+        cameraHealthChecking = false;
+        if (button) {
+          button.disabled = false;
+          button.textContent = "Check health";
+        }
+      }
+    }
+
     async function toggleScanner() {
       const toggle = document.getElementById("scanner-toggle");
       const status = await fetchJsonOrNull("/api/scanner/status");
@@ -1075,7 +1274,7 @@
         const next = status.running
           ? await postJsonOrNull("/api/scanner/stop")
           : await postJsonOrNull("/api/scanner/start", {
-            cameraLimit: Math.max(cameras.size || 12, 1),
+            cameraLimit: Math.min(Math.max(cameras.size || 60, 1), 60),
             concurrency: 4,
             intervalMs: 10000,
             source: "hcm",
@@ -1221,6 +1420,80 @@
       }
     }
 
+    async function loadAlertQueue() {
+      const json = await fetchJsonOrNull("/api/events/queue");
+      if (!json) return;
+      alertQueue.clear();
+      (json.queue || []).forEach((item) => {
+        alertQueue.set(queueKey(item.camera_id, item.event_type), item);
+      });
+      applyQueueStatusToRows();
+    }
+
+    async function updateAlertQueueStatus(cameraId, eventType, status) {
+      const key = queueKey(cameraId, eventType);
+      const previous = alertQueue.get(key) || { camera_id: cameraId, event_type: eventType, status: "new" };
+      alertQueue.set(key, { ...previous, status });
+      applyQueueStatusToRows();
+
+      const json = await fetch(apiUrl(`/api/events/queue/${encodeURIComponent(cameraId)}/${encodeURIComponent(eventType)}`), {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ status }),
+      }).then(async (res) => {
+        const type = res.headers.get("content-type") || "";
+        return res.ok && type.includes("application/json") ? res.json() : null;
+      }).catch(() => null);
+
+      if (json?.item) {
+        alertQueue.set(key, json.item);
+        applyQueueStatusToRows();
+      }
+    }
+
+    function heatColor(intensity) {
+      if (intensity >= 0.8) return "#ff5b63";
+      if (intensity >= 0.55) return "#f6b84b";
+      if (intensity >= 0.3) return "#f7db6a";
+      return "#31d6c0";
+    }
+
+    function renderTrafficHeatmap(points = []) {
+      if (!trafficHeatLayer) return;
+      trafficHeatLayer.clearLayers();
+      if (!trafficHeatVisible) return;
+
+      points.forEach((point) => {
+        const intensity = Math.max(0.1, Math.min(Number(point.intensity) || 0.1, 1));
+        const marker = L.circleMarker([point.lat, point.lng], {
+          radius: 12 + intensity * 28,
+          color: heatColor(intensity),
+          fillColor: heatColor(intensity),
+          fillOpacity: 0.13 + intensity * 0.22,
+          opacity: 0.55,
+          weight: 1,
+        });
+        marker.bindTooltip(
+          `${escapeHtml(point.camera_name || point.camera_id)}<br>${escapeHtml(point.level || "NORMAL")} - ${escapeHtml(point.avgCount ?? 0)} vehicles`,
+          { direction: "top", opacity: 0.92 }
+        );
+        marker.addTo(trafficHeatLayer);
+      });
+    }
+
+    async function loadTrafficHeatmap() {
+      const json = await fetchJsonOrNull("/api/traffic/heatmap");
+      renderTrafficHeatmap(json?.points || []);
+    }
+
+    function toggleTrafficHeatmap() {
+      trafficHeatVisible = !trafficHeatVisible;
+      const button = document.getElementById("heatmap-toggle");
+      button?.classList.toggle("enabled", trafficHeatVisible);
+      button?.setAttribute("aria-pressed", String(trafficHeatVisible));
+      loadTrafficHeatmap();
+    }
+
     function fitMapToCameras() {
       const cameraPoints = Array.from(cameras.values())
         .map((cam) => [cam.data.location.lat, cam.data.location.lng])
@@ -1273,15 +1546,19 @@
 
       renderCameraList();
       fitMapToCameras();
+      await loadCameraHealth();
       await loadScannerStatus();
       await loadNews();
       await loadHistoricalEvents();
       await loadStatisticsEvents();
       await loadActiveAlerts();
+      await loadAlertQueue();
+      await loadTrafficHeatmap();
     }
 
     document.getElementById("camera-search").addEventListener("input", renderCameraList);
     document.getElementById("fit-map-btn").addEventListener("click", fitMapToCameras);
+    document.getElementById("heatmap-toggle").addEventListener("click", toggleTrafficHeatmap);
     document.getElementById("theme-toggle").addEventListener("click", () => {
       applyTheme(getCurrentTheme() === "light" ? "dark" : "light");
     });
@@ -1292,6 +1569,7 @@
     document.getElementById("emergency-form").addEventListener("submit", submitEmergencyReport);
     document.getElementById("nearby-toggle").addEventListener("click", toggleNearbyNotifications);
     document.getElementById("scanner-toggle").addEventListener("click", toggleScanner);
+    document.getElementById("health-check").addEventListener("click", refreshCameraHealth);
     document.getElementById("news-refresh").addEventListener("click", () => loadNews({ refresh: true }));
     document.getElementById("account-logout").addEventListener("click", logout);
 
@@ -1361,6 +1639,13 @@
       }
     });
 
+    document.addEventListener("change", (event) => {
+      const select = event.target.closest(".alert-queue-select");
+      if (!select) return;
+      event.stopPropagation();
+      updateAlertQueueStatus(select.dataset.cameraId, select.dataset.eventType, select.value);
+    });
+
     document.addEventListener("keydown", (event) => {
       if (event.key === "Escape") {
         closeVideoModal();
@@ -1375,6 +1660,13 @@
       socket.on("connect", () => setConnection(true, "Live"));
       socket.on("disconnect", () => setConnection(false, "Offline"));
       socket.on("alert", (data) => {
+        if (data.queue_status) {
+          alertQueue.set(queueKey(data.camera_id, data.event_type), {
+            camera_id: data.camera_id,
+            event_type: data.event_type,
+            status: data.queue_status,
+          });
+        }
         updateMarkerAlert(data.camera_id, data);
         addAlertRow(data);
         recordStatsEvent(data);
@@ -1385,18 +1677,36 @@
         }
       });
       socket.on("alert_update", (data) => {
+        if (data.queue_status) {
+          alertQueue.set(queueKey(data.camera_id, data.event_type), {
+            camera_id: data.camera_id,
+            event_type: data.event_type,
+            status: data.queue_status,
+          });
+          applyQueueStatusToRows();
+        }
         updateMarkerAlert(data.camera_id, data, { blink: false, openPopup: false });
         notifyNearbyAlert(data);
       });
       socket.on("alert_cleared", (data) => {
+        if (data.queue_status) {
+          alertQueue.set(queueKey(data.camera_id, data.event_type), {
+            camera_id: data.camera_id,
+            event_type: data.event_type,
+            status: data.queue_status,
+          });
+          applyQueueStatusToRows();
+        }
         clearMarkerAlert(data);
       });
+      socket.on("traffic_volume_update", () => loadTrafficHeatmap());
     } else {
       setConnection(false, "Preview");
     }
 
     setInterval(() => loadNews(), 10 * 60 * 1000);
     setInterval(loadScannerStatus, 5000);
+    setInterval(loadTrafficHeatmap, 30000);
     init();
 
 // --- Chat Widget Logic ---

@@ -5,6 +5,7 @@ const { DEMO_CAMERAS } = require('./cameraController');
 const trafficService = require('../services/trafficService');
 const floodService = require('../services/floodService');
 const alertService = require('../services/alertService');
+const alertQueueService = require('../services/alertQueueService');
 const trafficVolumeService = require('../services/trafficVolumeService');
 
 const VALID_EVENT_TYPES = ['traffic_jam', 'fire', 'flood'];
@@ -418,4 +419,32 @@ async function getActiveEvents(_req, res) {
   return res.json({ alerts: alertService.getActiveAlerts() });
 }
 
-module.exports = { createEvent, createEmergencyEvent, getEvents, getActiveEvents };
+async function getAlertQueue(req, res) {
+  const status = alertQueueService.VALID_STATUSES.has(req.query.status) ? req.query.status : undefined;
+  return res.json({
+    queue: alertQueueService.listQueue({ status }),
+    summary: alertQueueService.getSummary(),
+  });
+}
+
+async function updateAlertQueueItem(req, res) {
+  const { camera_id, event_type } = req.params;
+  const updated = alertQueueService.updateQueueItem(camera_id, event_type, req.body || {});
+  if (!updated) {
+    return res.status(404).json({ error: 'Queue item not found' });
+  }
+
+  return res.json({
+    item: updated,
+    summary: alertQueueService.getSummary(),
+  });
+}
+
+module.exports = {
+  createEvent,
+  createEmergencyEvent,
+  getAlertQueue,
+  getEvents,
+  getActiveEvents,
+  updateAlertQueueItem,
+};

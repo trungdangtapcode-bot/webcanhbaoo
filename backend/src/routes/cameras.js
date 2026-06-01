@@ -1,6 +1,9 @@
 const express = require('express');
 const router = express.Router();
 const {
+  checkCameraHealthStatus,
+  getCameraHistory,
+  getCameraHealthStatus,
   getCameraSnapshot,
   getCameras,
   getHcmTrafficCameras,
@@ -11,8 +14,17 @@ const {
 // GET /api/cameras/hcm - public HCMC traffic cameras
 router.get('/hcm', getHcmTrafficCameras);
 
+// GET /api/cameras/health - cached live/offline camera health
+router.get('/health', getCameraHealthStatus);
+
+// POST /api/cameras/health/check - actively check camera snapshots
+router.post('/health/check', checkCameraHealthStatus);
+
 // GET /api/cameras/:cameraId/snapshot - proxied live frame
 router.get('/:cameraId/snapshot', getCameraSnapshot);
+
+// GET /api/cameras/:cameraId/history - camera detail history
+router.get('/:cameraId/history', getCameraHistory);
 
 // POST /api/cameras/sync/hcm - persist HCMC cameras into MongoDB
 router.post('/sync/hcm', syncHcmTrafficCameras);

@@ -2,6 +2,7 @@ const Event = require('../models/Event');
 const Camera = require('../models/Camera');
 const { isDatabaseConnected } = require('../config/database');
 const alertService = require('./alertService');
+const { getCachedHealth } = require('./cameraHealthService');
 const trafficVolumeService = require('./trafficVolumeService');
 const { fetchSnapshot, getHcmCameras } = require('./hcmCameraService');
 
@@ -30,6 +31,8 @@ const defaults = {
 const state = {
   activeWorkers: 0,
   config: { ...defaults },
+  cursor: 0,
+  lastStrategy: null,
   lastRun: null,
   queueLength: 0,
   running: false,
@@ -47,6 +50,7 @@ function publicConfig() {
     minConfidence: state.config.minConfidence,
     mockDetections: state.config.mockDetections,
     source: state.config.source,
+    strategy: 'priority_round_robin',
   };
 }
 
@@ -55,6 +59,7 @@ function getStatus() {
     activeWorkers: state.activeWorkers,
     config: publicConfig(),
     lastRun: state.lastRun,
+    lastStrategy: state.lastStrategy,
     queueLength: state.queueLength,
     running: state.running,
     scanning: state.scanning,
@@ -75,20 +80,109 @@ function normalizeStartOptions(options = {}) {
   };
 }
 
-async function getCameraBatch() {
+function isRushHour(date = new Date()) {
+  const hour = date.getHours();
+  return (hour >= 6 && hour <= 9) || (hour >= 16 && hour <= 19);
+}
+
+function isCentralCamera(camera) {
+  const lat = Number(camera.location?.lat);
+  const lng = Number(camera.location?.lng);
+  return lat >= 10.74 && lat <= 10.82 && lng >= 106.66 && lng <= 106.73;
+}
+
+function levelScore(level) {
+  return { MODERATE: 15, HIGH: 35, CRITICAL: 55 }[level] || 0;
+}
+
+function scoreCamera(camera, activeCameraIds, total, index) {
+  const health = getCachedHealth(camera.camera_id);
+  const volume = trafficVolumeService.getVolume(camera.camera_id);
+  const roundRobinDistance = (index - state.cursor + total) % total;
+  let score = Math.max(total - roundRobinDistance, 0) / Math.max(total, 1);
+  const reasons = ['round_robin'];
+
+  if (activeCameraIds.has(camera.camera_id)) {
+    score += 100;
+    reasons.push('active_alert');
+  }
+  if (volume) {
+    const trafficScore = levelScore(volume.level) + Math.min(Number(volume.avgCount) || 0, 30);
+    if (trafficScore > 0) {
+      score += trafficScore;
+      reasons.push('traffic_volume');
+    }
+  }
+  if (isCentralCamera(camera)) {
+    score += isRushHour() ? 22 : 10;
+    reasons.push(isRushHour() ? 'central_rush_hour' : 'central_area');
+  }
+  if (!health) {
+    score += 8;
+    reasons.push('unchecked_health');
+  } else if (['timeout', 'error'].includes(health.status)) {
+    score -= 35;
+    reasons.push('recent_health_issue');
+  } else if (['black', 'stale'].includes(health.status)) {
+    score -= 12;
+    reasons.push('frame_quality_issue');
+  }
+
+  return { score, reasons };
+}
+
+function selectPriorityBatch(cameras, limit) {
+  if (!cameras.length) return [];
+  const total = cameras.length;
+  const activeCameraIds = new Set(alertService.getActiveAlerts().map((alert) => alert.camera_id));
+  const ranked = cameras
+    .map((camera, index) => {
+      const scored = scoreCamera(camera, activeCameraIds, total, index);
+      return {
+        camera,
+        index,
+        reasons: scored.reasons,
+        score: Math.round(scored.score * 100) / 100,
+      };
+    })
+    .sort((a, b) => b.score - a.score || ((a.index - state.cursor + total) % total) - ((b.index - state.cursor + total) % total));
+
+  const selected = ranked.slice(0, Math.min(limit, ranked.length));
+  const lastSelected = selected[selected.length - 1];
+  state.cursor = lastSelected ? (lastSelected.index + 1) % total : state.cursor;
+  state.lastStrategy = {
+    cursor: state.cursor,
+    selected: selected.length,
+    total,
+    top: selected.slice(0, 5).map((item) => ({
+      camera_id: item.camera.camera_id,
+      reasons: item.reasons,
+      score: item.score,
+    })),
+    updatedAt: new Date().toISOString(),
+  };
+
+  return selected.map((item) => item.camera);
+}
+
+async function getAllSourceCameras() {
   if (state.config.source === 'hcm') {
-    return getHcmCameras(state.config.cameraLimit);
+    return getHcmCameras();
   }
 
   if (isDatabaseConnected()) {
     return Camera.find({ active: { $ne: false } })
       .select('-token_hash')
       .sort({ camera_id: 1 })
-      .limit(state.config.cameraLimit)
       .lean();
   }
 
-  return getHcmCameras(state.config.cameraLimit);
+  return getHcmCameras();
+}
+
+async function getCameraBatch() {
+  const cameras = await getAllSourceCameras();
+  return selectPriorityBatch(cameras, state.config.cameraLimit);
 }
 
 async function fetchCameraFrame(camera) {

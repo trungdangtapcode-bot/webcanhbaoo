@@ -33,4 +33,11 @@ router.get('/volume', (req, res) => {
   return res.json({ cameras, summary });
 });
 
+router.get('/heatmap', (_req, res) => {
+  return res.json({
+    points: trafficVolumeService.getHeatmapPoints(),
+    summary: trafficVolumeService.getSummary(5),
+  });
+});
+
 module.exports = router;
