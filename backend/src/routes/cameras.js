@@ -9,6 +9,7 @@ const {
   getHanoiCameraStreamInfo,
   getHanoiTrafficCameras,
   getHcmTrafficCameras,
+  proxyHanoiCameraMjpeg,
   syncHcmTrafficCameras,
   upsertCamera,
 } = require('../controllers/cameraController');
@@ -18,6 +19,9 @@ router.get('/hcm', getHcmTrafficCameras);
 
 // GET /api/cameras/hanoi - public Hanoi realtime video camera metadata
 router.get('/hanoi', getHanoiTrafficCameras);
+
+// GET /api/cameras/hanoi/:cameraId/mjpeg - decoded browser-viewable stream proxy
+router.get('/hanoi/:cameraId/mjpeg', proxyHanoiCameraMjpeg);
 
 // GET /api/cameras/hanoi/:cameraId/stream-info - raw WSS/HTTPS source metadata
 router.get('/hanoi/:cameraId/stream-info', getHanoiCameraStreamInfo);

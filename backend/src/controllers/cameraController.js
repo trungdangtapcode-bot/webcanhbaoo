@@ -1,5 +1,6 @@
 const Camera = require('../models/Camera');
 const Event = require('../models/Event');
+const { Readable } = require('stream');
 const { isDatabaseConnected } = require('../config/database');
 const { findHanoiCamera, getHanoiCameras, getHanoiSourceInfo } = require('../services/hanoiCameraService');
 const { fetchSnapshot, findHcmCamera, getHcmCameras } = require('../services/hcmCameraService');
@@ -10,6 +11,9 @@ const {
   getHealthSummary,
 } = require('../services/cameraHealthService');
 const trafficVolumeService = require('../services/trafficVolumeService');
+
+const HANOI_MJPEG_PROXY_BASE_URL =
+  process.env.HANOI_MJPEG_PROXY_BASE_URL || 'http://127.0.0.1:5001';
 
 // Demo cameras used when MongoDB is not available
 const DEMO_CAMERAS = [
@@ -139,6 +143,43 @@ async function getHanoiCameraStreamInfo(req, res) {
   } catch (err) {
     console.error('[CameraController] Hanoi stream info error:', err);
     return res.status(500).json({ error: 'Unable to load Hanoi stream info' });
+  }
+}
+
+/**
+ * GET /api/cameras/hanoi/:cameraId/mjpeg
+ * Proxies decoded MJPEG from the local Hanoi WSS proxy.
+ */
+async function proxyHanoiCameraMjpeg(req, res) {
+  try {
+    const camera = await findHanoiCamera(req.params.cameraId);
+    if (!camera) return res.status(404).json({ error: 'Hanoi camera not found' });
+
+    const proxyUrl =
+      `${HANOI_MJPEG_PROXY_BASE_URL.replace(/\/$/, '')}/hanoi_feed/${encodeURIComponent(camera.camera_id)}`;
+    const upstream = await fetch(proxyUrl);
+
+    if (!upstream.ok || !upstream.body) {
+      return res.status(502).json({
+        error: 'Hanoi MJPEG proxy unavailable',
+        status: upstream.status,
+      });
+    }
+
+    res.setHeader(
+      'Content-Type',
+      upstream.headers.get('content-type') || 'multipart/x-mixed-replace; boundary=frame'
+    );
+    res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+    res.setHeader('Connection', 'keep-alive');
+
+    Readable.fromWeb(upstream.body).pipe(res);
+  } catch (err) {
+    console.error('[CameraController] Hanoi MJPEG proxy error:', err);
+    if (!res.headersSent) {
+      return res.status(500).json({ error: 'Unable to proxy Hanoi camera stream' });
+    }
+    res.end();
   }
 }
 
@@ -354,6 +395,7 @@ module.exports = {
   getHanoiCameraStreamInfo,
   getHanoiTrafficCameras,
   getHcmTrafficCameras,
+  proxyHanoiCameraMjpeg,
   syncHcmTrafficCameras,
   upsertCamera,
 };

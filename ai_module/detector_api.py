@@ -49,10 +49,15 @@ MIN_FIRE_RATIO = float(os.getenv("DETECTOR_FIRE_RATIO", "0.025"))
 FIRE_CONFIRM_FRAMES = int(os.getenv("DETECTOR_FIRE_CONFIRM_FRAMES", "2"))
 
 # ── Flood thresholds ─────────────────────────────────────────────────────────
-FLOOD_WATCH_RATIO = float(os.getenv("DETECTOR_FLOOD_WATCH_RATIO", "0.15"))
-FLOOD_ALERT_RATIO = float(os.getenv("DETECTOR_FLOOD_ALERT_RATIO", "0.30"))
+FLOOD_WATCH_RATIO = float(os.getenv("DETECTOR_FLOOD_WATCH_RATIO", "0.22"))
+FLOOD_ALERT_RATIO = float(os.getenv("DETECTOR_FLOOD_ALERT_RATIO", "0.38"))
 # Minimum connected-component area (px²) to avoid noise specks
-FLOOD_MIN_AREA = int(os.getenv("DETECTOR_FLOOD_MIN_AREA", "800"))
+FLOOD_MIN_AREA = int(os.getenv("DETECTOR_FLOOD_MIN_AREA", "2500"))
+FLOOD_ROI_START_RATIO = float(os.getenv("DETECTOR_FLOOD_ROI_START_RATIO", "0.45"))
+FLOOD_MIN_LARGEST_BLOB_RATIO = float(os.getenv("DETECTOR_FLOOD_MIN_LARGEST_BLOB_RATIO", "0.08"))
+FLOOD_MIN_BOTTOM_COVERAGE = float(os.getenv("DETECTOR_FLOOD_MIN_BOTTOM_COVERAGE", "0.18"))
+FLOOD_MAX_TEXTURE_SCORE = float(os.getenv("DETECTOR_FLOOD_MAX_TEXTURE_SCORE", "0.50"))
+FLOOD_MAX_EDGE_DENSITY = float(os.getenv("DETECTOR_FLOOD_MAX_EDGE_DENSITY", "0.18"))
 
 # ── Traffic thresholds ───────────────────────────────────────────────────────
 TRAFFIC_MIN_VEHICLES = int(os.getenv("DETECTOR_TRAFFIC_MIN_VEHICLES", "6"))
@@ -572,10 +577,10 @@ def _flood_mask(hsv: np.ndarray) -> np.ndarray:
     Dual-range flood mask:
     1. Muddy brown water (H 5–35): nước lũ bùn đỏ
     2. Grey-blue water (H 90–130, low S): nước đô thị sau mưa, mặt đường ngập
-    Only the bottom 2/3 of the frame is analysed (sky / signage excluded).
+    Only the lower road band is analysed (sky / signage excluded).
     """
     h, w = hsv.shape[:2]
-    roi_start = h // 3          # ignore top third (sky, billboards)
+    roi_start = int(h * FLOOD_ROI_START_RATIO)
 
     hsv_roi = hsv[roi_start:, :]
 
@@ -603,6 +608,38 @@ def _flood_mask(hsv: np.ndarray) -> np.ndarray:
     return filtered
 
 
+def _flood_region_stats(mask: np.ndarray) -> Dict[str, float]:
+    roi_area = float(mask.shape[0] * mask.shape[1]) if mask.size else 0.0
+    if roi_area <= 0:
+        return {"largest_blob_ratio": 0.0, "bottom_coverage": 0.0}
+
+    n_labels, _, stats, _ = cv2.connectedComponentsWithStats(mask, connectivity=8)
+    largest_area = 0
+    for i in range(1, n_labels):
+        largest_area = max(largest_area, int(stats[i, cv2.CC_STAT_AREA]))
+
+    band_height = max(1, int(mask.shape[0] * 0.18))
+    bottom_band = mask[-band_height:, :]
+    bottom_area = float(bottom_band.shape[0] * bottom_band.shape[1])
+    bottom_coverage = cv2.countNonZero(bottom_band) / bottom_area if bottom_area > 0 else 0.0
+
+    return {
+        "largest_blob_ratio": largest_area / roi_area,
+        "bottom_coverage": float(bottom_coverage),
+    }
+
+
+def _flood_edge_density(frame: np.ndarray) -> float:
+    h = frame.shape[0]
+    roi = frame[int(h * FLOOD_ROI_START_RATIO):, :]
+    if roi.size == 0:
+        return 1.0
+
+    gray = cv2.cvtColor(roi, cv2.COLOR_BGR2GRAY)
+    edges = cv2.Canny(gray, 60, 160)
+    return cv2.countNonZero(edges) / float(edges.shape[0] * edges.shape[1])
+
+
 def _flood_texture_score(frame: np.ndarray) -> float:
     """
     Texture analysis bằng Gabor filter: nước thật có reflection + ripple pattern
@@ -613,7 +650,9 @@ def _flood_texture_score(frame: np.ndarray) -> float:
     - Score cao (> 0.6) → texture thô → đường khô, không phải nước
     """
     h, w = frame.shape[:2]
-    roi = frame[h // 3:, :]  # bottom 2/3
+    roi = frame[int(h * FLOOD_ROI_START_RATIO):, :]
+    if roi.size == 0:
+        return 1.0
 
     gray = cv2.cvtColor(roi, cv2.COLOR_BGR2GRAY)
 
@@ -640,8 +679,8 @@ def detect_flood(frame: np.ndarray) -> Dict[str, Any] | None:
     hsv = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
     mask = _flood_mask(hsv)
 
-    # Ratio is relative to bottom-2/3 area
-    roi_area = (frame.shape[0] * 2 // 3) * frame.shape[1]
+    # Ratio is relative to the same lower road band used by _flood_mask.
+    roi_area = mask.shape[0] * mask.shape[1]
     water_pixels = float(cv2.countNonZero(mask))
     water_ratio = water_pixels / float(roi_area) if roi_area > 0 else 0.0
 
@@ -650,10 +689,54 @@ def detect_flood(frame: np.ndarray) -> Dict[str, Any] | None:
 
     # ── Texture analysis: giảm false positive ──
     # Nước thật có texture mịn (score thấp), đường ướt có texture thô (score cao)
+    region_stats = _flood_region_stats(mask)
     texture_score = _flood_texture_score(frame)
+    edge_density = _flood_edge_density(frame)
 
     # Nếu texture thô (score > 0.55) VÀ water_ratio thấp → có thể chỉ là đường ướt
-    if texture_score > 0.55 and water_ratio < FLOOD_ALERT_RATIO:
+    strong_shape = (
+        region_stats["largest_blob_ratio"] >= FLOOD_MIN_LARGEST_BLOB_RATIO and
+        region_stats["bottom_coverage"] >= FLOOD_MIN_BOTTOM_COVERAGE
+    )
+    smooth_enough = (
+        texture_score <= FLOOD_MAX_TEXTURE_SCORE and
+        edge_density <= FLOOD_MAX_EDGE_DENSITY
+    )
+
+    # Wet asphalt and rain reflections are often scattered, high-texture, or
+    # edge-heavy. Require a continuous lower-frame water region before alerting.
+    if not strong_shape:
+        very_weak_bottom = region_stats["bottom_coverage"] < FLOOD_MIN_BOTTOM_COVERAGE * 0.6
+        very_rough = texture_score > max(FLOOD_MAX_TEXTURE_SCORE + 0.12, 0.62)
+        very_edge_heavy = edge_density > max(FLOOD_MAX_EDGE_DENSITY + 0.07, 0.25)
+        if water_ratio < FLOOD_ALERT_RATIO or very_weak_bottom or very_rough or very_edge_heavy:
+            log.info(
+                "Flood candidate rejected: ratio=%.4f texture=%.3f edge=%.3f largest=%.3f bottom=%.3f",
+                water_ratio,
+                texture_score,
+                edge_density,
+                region_stats["largest_blob_ratio"],
+                region_stats["bottom_coverage"],
+            )
+            return None
+    elif not smooth_enough:
+        very_edge_heavy = edge_density > max(FLOOD_MAX_EDGE_DENSITY + 0.07, 0.25)
+        weak_for_texture_only = (
+            texture_score > max(FLOOD_MAX_TEXTURE_SCORE + 0.12, 0.62) and
+            region_stats["bottom_coverage"] < 0.35
+        )
+        if water_ratio < FLOOD_ALERT_RATIO or very_edge_heavy or weak_for_texture_only:
+            log.info(
+                "Flood candidate rejected: ratio=%.4f texture=%.3f edge=%.3f largest=%.3f bottom=%.3f",
+                water_ratio,
+                texture_score,
+                edge_density,
+                region_stats["largest_blob_ratio"],
+                region_stats["bottom_coverage"],
+            )
+            return None
+
+    if texture_score > FLOOD_MAX_TEXTURE_SCORE and water_ratio < FLOOD_ALERT_RATIO:
         log.info(
             "Flood candidate rejected: texture_score=%.3f (too rough for water), ratio=%.4f",
             texture_score, water_ratio,
@@ -662,8 +745,9 @@ def detect_flood(frame: np.ndarray) -> Dict[str, Any] | None:
 
     # Điều chỉnh confidence dựa trên texture
     # Texture mịn → tăng confidence, texture thô → giảm confidence
-    texture_modifier = max(0.7, 1.0 - texture_score * 0.5)
-    confidence = min(0.99, water_ratio * 2.2 * texture_modifier)
+    texture_modifier = max(0.55, 1.0 - texture_score * 0.6)
+    geometry_modifier = min(1.15, 0.75 + region_stats["bottom_coverage"])
+    confidence = min(0.99, water_ratio * 2.2 * texture_modifier * geometry_modifier)
 
     severity = "high" if water_ratio >= FLOOD_ALERT_RATIO else "medium"
     return {
@@ -674,7 +758,10 @@ def detect_flood(frame: np.ndarray) -> Dict[str, Any] | None:
         "metadata": {
             "water_ratio": round(water_ratio, 4),
             "texture_score": round(texture_score, 3),
-            "detector": "opencv_dual_hsv_gabor_v2",
+            "edge_density": round(edge_density, 3),
+            "largest_blob_ratio": round(region_stats["largest_blob_ratio"], 3),
+            "bottom_coverage": round(region_stats["bottom_coverage"], 3),
+            "detector": "opencv_dual_hsv_geometry_v3",
         },
     }
 
@@ -816,7 +903,11 @@ def detect_incidents_with_groq(frame: np.ndarray) -> List[Dict[str, Any]]:
         img_b64 = base64.b64encode(buffer).decode('utf-8')
         
         prompt = (
-            "Examine this traffic camera image carefully. Is there any 'fire' or 'flood' incident happening? "
+            "Examine this traffic camera image carefully for real fire or real flooding incidents. "
+            "For flood, do NOT report rain, wet road surface, puddles, reflections, shiny asphalt, or water spray. "
+            "Only report flood when standing water visibly covers a roadway/lane/sidewalk area with meaningful depth, "
+            "such as submerged curb, lane surface covered by water, or vehicles/pedestrians moving through water. "
+            "Return flood only when confidence is at least 0.75. "
             "Return a JSON object with a single key 'events' containing an array of events found. If none, return {\"events\": []}. "
             "Example formats: "
             "{\"events\": [{\"event_type\": \"fire\", \"severity\": \"high\", \"confidence\": 0.95}]} or {\"events\": []}. "
@@ -852,11 +943,24 @@ def detect_incidents_with_groq(frame: np.ndarray) -> List[Dict[str, Any]]:
         data = json.loads(answer)
         events = data.get("events", [])
         
-        if events:
-            log.info(f"Groq detected incidents: {events}")
-            for e in events:
-                e["metadata"] = {"detector": "groq_vision_llm"}
-        return events
+        filtered_events = []
+        for e in events:
+            event_type = e.get("event_type")
+            confidence = float(e.get("confidence") or 0)
+            if event_type == "flood" and confidence < 0.75:
+                log.info("Groq flood candidate rejected: confidence %.2f below 0.75", confidence)
+                continue
+            if event_type not in ("fire", "flood"):
+                continue
+            e["metadata"] = {
+                "detector": "groq_vision_llm",
+                "flood_policy": "rain_wet_road_puddle_reflection_excluded" if event_type == "flood" else None,
+            }
+            filtered_events.append(e)
+
+        if filtered_events:
+            log.info(f"Groq detected incidents: {filtered_events}")
+        return filtered_events
     except Exception as e:
         log.error(f"Groq detection failed: {e}")
         return []

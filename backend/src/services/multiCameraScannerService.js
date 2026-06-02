@@ -4,6 +4,7 @@ const { isDatabaseConnected } = require('../config/database');
 const alertService = require('./alertService');
 const { getCachedHealth } = require('./cameraHealthService');
 const { getPersistedEventImage } = require('./eventImagePolicy');
+const floodService = require('./floodService');
 const trafficVolumeService = require('./trafficVolumeService');
 const { fetchSnapshot, getHcmCameras } = require('./hcmCameraService');
 
@@ -357,6 +358,25 @@ async function processCamera(camera, tickId) {
     // traffic_volume events are informational — only create alerts for incidents
     if (detection.event_type === 'traffic_volume') {
       continue;
+    }
+    if (detection.event_type === 'flood') {
+      const ratio = Number(detection.water_ratio ?? detection.metadata?.water_ratio ?? 0);
+      const result = floodService.evaluate(camera.camera_id, Number.isFinite(ratio) ? ratio : 0);
+      const active = result.state === floodService.STATES.ALERT;
+      detection.active = active;
+      detection.severity = result.severity;
+      detection.metadata = {
+        ...(detection.metadata || {}),
+        flood_state: result.state,
+        flood_prev_state: result.prevState,
+        flood_alert_frames: result.alertFrames,
+        flood_thresholds: result.thresholds,
+        water_ratio: Number.isFinite(ratio) ? ratio : 0,
+      };
+
+      if (!active && result.prevState !== floodService.STATES.ALERT) {
+        continue;
+      }
     }
     published.push(await publishDetection(camera, detection, frame));
   }

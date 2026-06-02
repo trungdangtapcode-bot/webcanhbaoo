@@ -179,12 +179,14 @@ async function createEvent(req, res) {
         const ratio = water_ratio || 0;
         const result = floodService.evaluate(camera_id, ratio);
         shouldAlert = result.shouldAlert;
-        isActiveDetection = result.state !== floodService.STATES.NORMAL;
+        isActiveDetection = result.state === floodService.STATES.ALERT;
         severity = result.severity;
         metadata = {
           water_ratio: ratio,
           state: result.state,
           prev_state: result.prevState,
+          alert_frames: result.alertFrames,
+          thresholds: result.thresholds,
         };
         break;
       }

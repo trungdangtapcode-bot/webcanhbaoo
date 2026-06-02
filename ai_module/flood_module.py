@@ -37,7 +37,7 @@ GREY_LOWER  = np.array([90,  15,  30])
 GREY_UPPER  = np.array([130, 150, 180])
 
 # Minimum connected-component area (px²) to filter out noise
-MIN_BLOB_AREA = int(os.getenv("FLOOD_MIN_BLOB_AREA", "800"))
+MIN_BLOB_AREA = int(os.getenv("FLOOD_MIN_BLOB_AREA", "2500"))
 
 # Dynamic polling intervals (seconds)
 POLL_NORMAL = 300   # 5 minutes
@@ -45,8 +45,9 @@ POLL_WATCH  = 30    # 30 seconds
 POLL_ALERT  = 10    # 10 seconds
 
 # Thresholds
-WATCH_THRESHOLD = 0.15
-ALERT_THRESHOLD = 0.30
+WATCH_THRESHOLD = float(os.getenv("FLOOD_WATCH_RATIO", "0.22"))
+ALERT_THRESHOLD = float(os.getenv("FLOOD_ALERT_RATIO", "0.38"))
+ROI_START_RATIO = float(os.getenv("FLOOD_ROI_START_RATIO", "0.45"))
 
 logging.basicConfig(
     level=logging.INFO,
@@ -118,7 +119,7 @@ def compute_water_ratio(frame: np.ndarray) -> float:
     Applies connected-component area filter to remove noise specks.
     """
     h, w = frame.shape[:2]
-    roi_start = h // 3          # analyse from top-third downward
+    roi_start = int(h * ROI_START_RATIO)
     frame_roi = frame[roi_start:, :]
 
     hsv = cv2.cvtColor(frame_roi, cv2.COLOR_BGR2HSV)
@@ -223,19 +224,21 @@ def main():
         log.info(f"Water ratio: {ratio:.4f} | State: {current_state} → {new_state}")
 
         # ─── Only send event when state changes OR when active (WATCH/ALERT) ───
-        state_changed = new_state != current_state
-        is_active = new_state in ("WATCH", "ALERT")
+        was_alert = current_state == "ALERT"
+        is_alert = new_state == "ALERT"
+        should_send = is_alert or (was_alert and not is_alert)
 
-        if state_changed or is_active:
+        if should_send:
             event = {
                 "camera_id": CAMERA_ID,
                 "event_type": "flood",
                 "confidence": round(min(ratio * 2.5, 1.0), 3),
+                "severity": "high" if is_alert else "low",
                 "water_ratio": round(ratio, 4),
                 "image_base64": encode_frame(frame),
                 "timestamp": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
                 # Include active=False signal when going back to NORMAL
-                **({"active": False, "resolved": True} if new_state == "NORMAL" and state_changed else {}),
+                **({"active": False, "resolved": True} if was_alert and not is_alert else {}),
             }
             send_event(event)
 

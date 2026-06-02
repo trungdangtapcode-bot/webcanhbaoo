@@ -1112,16 +1112,25 @@
       const snapshotUrl = cam?.data?.snapshot_url;
       const streamUrl = cam?.data?.stream_url;
       const streamType = cam?.data?.stream_type || "";
+      const sourceType = cam?.data?.source || "";
       const isSnapshotStream = cam?.data?.stream_type === "snapshot" || Boolean(snapshotUrl);
-      const isWssStream = streamType === "wss_video";
-      const sourceUrl = snapshotUrl || streamUrl || ("http://localhost:5000/video_feed/" + encodeURIComponent(camId));
+      const isHanoiRealtime =
+        streamType === "wss_video" ||
+        sourceType === "hanoi_video_wall" ||
+        String(camId || "").startsWith("HANOI_");
+      const hanoiProxyUrl = getHanoiProxyUrl(camId);
+      const sourceUrl = isHanoiRealtime
+        ? hanoiProxyUrl
+        : snapshotUrl || streamUrl || ("http://localhost:5000/video_feed/" + encodeURIComponent(camId));
+      const liveBadge = document.querySelector(".live-badge");
 
       document.getElementById("modal-cam-name").textContent = camName;
-      document.getElementById("stream-placeholder-title").textContent = isWssStream
-        ? "Realtime WSS source detected"
+      if (liveBadge) liveBadge.textContent = isHanoiRealtime ? "Realtime WSS metadata" : "Live AI stream";
+      document.getElementById("stream-placeholder-title").textContent = isHanoiRealtime
+        ? "Connecting to Hanoi realtime video"
         : isSnapshotStream ? "Connecting to live camera" : "Waiting for stream";
-      document.getElementById("stream-placeholder-copy").textContent = isWssStream
-        ? "Hanoi exposes this camera as a WebSocket video stream. The app can list and inspect it, but needs a decoder/proxy before browser playback."
+      document.getElementById("stream-placeholder-copy").textContent = isHanoiRealtime
+        ? "The local Hanoi WSS proxy is decoding HEVC video into a browser-friendly MJPEG stream."
         : isSnapshotStream
         ? "Live frames are loading through the local camera proxy."
         : "The AI video proxy will appear here when the camera feed is available.";
@@ -1129,15 +1138,20 @@
       stream.onload = () => shell.classList.remove("stream-offline");
       stream.onerror = () => {
         shell.classList.add("stream-offline");
+        if (isHanoiRealtime) {
+          document.getElementById("stream-placeholder-title").textContent = "Hanoi proxy unavailable";
+          document.getElementById("stream-placeholder-copy").textContent =
+            "Start the Hanoi WSS proxy on port 5001, then reopen this camera.";
+          return;
+        }
         document.getElementById("stream-placeholder-title").textContent = "Stream source unavailable";
         document.getElementById("stream-placeholder-copy").textContent = isSnapshotStream
           ? "The traffic portal did not return a frame for this camera."
           : "Start the AI proxy on localhost:5000 to view the processed camera feed.";
       };
 
-      if (isWssStream) {
-        shell.classList.add("stream-offline");
-        stream.src = "";
+      if (isHanoiRealtime) {
+        stream.src = sourceUrl;
       } else if (isSnapshotStream) {
         const loadFrame = () => {
           const joiner = sourceUrl.includes("?") ? "&" : "?";
@@ -1151,6 +1165,17 @@
 
       loadCameraHistory(camId);
       document.getElementById("video-modal").classList.add("active");
+    }
+
+    function getHanoiProxyUrl(camId) {
+      const configuredBase = window.HANOI_PROXY_BASE_URL;
+      if (configuredBase) {
+        return configuredBase.replace(/\/$/, "") + "/hanoi_feed/" + encodeURIComponent(camId);
+      }
+
+      const isDev = window.location.protocol === "file:" || ["4173", "5173"].includes(window.location.port);
+      const apiBase = isDev ? "http://localhost:3000" : "";
+      return apiBase + "/api/cameras/hanoi/" + encodeURIComponent(camId) + "/mjpeg";
     }
 
     async function loadCameraHistory(cameraId) {
