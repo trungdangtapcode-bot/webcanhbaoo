@@ -1524,19 +1524,6 @@
 
     async function toggleScanner() {
       const toggle = document.getElementById("scanner-toggle");
-      if (activeCameraSource === "hanoi") {
-        renderScannerStatus({
-          running: false,
-          config: {},
-          lastRun: { processed: 0, cameras: cameras.size },
-        });
-        if (toggle) {
-          const previous = toggle.textContent;
-          toggle.textContent = "Needs decoder";
-          window.setTimeout(() => { toggle.textContent = previous || "Start scan"; }, 1400);
-        }
-        return;
-      }
       const status = await fetchJsonOrNull("/api/scanner/status");
       if (!status) {
         renderScannerStatus({
@@ -1553,9 +1540,9 @@
           ? await postJsonOrNull("/api/scanner/stop")
           : await postJsonOrNull("/api/scanner/start", {
             cameraLimit: Math.min(Math.max(cameras.size || 60, 1), 60),
-            concurrency: 4,
-            intervalMs: 10000,
-            source: "hcm",
+            concurrency: activeCameraSource === "hanoi" ? 2 : 4,
+            intervalMs: activeCameraSource === "hanoi" ? 15000 : 10000,
+            source: activeCameraSource,
           });
         if (next) renderScannerStatus(next);
       } finally {

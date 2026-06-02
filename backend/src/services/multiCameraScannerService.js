@@ -7,8 +7,12 @@ const { getPersistedEventImage } = require('./eventImagePolicy');
 const floodService = require('./floodService');
 const trafficVolumeService = require('./trafficVolumeService');
 const { fetchSnapshot, getHcmCameras } = require('./hcmCameraService');
+const { getHanoiCameras } = require('./hanoiCameraService');
 
 const VALID_EVENT_TYPES = new Set(['traffic_jam', 'traffic_volume', 'fire', 'flood']);
+const HANOI_MJPEG_PROXY_BASE_URL =
+  process.env.HANOI_MJPEG_PROXY_BASE_URL || 'http://127.0.0.1:5001';
+const HANOI_SNAPSHOT_TIMEOUT_MS = parsePositiveInt(process.env.HANOI_SNAPSHOT_TIMEOUT_MS, 18000);
 
 function parsePositiveInt(value, fallback) {
   const parsed = Number.parseInt(value, 10);
@@ -90,6 +94,9 @@ function isRushHour(date = new Date()) {
 function isCentralCamera(camera) {
   const lat = Number(camera.location?.lat);
   const lng = Number(camera.location?.lng);
+  if (camera.source === 'hanoi_video_wall') {
+    return lat >= 21.0 && lat <= 21.06 && lng >= 105.78 && lng <= 105.87;
+  }
   return lat >= 10.74 && lat <= 10.82 && lng >= 106.66 && lng <= 106.73;
 }
 
@@ -172,6 +179,14 @@ async function getAllSourceCameras() {
     return getHcmCameras();
   }
 
+  if (state.config.source === 'hanoi') {
+    return getHanoiCameras();
+  }
+
+  if (state.config.source === 'all') {
+    return [...getHcmCameras(), ...(await getHanoiCameras())];
+  }
+
   if (isDatabaseConnected()) {
     return Camera.find({ active: { $ne: false } })
       .select('-token_hash')
@@ -187,7 +202,42 @@ async function getCameraBatch() {
   return selectPriorityBatch(cameras, state.config.cameraLimit);
 }
 
+async function fetchBufferWithTimeout(url, timeoutMs) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const response = await fetch(url, { signal: controller.signal });
+    if (!response.ok) {
+      throw new Error(`Frame request failed with ${response.status}`);
+    }
+    return {
+      buffer: Buffer.from(await response.arrayBuffer()),
+      contentType: response.headers.get('content-type') || 'image/jpeg',
+    };
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+async function fetchHanoiFrame(camera) {
+  const proxyBase = HANOI_MJPEG_PROXY_BASE_URL.replace(/\/$/, '');
+  const url =
+    `${proxyBase}/hanoi_snapshot/${encodeURIComponent(camera.camera_id)}?timeout=${Math.ceil(HANOI_SNAPSHOT_TIMEOUT_MS / 1000)}`;
+  const frame = await fetchBufferWithTimeout(url, HANOI_SNAPSHOT_TIMEOUT_MS + 3000);
+  return {
+    ...frame,
+    metadata: {
+      frame_source: 'hanoi_wss_proxy_snapshot',
+      proxy_base: proxyBase,
+    },
+  };
+}
+
 async function fetchCameraFrame(camera) {
+  if (camera.source === 'hanoi_video_wall' || camera.stream_type === 'wss_video') {
+    return fetchHanoiFrame(camera);
+  }
+
   if (camera.source === 'hcm_traffic_portal' || camera.external_id) {
     return fetchSnapshot(camera.external_id || camera.camera_id);
   }
@@ -248,6 +298,7 @@ async function detectFrame(camera, frame, tickId) {
         },
         content_type: frame.contentType,
         image_base64: frame.buffer.toString('base64'),
+        metadata: frame.metadata || {},
         timestamp: new Date().toISOString(),
       }),
     });
