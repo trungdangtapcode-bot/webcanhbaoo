@@ -1,6 +1,7 @@
 const Camera = require('../models/Camera');
 const Event = require('../models/Event');
 const { isDatabaseConnected } = require('../config/database');
+const { findHanoiCamera, getHanoiCameras, getHanoiSourceInfo } = require('../services/hanoiCameraService');
 const { fetchSnapshot, findHcmCamera, getHcmCameras } = require('../services/hcmCameraService');
 const {
   checkCameraHealth,
@@ -93,6 +94,51 @@ async function getHcmTrafficCameras(req, res) {
   } catch (err) {
     console.error('[CameraController] HCM cameras error:', err);
     return res.status(500).json({ error: 'Unable to load HCM cameras' });
+  }
+}
+
+/**
+ * GET /api/cameras/hanoi
+ * Returns public Hanoi traffic cameras with realtime WSS metadata.
+ */
+async function getHanoiTrafficCameras(req, res) {
+  try {
+    const cameras = await getHanoiCameras({
+      limit: req.query.limit,
+      refresh: req.query.refresh === 'true',
+    });
+    return res.json({
+      cameras,
+      source: 'hanoi_video_wall',
+      stream_mode: 'wss_video',
+      stream_playback: 'requires_proxy_decoder',
+      ...getHanoiSourceInfo(),
+    });
+  } catch (err) {
+    console.error('[CameraController] Hanoi cameras error:', err);
+    return res.status(500).json({ error: 'Unable to load Hanoi cameras' });
+  }
+}
+
+/**
+ * GET /api/cameras/hanoi/:cameraId/stream-info
+ * Returns the realtime stream metadata for a Hanoi camera.
+ */
+async function getHanoiCameraStreamInfo(req, res) {
+  try {
+    const camera = await findHanoiCamera(req.params.cameraId);
+    if (!camera) return res.status(404).json({ error: 'Hanoi camera not found' });
+    return res.json({
+      camera_id: camera.camera_id,
+      name: camera.name,
+      stream_type: camera.stream_type,
+      stream_url: camera.stream_url,
+      metadata: camera.metadata,
+      playback_note: 'The Hanoi source is a WSS realtime stream. Add a decoder/proxy before direct browser playback.',
+    });
+  } catch (err) {
+    console.error('[CameraController] Hanoi stream info error:', err);
+    return res.status(500).json({ error: 'Unable to load Hanoi stream info' });
   }
 }
 
@@ -305,6 +351,8 @@ module.exports = {
   getCameraSnapshot,
   getCameraHealthStatus,
   getCameras,
+  getHanoiCameraStreamInfo,
+  getHanoiTrafficCameras,
   getHcmTrafficCameras,
   syncHcmTrafficCameras,
   upsertCamera,

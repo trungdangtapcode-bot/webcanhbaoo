@@ -11,6 +11,22 @@
       dark: "https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png",
       light: "https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png",
     };
+    const CAMERA_SOURCES = {
+      hcm: {
+        endpoint: "/api/cameras/hcm",
+        fallbackEndpoint: "/api/cameras",
+        label: "TP.HCM",
+        center: MAP_CENTER,
+        zoom: MAP_ZOOM,
+      },
+      hanoi: {
+        endpoint: "/api/cameras/hanoi",
+        fallbackEndpoint: "/api/cameras/hanoi",
+        label: "Hà Nội",
+        center: [21.0285, 105.8542],
+        zoom: 12,
+      },
+    };
     const ALERT_TYPES = {
       traffic_jam: { label: "Traffic jam", shortLabel: "Traffic", color: "traffic_jam" },
       fire: { label: "Fire detected", shortLabel: "Fire", color: "fire" },
@@ -40,8 +56,12 @@
     let cameraHealthChecking = false;
     let trafficHeatLayer = null;
     let trafficHeatVisible = true;
+    let mapOnlyMode = false;
+    let routeCameraIds = null;
+    let cameraClusterLayer = null;
     let activeFilter = "all";
     let activeCameraId = null;
+    let activeCameraSource = new URLSearchParams(window.location.search).get("city") === "hanoi" ? "hanoi" : "hcm";
     let activeWorkspacePanel = "cameras";
     let streamRefreshTimer = null;
     let tileLayer = null;
@@ -58,6 +78,17 @@
     }).setView(MAP_CENTER, MAP_ZOOM);
 
     trafficHeatLayer = L.layerGroup().addTo(map);
+    if (typeof L.markerClusterGroup === "function") {
+      cameraClusterLayer = L.markerClusterGroup({
+        disableClusteringAtZoom: 17,
+        maxClusterRadius: 46,
+        showCoverageOnHover: false,
+        spiderfyOnMaxZoom: true,
+        zoomToBoundsOnClick: false,
+        iconCreateFunction: createCameraClusterIcon,
+      }).addTo(map);
+      cameraClusterLayer.on("clusterclick", handleCameraClusterClick);
+    }
     L.control.zoom({ position: "topright" }).addTo(map);
     setMapTiles(getCurrentTheme());
 
@@ -357,6 +388,64 @@
       });
     }
 
+    function createCameraClusterIcon(cluster) {
+      const count = cluster.getChildCount();
+      const size = count >= 100 ? 58 : count >= 30 ? 50 : 42;
+      const level = count >= 100 ? "large" : count >= 30 ? "medium" : "small";
+      return L.divIcon({
+        html: `<div class="camera-cluster ${level}"><span>${count}</span><small>cams</small></div>`,
+        className: "camera-cluster-shell",
+        iconSize: [size, size],
+        iconAnchor: [size / 2, size / 2],
+      });
+    }
+
+    function getMarkerCamera(marker) {
+      return cameras.get(marker?.options?.cameraId);
+    }
+
+    function buildClusterPopup(markers) {
+      const sorted = markers
+        .map((marker) => getMarkerCamera(marker))
+        .filter(Boolean)
+        .sort((a, b) => maybeRepairMojibake(a.data.name).localeCompare(maybeRepairMojibake(b.data.name)));
+      const preview = sorted.slice(0, 9);
+      const extra = Math.max(sorted.length - preview.length, 0);
+
+      return `
+        <div class="cluster-popup">
+          <div class="cluster-popup-head">
+            <strong>${sorted.length} cameras nearby</strong>
+            <span>Click a camera to focus or zoom in for individual markers.</span>
+          </div>
+          <div class="cluster-camera-list">
+            ${preview.map((cam) => `
+              <button class="cluster-camera-action" type="button" data-focus-camera-id="${escapeAttr(cam.data.camera_id)}">
+                <span>${escapeHtml(cam.data.name)}</span>
+                <small>${escapeHtml(getHealthLabel(cam.healthStatus || "unchecked"))}</small>
+              </button>
+            `).join("")}
+            ${extra ? `<div class="cluster-more">+${extra} more cameras in this cluster</div>` : ""}
+          </div>
+        </div>
+      `;
+    }
+
+    function handleCameraClusterClick(event) {
+      const cluster = event.layer;
+      const markers = cluster.getAllChildMarkers();
+      L.popup({ maxWidth: 340, closeButton: true })
+        .setLatLng(cluster.getLatLng())
+        .setContent(buildClusterPopup(markers))
+        .openOn(map);
+
+      if (markers.length > 24 && map.getZoom() < 15) {
+        map.fitBounds(cluster.getBounds().pad(0.16), { maxZoom: 15, animate: true });
+      } else if (typeof cluster.spiderfy === "function" && map.getZoom() >= 15) {
+        cluster.spiderfy();
+      }
+    }
+
     function getAlertMeta(type) {
       return ALERT_TYPES[type] || { label: maybeRepairMojibake(type || "Alert"), shortLabel: "Alert", color: "normal" };
     }
@@ -410,7 +499,8 @@
     function addCameraMarker(cam) {
       const marker = L.marker([cam.location.lat, cam.location.lng], {
         icon: createMarkerIcon("normal"),
-      }).addTo(map);
+        cameraId: cam.camera_id,
+      });
 
       marker.bindPopup(buildNormalPopup(cam));
       cameras.set(cam.camera_id, {
@@ -420,6 +510,67 @@
         health: null,
         healthStatus: "unchecked",
       });
+      updateCameraMarkerVisibility(cam.camera_id);
+    }
+
+    function clearCameraMarkers() {
+      if (cameraClusterLayer) {
+        cameraClusterLayer.clearLayers();
+      } else {
+        cameras.forEach((cam) => {
+          if (cam.marker && map.hasLayer(cam.marker)) map.removeLayer(cam.marker);
+        });
+      }
+      cameras.clear();
+      activeCameraId = null;
+      routeCameraIds = null;
+      cameraHealthSummary = { live: 0, issues: 0, unchecked: 0, total: 0 };
+    }
+
+    function updateCameraSourceTabs() {
+      document.querySelectorAll("[data-camera-source]").forEach((button) => {
+        const isActive = button.dataset.cameraSource === activeCameraSource;
+        button.classList.toggle("active", isActive);
+        button.setAttribute("aria-pressed", String(isActive));
+      });
+    }
+
+    async function loadCameraDataset(options = {}) {
+      const config = CAMERA_SOURCES[activeCameraSource] || CAMERA_SOURCES.hcm;
+      updateCameraSourceTabs();
+      clearCameraMarkers();
+      renderCameraList();
+
+      let json = await fetchJsonOrNull(config.endpoint);
+      if ((!json || !(json.cameras || []).length) && config.fallbackEndpoint !== config.endpoint) {
+        json = await fetchJsonOrNull(config.fallbackEndpoint);
+      }
+      if (!json) throw new Error("Camera API unavailable");
+
+      (json.cameras || []).forEach((cam) => addCameraMarker(cam));
+      renderCameraList();
+      updateHealthSummaryUi({ total: cameras.size, live: 0, issues: 0, unchecked: cameras.size });
+
+      if (options.fit !== false) {
+        if (cameras.size) fitMapToCameras();
+        else map.flyTo(config.center, config.zoom);
+      }
+      return json;
+    }
+
+    async function setCameraSource(source) {
+      if (!CAMERA_SOURCES[source] || source === activeCameraSource) return;
+      activeCameraSource = source;
+      try {
+        const url = new URL(window.location.href);
+        url.searchParams.set("city", source);
+        window.history.replaceState({}, "", url);
+      } catch (_err) {}
+      document.getElementById("incident-focus-count").textContent = "0";
+      document.getElementById("incident-focus-copy").textContent = "Loading " + CAMERA_SOURCES[source].label + " cameras.";
+      await loadCameraDataset({ fit: true });
+      await loadCameraHealth();
+      await loadActiveAlerts();
     }
 
     function getHealthLabel(status) {
@@ -439,6 +590,9 @@
     }
 
     function getCameraHealthCopy(cam) {
+      if (cam.data?.stream_type === "wss_video" && cam.healthStatus === "unchecked") {
+        return "Realtime WSS source";
+      }
       const status = cam.healthStatus || "unchecked";
       const checkedAt = cam.health?.checked_at ? " - " + formatTime(cam.health.checked_at, false) : "";
       const response = cam.health?.response_ms ? " - " + cam.health.response_ms + "ms" : "";
@@ -491,6 +645,7 @@
       let rendered = 0;
 
       cameras.forEach((cam, id) => {
+        if (routeCameraIds && !routeCameraIds.has(id)) return;
         if (filterMode === "alerts" && cam.status === "normal") return;
         if (filterMode === "live" && cam.healthStatus !== "live") return;
         if (filterMode === "offline" && !isHealthIssue(cam.healthStatus)) return;
@@ -529,10 +684,33 @@
         `;
       }
 
-      document.getElementById("camera-count").textContent = cameras.size;
+      document.getElementById("camera-count").textContent = routeCameraIds ? `${rendered}/${cameras.size}` : cameras.size;
       document.getElementById("stat-cameras").textContent = cameras.size;
       updateHealthSummaryUi(cameraHealthSummary);
       populateEmergencyCameraSelect();
+    }
+
+    function updateCameraMarkerVisibility(cameraId) {
+      const cam = cameras.get(cameraId);
+      if (!cam?.marker) return;
+      const shouldShow = !routeCameraIds || routeCameraIds.has(cameraId);
+      if (cameraClusterLayer) {
+        const isClustered = cameraClusterLayer.hasLayer(cam.marker);
+        if (shouldShow && !isClustered) cameraClusterLayer.addLayer(cam.marker);
+        if (!shouldShow && isClustered) cameraClusterLayer.removeLayer(cam.marker);
+        return;
+      }
+
+      const isOnMap = map.hasLayer(cam.marker);
+      if (shouldShow && !isOnMap) cam.marker.addTo(map);
+      if (!shouldShow && isOnMap) map.removeLayer(cam.marker);
+    }
+
+    function refreshCameraMarkerVisibility() {
+      cameras.forEach((_cam, cameraId) => updateCameraMarkerVisibility(cameraId));
+      renderCameraList();
+      const clearButton = document.getElementById("route-filter-clear");
+      if (clearButton) clearButton.hidden = !routeCameraIds;
     }
 
     function populateEmergencyCameraSelect() {
@@ -561,8 +739,14 @@
       if (!cam) return;
       activeCameraId = cameraId;
       renderCameraList();
-      map.flyTo([cam.data.location.lat, cam.data.location.lng], zoom, { duration: 0.65 });
-      cam.marker.openPopup();
+      if (cameraClusterLayer && cameraClusterLayer.hasLayer(cam.marker)) {
+        cameraClusterLayer.zoomToShowLayer(cam.marker, () => {
+          cam.marker.openPopup();
+        });
+      } else {
+        map.flyTo([cam.data.location.lat, cam.data.location.lng], zoom, { duration: 0.65 });
+        cam.marker.openPopup();
+      }
     }
 
     function updateCameraDot(cameraId, eventType) {
@@ -580,6 +764,12 @@
       dot.title = ALERT_TYPES[eventType]?.label || getHealthLabel(eventType);
     }
 
+    function refreshCameraClusterIcon(cam) {
+      if (cameraClusterLayer && typeof cameraClusterLayer.refreshClusters === "function") {
+        cameraClusterLayer.refreshClusters(cam.marker);
+      }
+    }
+
     function renderCameraAlertState(cameraId, options = {}) {
       const cam = cameras.get(cameraId);
       if (!cam) return;
@@ -590,6 +780,7 @@
         cam.marker.setPopupContent(buildNormalPopup(cam.data));
         cam.status = "normal";
         updateCameraDot(cameraId, cam.healthStatus || "unchecked");
+        refreshCameraClusterIcon(cam);
         return;
       }
 
@@ -597,6 +788,7 @@
       cam.status = activeAlert.event_type;
       cam.marker.setPopupContent(buildAlertPopup(activeAlert));
       updateCameraDot(cameraId, activeAlert.event_type);
+      refreshCameraClusterIcon(cam);
 
       const el = cam.marker.getElement();
       if (options.blink !== false && el) {
@@ -918,12 +1110,18 @@
       const stream = document.getElementById("video-stream");
       const snapshotUrl = cam?.data?.snapshot_url;
       const streamUrl = cam?.data?.stream_url;
+      const streamType = cam?.data?.stream_type || "";
       const isSnapshotStream = cam?.data?.stream_type === "snapshot" || Boolean(snapshotUrl);
+      const isWssStream = streamType === "wss_video";
       const sourceUrl = snapshotUrl || streamUrl || ("http://localhost:5000/video_feed/" + encodeURIComponent(camId));
 
       document.getElementById("modal-cam-name").textContent = camName;
-      document.getElementById("stream-placeholder-title").textContent = isSnapshotStream ? "Connecting to live camera" : "Waiting for stream";
-      document.getElementById("stream-placeholder-copy").textContent = isSnapshotStream
+      document.getElementById("stream-placeholder-title").textContent = isWssStream
+        ? "Realtime WSS source detected"
+        : isSnapshotStream ? "Connecting to live camera" : "Waiting for stream";
+      document.getElementById("stream-placeholder-copy").textContent = isWssStream
+        ? "Hanoi exposes this camera as a WebSocket video stream. The app can list and inspect it, but needs a decoder/proxy before browser playback."
+        : isSnapshotStream
         ? "Live frames are loading through the local camera proxy."
         : "The AI video proxy will appear here when the camera feed is available.";
       shell.classList.remove("stream-offline");
@@ -936,7 +1134,10 @@
           : "Start the AI proxy on localhost:5000 to view the processed camera feed.";
       };
 
-      if (isSnapshotStream) {
+      if (isWssStream) {
+        shell.classList.add("stream-offline");
+        stream.src = "";
+      } else if (isSnapshotStream) {
         const loadFrame = () => {
           const joiner = sourceUrl.includes("?") ? "&" : "?";
           stream.src = sourceUrl + joiner + "ts=" + Date.now();
@@ -1160,22 +1361,44 @@
     }
 
     function setWorkspacePanel(panelName) {
-      activeWorkspacePanel = panelName || "cameras";
+      const requestedPanel = panelName || "cameras";
+      const mapOnlyRequested = requestedPanel === "map";
+      activeWorkspacePanel = mapOnlyRequested ? "map" : requestedPanel;
+      setMapOnlyMode(mapOnlyRequested);
       document.querySelectorAll("[data-workspace-tab]").forEach((btn) => {
         const active = btn.dataset.workspaceTab === activeWorkspacePanel;
         btn.classList.toggle("active", active);
         btn.setAttribute("aria-selected", active ? "true" : "false");
       });
       document.querySelectorAll("[data-workspace-panel]").forEach((panel) => {
-        panel.hidden = panel.dataset.workspacePanel !== activeWorkspacePanel;
+        panel.hidden = mapOnlyRequested
+          ? panel.dataset.workspacePanel !== "cameras"
+          : panel.dataset.workspacePanel !== activeWorkspacePanel;
       });
 
-      if (activeWorkspacePanel === "cameras") {
+      if (activeWorkspacePanel === "cameras" || activeWorkspacePanel === "map") {
         renderCameraList();
         setTimeout(() => map.invalidateSize(), 80);
       }
       if (activeWorkspacePanel === "alerts") applyFilter();
       if (activeWorkspacePanel === "news") loadNews();
+    }
+
+    function setMapOnlyMode(enabled) {
+      mapOnlyMode = Boolean(enabled);
+      document.querySelector(".app-shell")?.classList.toggle("map-only", mapOnlyMode);
+      const toggle = document.getElementById("map-only-toggle");
+      if (toggle) {
+        toggle.classList.toggle("enabled", mapOnlyMode);
+        toggle.setAttribute("aria-pressed", String(mapOnlyMode));
+        toggle.setAttribute("title", mapOnlyMode ? "Show dashboard" : "Map only");
+        toggle.setAttribute("aria-label", mapOnlyMode ? "Show dashboard" : "Map only");
+      }
+      setTimeout(() => map.invalidateSize(), 120);
+    }
+
+    function toggleMapOnlyMode() {
+      setWorkspacePanel(mapOnlyMode ? "cameras" : "map");
     }
 
     function renderScannerStatus(status) {
@@ -1212,6 +1435,11 @@
     }
 
     async function loadCameraHealth() {
+      if (activeCameraSource === "hanoi") {
+        updateHealthSummaryUi({ total: cameras.size, live: 0, issues: 0, unchecked: cameras.size });
+        renderCameraList();
+        return;
+      }
       const json = await fetchJsonOrNull("/api/cameras/health?limit=all");
       if (!json) {
         updateHealthSummaryUi();
@@ -1225,6 +1453,15 @@
     async function refreshCameraHealth() {
       if (cameraHealthChecking) return;
       const button = document.getElementById("health-check");
+      if (activeCameraSource === "hanoi") {
+        updateHealthSummaryUi({ total: cameras.size, live: 0, issues: 0, unchecked: cameras.size });
+        if (button) {
+          const previous = button.textContent;
+          button.textContent = "WSS only";
+          window.setTimeout(() => { button.textContent = previous || "Check health"; }, 1200);
+        }
+        return;
+      }
       const unchecked = Array.from(cameras.entries())
         .filter(([_id, cam]) => cam.healthStatus === "unchecked")
         .slice(0, 60)
@@ -1259,6 +1496,19 @@
 
     async function toggleScanner() {
       const toggle = document.getElementById("scanner-toggle");
+      if (activeCameraSource === "hanoi") {
+        renderScannerStatus({
+          running: false,
+          config: {},
+          lastRun: { processed: 0, cameras: cameras.size },
+        });
+        if (toggle) {
+          const previous = toggle.textContent;
+          toggle.textContent = "Needs decoder";
+          window.setTimeout(() => { toggle.textContent = previous || "Start scan"; }, 1400);
+        }
+        return;
+      }
       const status = await fetchJsonOrNull("/api/scanner/status");
       if (!status) {
         renderScannerStatus({
@@ -1342,8 +1592,9 @@
       list.innerHTML = items.map((item) => `
         <a class="news-item" href="${escapeAttr(item.url)}" target="_blank" rel="noopener noreferrer">
           <div class="news-title">${escapeHtml(item.title)}</div>
-          ${item.summary ? `<div class="news-summary">${escapeHtml(item.summary)}</div>` : ""}
+          ${item.summary ? `<div class="news-summary"><span class="news-summary-label">Summary:</span> ${escapeHtml(item.summary)}</div>` : ""}
           <div class="news-meta">
+            <span class="news-category">${escapeHtml(item.category || "news")}</span>
             <span class="news-source">${escapeHtml(item.source || "News")}</span>
             <span class="news-dot" aria-hidden="true"></span>
             <span>${escapeHtml(formatRelativeTime(item.published_at))}</span>
@@ -1410,6 +1661,7 @@
         const json = await fetchJsonOrNull("/api/events/active");
         activeAlerts.clear();
         (json?.alerts || []).forEach((alertData) => {
+          if (!cameras.has(alertData.camera_id)) return;
           activeAlerts.set(activeAlertKey(alertData.camera_id, alertData.event_type), alertData);
         });
         cameras.forEach((_cam, cameraId) => renderCameraAlertState(cameraId, { blink: false, openPopup: false }));
@@ -1494,8 +1746,51 @@
       loadTrafficHeatmap();
     }
 
+    function findCameraIdsNearRoute(route, maxDistanceMeters = 280) {
+      const ids = new Set();
+      cameras.forEach((cam, cameraId) => {
+        const location = cam.data.location;
+        if (!location) return;
+        const nearRoute = route.some((point) =>
+          distanceBetweenMeters(
+            { lat: Number(location.lat), lng: Number(location.lng) },
+            { lat: Number(point[0]), lng: Number(point[1]) }
+          ) <= maxDistanceMeters
+        );
+        if (nearRoute) ids.add(cameraId);
+      });
+      return ids;
+    }
+
+    function applyRouteCameraFilter(route, routeCameras = []) {
+      const ids = new Set((routeCameras || []).map((camera) => camera.camera_id).filter(Boolean));
+      if (!ids.size) {
+        findCameraIdsNearRoute(route).forEach((cameraId) => ids.add(cameraId));
+      }
+      routeCameraIds = ids.size ? ids : null;
+      refreshCameraMarkerVisibility();
+      const count = routeCameraIds ? routeCameraIds.size : cameras.size;
+      document.getElementById("incident-focus-count").textContent = count;
+      document.getElementById("incident-focus-copy").textContent =
+        `Route view is active. Showing ${count} cameras near the selected route; all other cameras are hidden for clarity.`;
+    }
+
+    function clearRouteCameraFilter() {
+      routeCameraIds = null;
+      if (chatRouteLayer) {
+        map.removeLayer(chatRouteLayer);
+        chatRouteLayer = null;
+      }
+      chatRouteMarkers.forEach((marker) => map.removeLayer(marker));
+      chatRouteMarkers = [];
+      refreshCameraMarkerVisibility();
+      updateIncidentFocus(getLatestActiveAlert());
+    }
+
     function fitMapToCameras() {
-      const cameraPoints = Array.from(cameras.values())
+      const cameraPoints = Array.from(cameras.entries())
+        .filter(([cameraId]) => !routeCameraIds || routeCameraIds.has(cameraId))
+        .map(([_cameraId, cam]) => cam)
         .map((cam) => [cam.data.location.lat, cam.data.location.lng])
         .filter(([lat, lng]) => Number.isFinite(lat) && Number.isFinite(lng));
       const cityPoints = cameraPoints.filter(([lat, lng]) =>
@@ -1530,12 +1825,7 @@
       setNearbyRadius(nearbyRadius);
 
       try {
-        let json = await fetchJsonOrNull("/api/cameras/hcm");
-        if (!json || !(json.cameras || []).length) {
-          json = await fetchJsonOrNull("/api/cameras");
-        }
-        if (!json) throw new Error("Camera API unavailable");
-        (json.cameras || []).forEach((cam) => addCameraMarker(cam));
+        await loadCameraDataset({ fit: false });
       } catch (err) {
         [
           { camera_id: "CAM_001", name: "Nguyen Hue - Le Loi", location: { lat: 10.7739, lng: 106.7030, address: "District 1" } },
@@ -1557,8 +1847,13 @@
     }
 
     document.getElementById("camera-search").addEventListener("input", renderCameraList);
+    document.querySelectorAll("[data-camera-source]").forEach((btn) => {
+      btn.addEventListener("click", () => setCameraSource(btn.dataset.cameraSource));
+    });
     document.getElementById("fit-map-btn").addEventListener("click", fitMapToCameras);
     document.getElementById("heatmap-toggle").addEventListener("click", toggleTrafficHeatmap);
+    document.getElementById("map-only-toggle").addEventListener("click", toggleMapOnlyMode);
+    document.getElementById("route-filter-clear").addEventListener("click", clearRouteCameraFilter);
     document.getElementById("theme-toggle").addEventListener("click", () => {
       applyTheme(getCurrentTheme() === "light" ? "dark" : "light");
     });
@@ -1626,7 +1921,7 @@
       const focusButton = event.target.closest("[data-focus-camera-id]");
       if (focusButton?.dataset.focusCameraId) {
         event.preventDefault();
-        setWorkspacePanel("cameras");
+        if (!mapOnlyMode) setWorkspacePanel("cameras");
         focusCamera(focusButton.dataset.focusCameraId);
         return;
       }
@@ -1801,6 +2096,7 @@ document.getElementById('chat-form').addEventListener('submit', async (e) => {
       const endMarker = L.circleMarker(data.endPoint, { color: '#fff', fillColor: '#ef4444', fillOpacity: 1, radius: 6 }).addTo(map);
       
       chatRouteMarkers.push(startMarker, endMarker);
+      applyRouteCameraFilter(data.route, data.route_cameras || []);
       map.fitBounds(chatRouteLayer.getBounds(), { padding: [50, 50] });
     }
   } catch (err) {

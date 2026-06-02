@@ -6,6 +6,8 @@ const {
   getCameraHealthStatus,
   getCameraSnapshot,
   getCameras,
+  getHanoiCameraStreamInfo,
+  getHanoiTrafficCameras,
   getHcmTrafficCameras,
   syncHcmTrafficCameras,
   upsertCamera,
@@ -13,6 +15,12 @@ const {
 
 // GET /api/cameras/hcm - public HCMC traffic cameras
 router.get('/hcm', getHcmTrafficCameras);
+
+// GET /api/cameras/hanoi - public Hanoi realtime video camera metadata
+router.get('/hanoi', getHanoiTrafficCameras);
+
+// GET /api/cameras/hanoi/:cameraId/stream-info - raw WSS/HTTPS source metadata
+router.get('/hanoi/:cameraId/stream-info', getHanoiCameraStreamInfo);
 
 // GET /api/cameras/health - cached live/offline camera health
 router.get('/health', getCameraHealthStatus);

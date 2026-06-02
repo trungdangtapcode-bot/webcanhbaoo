@@ -1,5 +1,5 @@
 """
-Quick test: Run YOLOv8 on a single image and show detection results.
+Quick test: Run the configured YOLO model on a single image and show detection results.
 
 Usage:
   python test_detect.py                     # Capture 1 frame from YouTube stream in .env
@@ -97,7 +97,7 @@ def main():
     # ─── Load YOLOv8 ───
     # YOLOv8 model sizes: n(nano) < s(small) < m(medium) < l(large) < x(xlarge)
     # Larger = more accurate but slower
-    MODEL_NAME = "yolov8m.pt"  # Medium model for better accuracy
+    MODEL_NAME = os.getenv("DETECTOR_YOLO_WEIGHTS", "yolo26x.pt")
     try:
         from ultralytics import YOLO
         model = YOLO(MODEL_NAME)
@@ -213,7 +213,7 @@ def main():
 
     # ─── Print summary ───
     print("=" * 55)
-    print("  YOLOv8 DETECTION RESULTS")
+    print(f"  {MODEL_NAME} DETECTION RESULTS")
     print("=" * 55)
     print(f"  Total objects : {len(all_detections)}")
     print(f"  Vehicles      : {vehicle_count}  (car, motorcycle, bus, truck)")

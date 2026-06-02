@@ -68,7 +68,17 @@ TRAFFIC_JAM_CLEAR_FRAMES = int(os.getenv("DETECTOR_TRAFFIC_JAM_CLEAR", "2"))
 # IoU threshold for matching vehicles between frames
 TRAFFIC_IOU_THRESHOLD = float(os.getenv("DETECTOR_TRAFFIC_IOU_THRESHOLD", "0.3"))
 
-YOLO_WEIGHTS = os.getenv("DETECTOR_YOLO_WEIGHTS", "yolov8n.pt")
+YOLO_WEIGHTS = os.getenv("DETECTOR_YOLO_WEIGHTS", "yolo26x.pt")
+YOLO_FALLBACK_WEIGHTS = [
+    item.strip()
+    for item in os.getenv("DETECTOR_YOLO_FALLBACK_WEIGHTS", "yolo26l.pt,yolo26m.pt,yolo11x.pt,yolov8m.pt").split(",")
+    if item.strip()
+]
+YOLO_CONF = float(os.getenv("DETECTOR_YOLO_CONF", "0.25"))
+YOLO_SLICE_CONF = float(os.getenv("DETECTOR_YOLO_SLICE_CONF", "0.20"))
+YOLO_IOU = float(os.getenv("DETECTOR_YOLO_IOU", "0.45"))
+YOLO_IMG_SIZE = int(os.getenv("DETECTOR_YOLO_IMG_SIZE", "1280"))
+YOLO_ENABLE_SLICES = os.getenv("DETECTOR_YOLO_ENABLE_SLICES", "true").lower() == "true"
 VEHICLE_CLASSES = {2, 3, 5, 7}
 
 logging.basicConfig(
@@ -79,6 +89,7 @@ logging.basicConfig(
 log = logging.getLogger(__name__)
 
 model = None
+model_name: Optional[str] = None
 
 # Per-camera fire frame counters: camera_id -> int
 _fire_counters: Dict[str, int] = defaultdict(int)
@@ -294,17 +305,129 @@ _traffic_trackers: Dict[str, TrafficStateTracker] = defaultdict(TrafficStateTrac
 
 
 def load_yolo():
-    global model
+    global model, model_name
     if not ENABLE_YOLO or model is not None:
         return model
+
     try:
         from ultralytics import YOLO
-        model = YOLO(YOLO_WEIGHTS)
-        log.info("YOLO loaded: %s", YOLO_WEIGHTS)
     except Exception as exc:
-        log.warning("YOLO disabled: %s", exc)
-        model = None
+        log.warning("YOLO disabled: ultralytics import failed: %s", exc)
+        return None
+
+    candidates = []
+    for candidate in [YOLO_WEIGHTS, *YOLO_FALLBACK_WEIGHTS]:
+        if candidate and candidate not in candidates:
+            candidates.append(candidate)
+
+    for candidate in candidates:
+        try:
+            model = YOLO(candidate)
+            model_name = candidate
+            log.info("YOLO loaded: %s", candidate)
+            return model
+        except Exception as exc:
+            log.warning("YOLO candidate failed (%s): %s", candidate, exc)
+
+    log.warning("YOLO disabled: no candidate weights could be loaded")
+    model = None
+    model_name = None
     return model
+
+
+def box_iou(a: List[float], b: List[float]) -> float:
+    ax1, ay1, ax2, ay2 = a[:4]
+    bx1, by1, bx2, by2 = b[:4]
+    ix1, iy1 = max(ax1, bx1), max(ay1, by1)
+    ix2, iy2 = min(ax2, bx2), min(ay2, by2)
+    inter = max(0.0, ix2 - ix1) * max(0.0, iy2 - iy1)
+    area_a = max(0.0, ax2 - ax1) * max(0.0, ay2 - ay1)
+    area_b = max(0.0, bx2 - bx1) * max(0.0, by2 - by1)
+    union = area_a + area_b - inter
+    return inter / union if union > 0 else 0.0
+
+
+def add_vehicle_box(
+    boxes: List[List[float]],
+    confidences: List[float],
+    candidate: List[float],
+    iou_threshold: float = YOLO_IOU,
+) -> bool:
+    if any(box_iou(candidate, existing) >= iou_threshold for existing in boxes):
+        return False
+    boxes.append(candidate)
+    confidences.append(candidate[4])
+    return True
+
+
+def collect_vehicle_boxes(results: Any, offset: Tuple[int, int] = (0, 0)) -> List[List[float]]:
+    ox, oy = offset
+    boxes: List[List[float]] = []
+    for result in results:
+        for box in result.boxes:
+            cls_id = int(box.cls[0])
+            if cls_id not in VEHICLE_CLASSES:
+                continue
+            conf = float(box.conf[0])
+            x1, y1, x2, y2 = box.xyxy[0].tolist()
+            boxes.append([x1 + ox, y1 + oy, x2 + ox, y2 + oy, conf])
+    return boxes
+
+
+def traffic_slices(frame: np.ndarray) -> List[Tuple[np.ndarray, Tuple[int, int]]]:
+    h, w = frame.shape[:2]
+    if h < 360 or w < 480:
+        return []
+
+    return [
+        (frame[0:h // 2, 0:w // 2], (0, 0)),
+        (frame[0:h // 2, w // 2:w], (w // 2, 0)),
+        (frame[h // 3:2 * h // 3, 0:w // 2], (0, h // 3)),
+        (frame[h // 3:2 * h // 3, w // 2:w], (w // 2, h // 3)),
+        (frame[0:2 * h // 3, w // 4:3 * w // 4], (w // 4, 0)),
+    ]
+
+
+def detect_vehicle_boxes(yolo: Any, frame: np.ndarray) -> Tuple[List[List[float]], Dict[str, Any]]:
+    boxes: List[List[float]] = []
+    confidences: List[float] = []
+    full_results = yolo(
+        frame,
+        verbose=False,
+        conf=YOLO_CONF,
+        iou=YOLO_IOU,
+        imgsz=YOLO_IMG_SIZE,
+        classes=list(VEHICLE_CLASSES),
+        agnostic_nms=True,
+    )
+
+    for candidate in collect_vehicle_boxes(full_results):
+        add_vehicle_box(boxes, confidences, candidate)
+
+    slice_added = 0
+    slice_count = 0
+    if YOLO_ENABLE_SLICES:
+        for image_slice, offset in traffic_slices(frame):
+            slice_count += 1
+            slice_results = yolo(
+                image_slice,
+                verbose=False,
+                conf=YOLO_SLICE_CONF,
+                iou=YOLO_IOU,
+                imgsz=YOLO_IMG_SIZE,
+                classes=list(VEHICLE_CLASSES),
+                agnostic_nms=True,
+            )
+            for candidate in collect_vehicle_boxes(slice_results, offset):
+                if add_vehicle_box(boxes, confidences, candidate):
+                    slice_added += 1
+
+    return boxes, {
+        "avg_confidence": float(np.mean(confidences)) if confidences else 0.65,
+        "full_frame_detections": len(boxes) - slice_added,
+        "slice_added": slice_added,
+        "slice_count": slice_count,
+    }
 
 
 def decode_frame(image_base64: str) -> np.ndarray:
@@ -572,25 +695,13 @@ def detect_traffic(frame: np.ndarray, camera_id: str = "unknown") -> Dict[str, A
     if yolo is None:
         return None
 
-    results = yolo(frame, verbose=False, conf=0.35)
-    vehicle_count = 0
-    confidences: List[float] = []
-    vehicle_boxes: List[List[float]] = []
+    vehicle_boxes, detection_stats = detect_vehicle_boxes(yolo, frame)
+    vehicle_count = len(vehicle_boxes)
     frame_area = frame.shape[0] * frame.shape[1]
-
-    for result in results:
-        for box in result.boxes:
-            cls_id = int(box.cls[0])
-            if cls_id in VEHICLE_CLASSES:
-                vehicle_count += 1
-                conf = float(box.conf[0])
-                confidences.append(conf)
-                x1, y1, x2, y2 = box.xyxy[0].tolist()
-                vehicle_boxes.append([x1, y1, x2, y2, conf])
 
     # Vehicle density: vehicles per 10 000 px² of frame
     vehicle_density = vehicle_count / (frame_area / 10000.0) if frame_area > 0 else 0.0
-    avg_confidence = float(np.mean(confidences)) if confidences else 0.65
+    avg_confidence = detection_stats["avg_confidence"]
 
     # ─── Temporal analysis via TrafficStateTracker ───
     tracker = _traffic_trackers[camera_id]
@@ -639,7 +750,15 @@ def detect_traffic(frame: np.ndarray, camera_id: str = "unknown") -> Dict[str, A
         "jam_counter": jam_counter,
         "jam_confirm_threshold": TRAFFIC_JAM_CONFIRM_FRAMES,
         "is_jammed_temporal": is_jammed,
-        "detector": "yolov8_temporal_iou_v3",
+        "detector": "yolo_temporal_iou_sliced_v4",
+        "yolo_model": model_name or YOLO_WEIGHTS,
+        "yolo_conf": YOLO_CONF,
+        "yolo_slice_conf": YOLO_SLICE_CONF,
+        "yolo_iou": YOLO_IOU,
+        "yolo_imgsz": YOLO_IMG_SIZE,
+        "yolo_sliced": YOLO_ENABLE_SLICES,
+        "full_frame_detections": detection_stats["full_frame_detections"],
+        "slice_added_detections": detection_stats["slice_added"],
     }
 
     # ─── Return: chỉ báo traffic_jam khi is_jammed hoặc severity >= high ───
@@ -1050,6 +1169,14 @@ class DetectorHandler(BaseHTTPRequestHandler):
             self._send_json(200, {
                 "status": "ok",
                 "yolo_enabled": ENABLE_YOLO,
+                "yolo_requested_weights": YOLO_WEIGHTS,
+                "yolo_loaded_weights": model_name,
+                "yolo_fallback_weights": YOLO_FALLBACK_WEIGHTS,
+                "yolo_conf": YOLO_CONF,
+                "yolo_slice_conf": YOLO_SLICE_CONF,
+                "yolo_iou": YOLO_IOU,
+                "yolo_imgsz": YOLO_IMG_SIZE,
+                "yolo_sliced": YOLO_ENABLE_SLICES,
                 "traffic_jam_confirm_frames": TRAFFIC_JAM_CONFIRM_FRAMES,
                 "traffic_speed_stopped_threshold": TRAFFIC_SPEED_STOPPED,
                 "traffic_speed_slow_threshold": TRAFFIC_SPEED_SLOW,

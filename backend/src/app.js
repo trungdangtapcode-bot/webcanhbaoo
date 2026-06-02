@@ -48,6 +48,9 @@ app.use((req, res) => {
 // --- Error handler ---
 app.use((err, req, res, _next) => {
   console.error('[App] Unhandled error:', err);
+  if (err?.type === 'entity.parse.failed') {
+    return res.status(400).json({ error: 'Invalid JSON body' });
+  }
   res.status(500).json({ error: 'Internal server error' });
 });
 

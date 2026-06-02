@@ -1,4 +1,5 @@
 const alertService = require('./alertService');
+const { getHcmCameras } = require('./hcmCameraService');
 
 // Haversine formula to calculate distance between two coordinates in meters
 function getDistance(lat1, lon1, lat2, lon2) {
@@ -59,6 +60,38 @@ function checkCollisions(routeCoords, activeAlerts) {
     }
   }
   return collidingAlerts;
+}
+
+function findCamerasNearRoute(routeCoords, maxDistanceMeters = 260) {
+  const cameras = getHcmCameras();
+  const matches = [];
+
+  for (const camera of cameras) {
+    const lat = Number(camera.location?.lat);
+    const lng = Number(camera.location?.lng);
+    if (!Number.isFinite(lat) || !Number.isFinite(lng)) continue;
+
+    let bestDistance = Infinity;
+    for (const point of routeCoords) {
+      const distance = getDistance(lat, lng, point[0], point[1]);
+      if (distance < bestDistance) bestDistance = distance;
+      if (bestDistance <= maxDistanceMeters) break;
+    }
+
+    if (bestDistance <= maxDistanceMeters) {
+      matches.push({
+        camera_id: camera.camera_id,
+        name: camera.name,
+        lat,
+        lng,
+        distance_m: Math.round(bestDistance),
+      });
+    }
+  }
+
+  return matches
+    .sort((a, b) => a.distance_m - b.distance_m)
+    .slice(0, 120);
 }
 
 async function processChat(message, currentLocation, forceRoute) {
@@ -177,6 +210,7 @@ LƯU Ý: CHỈ TRẢ VỀ DUY NHẤT 1 ĐỐI TƯỢNG JSON HỢP LỆ. KHÔNG G
 
     const selectedRoute = routes[bestRouteIndex];
     const finalCoords = selectedRoute.geometry.coordinates.map(c => [c[1], c[0]]);
+    const routeCameras = findCamerasNearRoute(finalCoords);
 
     let finalMessage = `Lộ trình từ **${startObj.name.split(',')[0]}** đến **${endObj.name.split(',')[0]}**.`;
     
@@ -198,6 +232,7 @@ LƯU Ý: CHỈ TRẢ VỀ DUY NHẤT 1 ĐỐI TƯỢNG JSON HỢP LỆ. KHÔNG G
       type: 'route',
       message: finalMessage,
       route: finalCoords,
+      route_cameras: routeCameras,
       startPoint: [startObj.lat, startObj.lng],
       endPoint: [endObj.lat, endObj.lng]
     };

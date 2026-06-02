@@ -685,6 +685,27 @@
       transition: grid-template-columns var(--slow);
     }
 
+    .app-shell.map-only .sidebar,
+    .app-shell.map-only .main-camera-panel,
+    .app-shell.map-only .map-insight,
+    .app-shell.map-only .chat-widget,
+    .app-shell.map-only .toolbar-metrics {
+      display: none !important;
+    }
+
+    .app-shell.map-only .main-workspace {
+      width: 100%;
+      flex: 1;
+    }
+
+    .app-shell.map-only .camera-workspace {
+      grid-template-columns: minmax(0, 1fr);
+    }
+
+    .app-shell.map-only .map-container::after {
+      background: linear-gradient(180deg, rgba(9, 13, 18, 0.22), transparent 18%);
+    }
+
     .main-camera-panel {
       display: flex;
       flex-direction: column;
@@ -1062,13 +1083,32 @@
 
     .news-summary {
       display: -webkit-box;
-      margin-top: 5px;
+      margin-top: 7px;
       overflow: hidden;
       color: var(--text-soft);
       font-size: 11px;
       line-height: 1.4;
       -webkit-box-orient: vertical;
-      -webkit-line-clamp: 2;
+      -webkit-line-clamp: 3;
+    }
+
+    .news-summary-label {
+      color: var(--teal);
+      font-weight: 760;
+    }
+
+    .news-category {
+      display: inline-flex;
+      align-items: center;
+      min-height: 19px;
+      padding: 0 6px;
+      border: 1px solid var(--border);
+      border-radius: 999px;
+      color: var(--text-soft);
+      background: rgba(255, 255, 255, 0.035);
+      font-size: 10px;
+      font-weight: 760;
+      text-transform: uppercase;
     }
 
     .news-meta {
@@ -1133,6 +1173,54 @@
     .camera-search input:focus {
       border-color: rgba(49, 214, 192, 0.62);
       box-shadow: 0 0 0 3px rgba(49, 214, 192, 0.1);
+    }
+
+    .camera-source-tabs {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 7px;
+      margin-bottom: 10px;
+    }
+
+    .camera-source-tab {
+      min-width: 0;
+      padding: 8px 9px;
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      background: var(--surface);
+      color: var(--text-soft);
+      text-align: left;
+      font-size: 12px;
+      font-weight: 780;
+      line-height: 1.15;
+      transition: border-color var(--fast), background var(--fast), color var(--fast);
+    }
+
+    .camera-source-tab span {
+      display: block;
+      margin-top: 3px;
+      overflow: hidden;
+      color: var(--text-muted);
+      font-size: 10px;
+      font-weight: 720;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      text-transform: uppercase;
+    }
+
+    .camera-source-tab:hover {
+      border-color: var(--border-strong);
+      color: var(--text);
+    }
+
+    .camera-source-tab.active {
+      border-color: rgba(49, 214, 192, 0.48);
+      background: var(--teal-soft);
+      color: var(--teal);
+    }
+
+    html[data-theme="light"] .camera-source-tab {
+      background: #ffffff;
     }
 
     .camera-list {
@@ -1815,6 +1903,131 @@
 
     .map-marker.marker-blink {
       animation: marker-pulse 900ms ease-in-out 6;
+    }
+
+    .camera-cluster-shell {
+      background: transparent;
+      border: 0;
+    }
+
+    .camera-cluster {
+      position: relative;
+      display: grid;
+      place-items: center;
+      width: 100%;
+      height: 100%;
+      border: 1px solid rgba(49, 214, 192, 0.48);
+      border-radius: 999px;
+      background:
+        radial-gradient(circle at 50% 42%, rgba(49, 214, 192, 0.3), rgba(49, 214, 192, 0.07) 54%, transparent 68%),
+        rgba(12, 22, 29, 0.9);
+      box-shadow:
+        0 0 0 7px rgba(49, 214, 192, 0.08),
+        0 10px 28px rgba(0, 0, 0, 0.32);
+      color: var(--text);
+      line-height: 1;
+    }
+
+    .camera-cluster::before {
+      content: "";
+      position: absolute;
+      inset: 6px;
+      border: 1px solid rgba(105, 237, 153, 0.42);
+      border-radius: inherit;
+      pointer-events: none;
+    }
+
+    .camera-cluster span {
+      display: block;
+      font-size: 15px;
+      font-weight: 820;
+      font-variant-numeric: tabular-nums;
+      transform: translateY(2px);
+    }
+
+    .camera-cluster small {
+      margin-top: -10px;
+      color: var(--text-muted);
+      font-size: 8px;
+      font-weight: 760;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+    }
+
+    .camera-cluster.medium {
+      border-color: rgba(246, 184, 75, 0.52);
+      background:
+        radial-gradient(circle at 50% 42%, rgba(246, 184, 75, 0.34), rgba(49, 214, 192, 0.08) 58%, transparent 70%),
+        rgba(12, 22, 29, 0.92);
+    }
+
+    .camera-cluster.large {
+      border-color: rgba(255, 91, 99, 0.52);
+      background:
+        radial-gradient(circle at 50% 42%, rgba(255, 91, 99, 0.34), rgba(246, 184, 75, 0.12) 58%, transparent 70%),
+        rgba(12, 22, 29, 0.94);
+    }
+
+    .cluster-popup {
+      min-width: 250px;
+    }
+
+    .cluster-popup-head strong,
+    .cluster-popup-head span {
+      display: block;
+    }
+
+    .cluster-popup-head strong {
+      color: var(--text);
+      font-size: 14px;
+      font-weight: 800;
+    }
+
+    .cluster-popup-head span,
+    .cluster-more {
+      margin-top: 4px;
+      color: var(--text-muted);
+      font-size: 11px;
+      line-height: 1.35;
+    }
+
+    .cluster-camera-list {
+      display: grid;
+      gap: 6px;
+      margin-top: 10px;
+    }
+
+    .cluster-camera-action {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      align-items: center;
+      gap: 8px;
+      width: 100%;
+      border: 1px solid var(--border);
+      border-radius: 7px;
+      padding: 7px 8px;
+      background: rgba(255, 255, 255, 0.035);
+      color: var(--text);
+      text-align: left;
+    }
+
+    .cluster-camera-action:hover {
+      border-color: rgba(49, 214, 192, 0.48);
+      background: var(--teal-soft);
+    }
+
+    .cluster-camera-action span {
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      font-size: 12px;
+      font-weight: 720;
+    }
+
+    .cluster-camera-action small {
+      color: var(--text-muted);
+      font-size: 10px;
+      font-weight: 760;
     }
 
     .leaflet-control-zoom {

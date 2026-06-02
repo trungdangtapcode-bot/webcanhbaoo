@@ -41,7 +41,7 @@ const cameraSchema = new mongoose.Schema(
     },
     stream_type: {
       type: String,
-      enum: ['proxy', 'snapshot', 'hls', 'mjpeg'],
+      enum: ['proxy', 'snapshot', 'hls', 'mjpeg', 'wss_video'],
       default: 'proxy',
     },
     stream_url: {

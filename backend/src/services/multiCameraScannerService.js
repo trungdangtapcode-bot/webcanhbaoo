@@ -3,6 +3,7 @@ const Camera = require('../models/Camera');
 const { isDatabaseConnected } = require('../config/database');
 const alertService = require('./alertService');
 const { getCachedHealth } = require('./cameraHealthService');
+const { getPersistedEventImage } = require('./eventImagePolicy');
 const trafficVolumeService = require('./trafficVolumeService');
 const { fetchSnapshot, getHcmCameras } = require('./hcmCameraService');
 
@@ -301,21 +302,30 @@ async function publishDetection(camera, detection, frame) {
   let eventId = null;
 
   if (isDatabaseConnected()) {
-    const event = await Event.create({
-      camera_id: camera.camera_id,
-      confidence: detection.confidence,
-      event_type: detection.event_type,
-      image_base64: imageBase64,
-      metadata: {
-        ...metadata,
-        avg_speed: detection.avg_speed,
-        vehicle_count: detection.vehicle_count,
-        water_ratio: detection.water_ratio,
-      },
-      severity: detection.severity || 'medium',
-      timestamp,
-    });
-    eventId = event._id;
+    try {
+      const persistedImage = getPersistedEventImage(imageBase64, {
+        active: detection.active,
+        event_type: detection.event_type,
+        severity: detection.severity || 'medium',
+      });
+      const event = await Event.create({
+        camera_id: camera.camera_id,
+        confidence: detection.confidence,
+        event_type: detection.event_type,
+        image_base64: persistedImage,
+        metadata: {
+          ...metadata,
+          avg_speed: detection.avg_speed,
+          vehicle_count: detection.vehicle_count,
+          water_ratio: detection.water_ratio,
+        },
+        severity: detection.severity || 'medium',
+        timestamp,
+      });
+      eventId = event._id;
+    } catch (err) {
+      console.error('[Scanner] Event persistence failed:', err.message);
+    }
   }
 
   const activeResult = alertService.upsertActiveAlert({

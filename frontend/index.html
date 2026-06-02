@@ -6,6 +6,8 @@
   <meta name="description" content="Smart Alert System - real-time traffic, flood, and fire detection dashboard" />
   <title>Smart Alert System</title>
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.css" />
+  <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.Default.css" />
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@awesome.me/webawesome@3.7.0/dist/styles/themes/default.css" />
   <script>
     function syncWebAwesomeTheme(theme) {
@@ -151,6 +153,12 @@
             <path d="M8 10h6M8 13h6M8 16h3" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" />
           </svg>
           News
+        </button>
+        <button class="workspace-tab" id="map-only-tab" type="button" data-workspace-tab="map">
+          <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+            <path d="M9 18 3.5 20.5v-15L9 3m0 15 6 3m-6-3V3m6 18 5.5-2.5v-15L15 6m0 15V6M15 6 9 3" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" />
+          </svg>
+          Map only
         </button>
       </nav>
 
@@ -334,6 +342,16 @@
             </svg>
             <input id="camera-search" type="search" placeholder="Search camera or area" autocomplete="off" />
           </div>
+          <div class="camera-source-tabs" id="camera-source-tabs" aria-label="Camera source">
+            <button class="camera-source-tab active" data-camera-source="hcm" type="button">
+              TP.HCM
+              <span>Snapshots</span>
+            </button>
+            <button class="camera-source-tab" data-camera-source="hanoi" type="button">
+              Hà Nội
+              <span>Realtime WSS</span>
+            </button>
+          </div>
           <div class="camera-filters" id="camera-filters">
             <button class="cam-filter-chip active" data-filter="all">All</button>
             <button class="cam-filter-chip" data-filter="alerts">Alerts</button>
@@ -386,6 +404,17 @@
               <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
                 <path d="M12 21s6-4.8 6-10a6 6 0 0 0-12 0c0 5.2 6 10 6 10Z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" />
                 <path d="M12 13.5a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5Z" fill="currentColor" opacity=".28" />
+              </svg>
+            </button>
+            <button class="icon-action" id="route-filter-clear" type="button" title="Show all cameras" aria-label="Show all cameras" hidden>
+              <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                <path d="M7 7h10M7 12h7M7 17h4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" />
+                <path d="m16 14 4 4m0-4-4 4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" />
+              </svg>
+            </button>
+            <button class="icon-action" id="map-only-toggle" type="button" title="Map only" aria-label="Map only" aria-pressed="false">
+              <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                <path d="M4 8V4h4M16 4h4v4M20 16v4h-4M8 20H4v-4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" />
               </svg>
             </button>
           </div>
@@ -541,6 +570,7 @@
   </div>
 
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script src="https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js"></script>
   <script>
     const socketBase = window.location.protocol === "file:" || ["4173", "5173"].includes(window.location.port)
       ? "http://localhost:3000"

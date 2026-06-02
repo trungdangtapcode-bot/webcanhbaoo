@@ -54,6 +54,7 @@ function decodeHtmlEntities(value) {
     .replace(/&quot;/g, '"')
     .replace(/&apos;/g, "'")
     .replace(/&amp;/g, '&')
+    .replace(/&nbsp;/g, ' ')
     .replace(/&lt;/g, '<')
     .replace(/&gt;/g, '>');
 }
@@ -63,6 +64,35 @@ function stripHtml(value) {
     .replace(/<[^>]*>/g, ' ')
     .replace(/\s+/g, ' ')
     .trim();
+}
+
+function compactSentence(value, maxLength = 180) {
+  const text = String(value || '').replace(/\s+/g, ' ').trim();
+  if (text.length <= maxLength) return text;
+  const clipped = text.slice(0, maxLength);
+  const sentenceEnd = Math.max(clipped.lastIndexOf('.'), clipped.lastIndexOf('?'), clipped.lastIndexOf('!'));
+  if (sentenceEnd > 80) return clipped.slice(0, sentenceEnd + 1);
+  const lastSpace = clipped.lastIndexOf(' ');
+  return `${clipped.slice(0, lastSpace > 80 ? lastSpace : maxLength).trim()}...`;
+}
+
+function makeNewsSummary({ title, description, category, source }) {
+  const safeSource = String(source || '');
+  const cleanedDescription = description
+    .replace(title, '')
+    .replace(safeSource ? new RegExp(`\\b${safeSource.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'gi') : /$a/, '')
+    .replace(/\s+-\s+[^-]+$/, '')
+    .replace(/\s*&nbsp;\s*/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+  const base = cleanedDescription && normalizeSearchText(cleanedDescription) !== normalizeSearchText(title)
+    ? cleanedDescription
+    : title;
+  const categoryLabel = CATEGORY_CONFIG[category]?.label || 'Situation';
+  const summary = compactSentence(base, 190);
+  return summary
+    ? `${categoryLabel}: ${summary}${safeSource ? ` (${safeSource})` : ''}`
+    : `${categoryLabel}: update from ${safeSource || 'news source'}.`;
 }
 
 function normalizeSearchText(value) {
@@ -104,7 +134,8 @@ function parseRssItems(xml, category, query) {
       category,
       query,
       title,
-      summary: description.slice(0, 220),
+      summary: makeNewsSummary({ title, description, category, source }),
+      raw_summary: description.slice(0, 320),
       url: readTag(itemXml, 'link'),
       source: source || 'Google News',
       source_url: readTagAttr(itemXml, 'source', 'url'),

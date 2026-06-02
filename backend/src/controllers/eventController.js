@@ -6,6 +6,7 @@ const trafficService = require('../services/trafficService');
 const floodService = require('../services/floodService');
 const alertService = require('../services/alertService');
 const alertQueueService = require('../services/alertQueueService');
+const { getPersistedEventImage } = require('../services/eventImagePolicy');
 const trafficVolumeService = require('../services/trafficVolumeService');
 
 const VALID_EVENT_TYPES = ['traffic_jam', 'fire', 'flood'];
@@ -217,16 +218,25 @@ async function createEvent(req, res) {
     };
 
     if (isDatabaseConnected()) {
-      const saved = await Event.create({
-        camera_id,
-        event_type,
-        severity,
-        confidence,
-        image_base64: image_base64 || null,
-        metadata,
-        timestamp: timestamp ? new Date(timestamp) : new Date(),
-      });
-      eventDoc = saved;
+      try {
+        const persistedImage = getPersistedEventImage(image_base64, {
+          active: isActiveDetection,
+          event_type,
+          severity,
+        });
+        const saved = await Event.create({
+          camera_id,
+          event_type,
+          severity,
+          confidence,
+          image_base64: persistedImage,
+          metadata,
+          timestamp: timestamp ? new Date(timestamp) : new Date(),
+        });
+        eventDoc = saved;
+      } catch (err) {
+        console.error('[EventController] Event persistence failed:', err.message);
+      }
     }
 
     // --- Update active alert state ---
@@ -370,15 +380,19 @@ async function createEmergencyEvent(req, res) {
     };
 
     if (isDatabaseConnected()) {
-      eventDoc = await Event.create({
-        camera_id: camera.camera_id,
-        event_type,
-        severity,
-        confidence,
-        image_base64: null,
-        metadata,
-        timestamp: safeTimestamp,
-      });
+      try {
+        eventDoc = await Event.create({
+          camera_id: camera.camera_id,
+          event_type,
+          severity,
+          confidence,
+          image_base64: null,
+          metadata,
+          timestamp: safeTimestamp,
+        });
+      } catch (err) {
+        console.error('[EventController] Emergency persistence failed:', err.message);
+      }
     }
 
     const activeResult = alertService.upsertActiveAlert({
