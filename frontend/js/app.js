@@ -75,6 +75,7 @@
     const map = L.map("map", {
       zoomControl: false,
       attributionControl: false,
+      maxZoom: 19,
     }).setView(MAP_CENTER, MAP_ZOOM);
 
     trafficHeatLayer = L.layerGroup().addTo(map);
