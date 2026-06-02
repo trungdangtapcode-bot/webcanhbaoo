@@ -1174,8 +1174,10 @@
       }
 
       const isDev = window.location.protocol === "file:" || ["4173", "5173"].includes(window.location.port);
-      const apiBase = isDev ? "http://localhost:3000" : "";
-      return apiBase + "/api/cameras/hanoi/" + encodeURIComponent(camId) + "/mjpeg";
+      if (isDev) {
+        return "http://localhost:5001/hanoi_feed/" + encodeURIComponent(camId);
+      }
+      return "/api/cameras/hanoi/" + encodeURIComponent(camId) + "/mjpeg";
     }
 
     async function loadCameraHistory(cameraId) {

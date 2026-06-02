@@ -17,6 +17,7 @@ Then open:
 """
 
 import asyncio
+import base64
 import json
 import logging
 import os
@@ -53,6 +54,22 @@ log = logging.getLogger(__name__)
 
 app = Flask(__name__)
 CORS(app)
+
+PLACEHOLDER_JPEG = base64.b64decode(
+    "/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAP//////////////////////////////////////////////////////////////////////////////////////"
+    "////////////////////////////////////////////////////2wBDAf//////////////////////////////////////////////////////////////////////////////////////"
+    "////////////////////////////////////////////////////wAARCAABAAEDASIAAhEBAxEB/8QAFQABAQAAAAAAAAAAAAAAAAAAAAX/xAAUEAEAAAAAAAAAAAAAAAAAAAAA/9oADAMBAAIQAxAAAAH/xAAUEAEAAAAAAAAAAAAAAAAAAAAA/9oACAEBAAEFAqf/xAAUEQEAAAAAAAAAAAAAAAAAAAAA/9oACAEDAQE/ASP/xAAUEQEAAAAAAAAAAAAAAAAAAAAA/9oACAECAQE/ASP/xAAUEAEAAAAAAAAAAAAAAAAAAAAA/9oACAEBAAY/Ar//xAAUEAEAAAAAAAAAAAAAAAAAAAAA/9oACAEBAAE/ISf/2gAMAwEAAgADAAAAEP/EABQRAQAAAAAAAAAAAAAAAAAAABD/2gAIAQMBAT8QH//EABQRAQAAAAAAAAAAAAAAAAAAABD/2gAIAQIBAT8QH//EABQQAQAAAAAAAAAAAAAAAAAAABD/2gAIAQEAAT8QH//Z"
+)
+
+
+def make_mjpeg_part(frame: bytes) -> bytes:
+    return (
+        b"--frame\r\n"
+        b"Content-Type: image/jpeg\r\n"
+        + f"Content-Length: {len(frame)}\r\n\r\n".encode("ascii")
+        + frame
+        + b"\r\n"
+    )
 
 
 def load_camera_index() -> Dict[str, dict]:
@@ -208,19 +225,15 @@ def mjpeg_stream(camera_key: str):
         yield b""
         return
 
+    yield make_mjpeg_part(PLACEHOLDER_JPEG)
+
     stop_event = threading.Event()
     process = start_ffmpeg()
     start_writer_thread(wss_url, process.stdin, stop_event)
 
     try:
         for frame in iter_jpegs(process.stdout):
-            yield (
-                b"--frame\r\n"
-                b"Content-Type: image/jpeg\r\n"
-                + f"Content-Length: {len(frame)}\r\n\r\n".encode("ascii")
-                + frame
-                + b"\r\n"
-            )
+            yield make_mjpeg_part(frame)
     finally:
         stop_event.set()
         try:
