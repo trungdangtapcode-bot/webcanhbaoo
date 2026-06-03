@@ -37,7 +37,7 @@ import numpy as np
 from dotenv import load_dotenv
 
 MODULE_DIR = Path(__file__).resolve().parent
-load_dotenv(MODULE_DIR / ".env")
+load_dotenv(MODULE_DIR / ".env", override=True)
 
 HOST = os.getenv("DETECTOR_HOST", "127.0.0.1")
 PORT = int(os.getenv("DETECTOR_PORT", "5055"))
@@ -71,6 +71,8 @@ AI_ENABLED = os.getenv("DETECTOR_AI_ENABLED", AI_ENABLED_DEFAULT).lower() == "tr
 AI_RATE_LIMIT_PER_MIN = int(os.getenv("DETECTOR_AI_RATE_LIMIT_PER_MIN", "20" if AI_PROVIDER == "openrouter" else "30"))
 AI_REFERER = os.getenv("DETECTOR_AI_REFERER", "http://localhost:3000")
 AI_TITLE = os.getenv("DETECTOR_AI_TITLE", "Smart Alert Detector Demo")
+AI_FIRE_MIN_CONFIDENCE = float(os.getenv("DETECTOR_AI_FIRE_MIN_CONFIDENCE", "0.55"))
+AI_FLOOD_MIN_CONFIDENCE = float(os.getenv("DETECTOR_AI_FLOOD_MIN_CONFIDENCE", "0.60"))
 OPENCV_INCIDENT_FALLBACK = os.getenv("DETECTOR_OPENCV_INCIDENT_FALLBACK", "false").lower() == "true"
 OPENCV_FIRE_SAFETY_NET = os.getenv("DETECTOR_OPENCV_FIRE_SAFETY_NET", "true").lower() == "true"
 
@@ -1096,6 +1098,37 @@ def call_ai_chat(payload: Dict[str, Any], timeout: int = 15) -> requests.Respons
     return requests.post(AI_ENDPOINT, headers=ai_headers(), json=payload, timeout=timeout)
 
 
+def ai_incident_min_confidence(incident_type: str) -> float:
+    if incident_type == "fire":
+        return AI_FIRE_MIN_CONFIDENCE
+    if incident_type == "flood":
+        return AI_FLOOD_MIN_CONFIDENCE
+    return 0.50
+
+
+def ai_local_context(incident_type: str, local_result: Dict[str, Any]) -> str:
+    metadata = local_result.get("metadata", {})
+    context = {
+        "incident_type": incident_type,
+        "local_confidence": local_result.get("confidence"),
+        "local_severity": local_result.get("severity"),
+        "water_ratio": local_result.get("water_ratio"),
+        "detector": metadata.get("detector"),
+        "primary_label": metadata.get("primary_label"),
+        "class_counts": metadata.get("class_counts"),
+        "fire_color_ratio": metadata.get("fire_color_ratio"),
+        "strong_fire_mass": metadata.get("strong_fire_mass"),
+        "water_metrics": {
+            "texture_score": metadata.get("texture_score"),
+            "edge_density": metadata.get("edge_density"),
+            "largest_blob_ratio": metadata.get("largest_blob_ratio"),
+            "bottom_coverage": metadata.get("bottom_coverage"),
+        },
+        "detections": metadata.get("detections"),
+    }
+    return json.dumps(context, ensure_ascii=False, separators=(",", ":"))[:1400]
+
+
 def verify_incident_with_ai(frame: np.ndarray, incident_type: str, local_result: Dict[str, Any]) -> Dict[str, Any]:
     default_result = {
         "is_verified": True,
@@ -1114,28 +1147,37 @@ def verify_incident_with_ai(frame: np.ndarray, incident_type: str, local_result:
     try:
         _, buffer = cv2.imencode('.jpg', frame, [cv2.IMWRITE_JPEG_QUALITY, 80])
         img_b64 = base64.b64encode(buffer).decode('utf-8')
+        local_context = ai_local_context(incident_type, local_result)
+        min_confidence = ai_incident_min_confidence(incident_type)
 
         if incident_type == "fire":
             prompt = (
-                f"Our YOLO fire/smoke detector detected a possible fire or smoke hazard with {local_result.get('confidence', 0):.2f} confidence.\n"
-                "Examine this traffic camera image carefully and determine if there is REAL fire, flame, or smoke. "
-                "Ignore orange objects, lights, screens, reflections, and fire hydrants unless there is visible flame or smoke. "
+                "You are verifying a traffic-camera fire/smoke alert. Use the image first, and use the local detector context only as a hint.\n"
+                f"Local detector context: {local_context}\n\n"
+                "Verify TRUE only when the image shows clear active flame, a real smoke plume, or smoke visibly rising from a likely fire source. "
+                "Reject isolated orange/red/yellow regions, brake lights, traffic lights, street lamps, LEDs, signs, screens, sunsets, reflections, construction cones, fire hydrants, and road markings. "
+                "For smoke-only alerts, require a visible gray/white/black plume, haze column, or expanding cloud; do not count blur, fog, camera glare, or exhaust as fire smoke. "
+                "If the evidence is ambiguous, set is_verified=false. "
                 "Return a JSON object with:\n"
                 "- \"is_verified\": true/false\n"
                 "- \"confidence\": 0.0 to 1.0\n"
-                "- \"reason\": brief explanation\n"
+                "- \"reason\": brief explanation naming the visual evidence or rejection cause\n"
+                "- \"visual_evidence\": short phrase such as flame, smoke_plume, light_reflection, wet_road, unclear\n"
                 "ONLY output valid JSON."
             )
         else:
             prompt = (
-                f"Our computer vision system detected possible flooding with water ratio {local_result.get('water_ratio', 0):.2f}.\n"
-                "Examine this traffic camera image carefully and determine if there is REAL flooding. "
-                "Do NOT report rain, wet road surface, puddles, reflections, shiny asphalt, or water spray as flood. "
-                "Only verify as true if standing water visibly covers a roadway/lane/sidewalk area with meaningful depth.\n"
+                "You are verifying a traffic-camera flood alert. Use the image first, and use the local detector context only as a hint.\n"
+                f"Local detector context: {local_context}\n\n"
+                "Verify TRUE only when standing water visibly covers a meaningful road, lane, sidewalk, or low-lying area with depth cues. "
+                "Good evidence includes continuous water sheets, submerged curbs/lane markings, vehicles driving through water, wakes/ripples across the lane, or water reaching wheels. "
+                "Reject rain, wet asphalt, shiny road reflections, small puddles, gutter water, spray, shadows, dark pavement, and camera glare. "
+                "If you cannot distinguish flood water from wet road or reflections, set is_verified=false. "
                 "Return a JSON object with:\n"
                 "- \"is_verified\": true/false\n"
                 "- \"confidence\": 0.0 to 1.0\n"
-                "- \"reason\": brief explanation\n"
+                "- \"reason\": brief explanation naming the visual evidence or rejection cause\n"
+                "- \"visual_evidence\": short phrase such as standing_water, wet_road, reflection, puddle, unclear\n"
                 "ONLY output valid JSON."
             )
 
@@ -1160,12 +1202,21 @@ def verify_incident_with_ai(frame: np.ndarray, incident_type: str, local_result:
 
         answer = resp.json()["choices"][0]["message"]["content"].strip()
         data = json.loads(answer)
+        raw_is_verified = bool(data.get("is_verified", False))
+        confidence = max(0.0, min(1.0, float(data.get("confidence", 0.5))))
+        is_verified = raw_is_verified and confidence >= min_confidence
+        reason = str(data.get("reason", "no_reason"))
+        if raw_is_verified and not is_verified:
+            reason = f"ai_confidence_below_threshold({confidence:.2f}<{min_confidence:.2f}): {reason}"
 
         result = {
-            "is_verified": bool(data.get("is_verified", False)),
-            "confidence": float(data.get("confidence", 0.5)),
-            "reason": str(data.get("reason", "no_reason")),
+            "is_verified": is_verified,
+            "confidence": confidence,
+            "reason": reason,
             "status": "ok",
+            "visual_evidence": str(data.get("visual_evidence", "")),
+            "raw_is_verified": raw_is_verified,
+            "min_confidence": min_confidence,
         }
         log.info(
             "%s %s verification: is_verified=%s, confidence=%.2f, reason=%s",
@@ -1406,6 +1457,15 @@ def detect(
     if fire_result:
         log.info("Fire candidate detected by %s (camera=%s). Verifying with AI...", fire_result["metadata"].get("detector"), camera_id)
         ai_verify = verify_incident_with_ai(frame, "fire", fire_result)
+        fire_meta = fire_result.get("metadata", {})
+        strong_local_fire = (
+            fire_result.get("confidence", 0.0) >= 0.75 or
+            (
+                fire_meta.get("primary_label") == "fire" and
+                fire_result.get("confidence", 0.0) >= 0.65
+            ) or
+            bool(fire_meta.get("strong_fire_mass"))
+        )
         if ai_verify["is_verified"]:
             ai_status = ai_verify.get("status", "unavailable")
             fire_result["metadata"]["verified_by_ai"] = ai_status == "ok"
@@ -1413,14 +1473,24 @@ def detect(
             fire_result["metadata"]["ai_model"] = AI_MODEL
             fire_result["metadata"]["ai_status"] = ai_status
             fire_result["metadata"]["ai_reason"] = ai_verify["reason"]
+            fire_result["metadata"]["ai_visual_evidence"] = ai_verify.get("visual_evidence", "")
+            fire_result["metadata"]["ai_min_confidence"] = ai_verify.get("min_confidence")
             if ai_status == "ok":
                 # Combine confidences (60% local, 40% AI)
                 local_conf = fire_result.get("confidence", 0.8)
                 ai_conf = ai_verify.get("confidence", 0.8)
                 fire_result["confidence"] = round(max(local_conf * 0.6 + ai_conf * 0.4, 0.65), 3)
-            else:
+                detections.append(fire_result)
+            elif strong_local_fire:
                 fire_result["metadata"]["fallback_reason"] = "ai_unavailable"
-            detections.append(fire_result)
+                fire_result["metadata"]["local_fallback"] = True
+                detections.append(fire_result)
+            else:
+                log.info(
+                    "Skipping weak fire candidate because AI is unavailable (camera=%s, conf=%.2f).",
+                    camera_id,
+                    fire_result.get("confidence", 0.0),
+                )
         else:
             log.info("AI provider rejected the fire (reason: %s).", ai_verify["reason"])
 
@@ -1455,6 +1525,8 @@ def detect(
             flood_result["metadata"]["ai_model"] = AI_MODEL
             flood_result["metadata"]["ai_status"] = ai_status
             flood_result["metadata"]["ai_reason"] = ai_verify["reason"]
+            flood_result["metadata"]["ai_visual_evidence"] = ai_verify.get("visual_evidence", "")
+            flood_result["metadata"]["ai_min_confidence"] = ai_verify.get("min_confidence")
             if ai_status == "ok":
                 local_conf = flood_result.get("confidence", 0.8)
                 ai_conf = ai_verify.get("confidence", 0.8)
@@ -1569,6 +1641,8 @@ class DetectorHandler(BaseHTTPRequestHandler):
                 "ai_model_fallback_reason": AI_MODEL_FALLBACK_REASON,
                 "ai_enabled": AI_ENABLED,
                 "ai_rate_limit_per_min": AI_RATE_LIMIT_PER_MIN,
+                "ai_fire_min_confidence": AI_FIRE_MIN_CONFIDENCE,
+                "ai_flood_min_confidence": AI_FLOOD_MIN_CONFIDENCE,
                 "ai_backoff_seconds": max(0, round(ai_backoff_until - time.time())),
                 "groq_enabled": AI_ENABLED if AI_PROVIDER == "groq" else False,
                 "groq_backoff_seconds": max(0, round(ai_backoff_until - time.time())),
