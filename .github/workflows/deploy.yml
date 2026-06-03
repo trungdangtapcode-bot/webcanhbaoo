@@ -30,6 +30,23 @@ jobs:
           script: |
             set -Eeuo pipefail
 
+            wait_for_url() {
+              local name="$1"
+              local url="$2"
+              local attempts="${3:-30}"
+              local delay="${4:-2}"
+              for i in $(seq 1 "$attempts"); do
+                if curl --fail --silent --show-error "$url" >/dev/null; then
+                  echo "$name is healthy."
+                  return 0
+                fi
+                echo "Waiting for $name ($i/$attempts)..."
+                sleep "$delay"
+              done
+              echo "$name did not become healthy: $url" >&2
+              return 1
+            }
+
             APP_DIR="${{ secrets.VPS_APP_DIR }}"
             if [ -z "$APP_DIR" ]; then
               APP_DIR="$HOME/webcanhbaoo"
@@ -55,14 +72,17 @@ jobs:
             echo "Reloading PM2 services..."
             cd "$APP_DIR/backend"
             mkdir -p logs
-            HANOI_PROXY_PYTHON="$APP_DIR/ai_module/venv/bin/python" \
+            AI_MODULE_PYTHON="$APP_DIR/ai_module/venv/bin/python" \
               pm2 startOrReload ecosystem.config.js --env production --update-env
             pm2 save
 
             echo "Checking backend health..."
-            curl --fail --silent --show-error http://127.0.0.1:3000/api/health >/dev/null
+            wait_for_url "backend" "http://127.0.0.1:3000/api/health" 30 2
 
             echo "Checking Hanoi proxy health..."
-            curl --fail --silent --show-error http://127.0.0.1:5001/health >/dev/null
+            wait_for_url "Hanoi proxy" "http://127.0.0.1:5001/health" 30 2
+
+            echo "Checking AI detector health..."
+            wait_for_url "AI detector" "http://127.0.0.1:5055/health" 60 3
 
             echo "Deployment completed."

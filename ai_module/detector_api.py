@@ -41,6 +41,7 @@ HOST = os.getenv("DETECTOR_HOST", "127.0.0.1")
 PORT = int(os.getenv("DETECTOR_PORT", "5055"))
 ENABLE_YOLO = os.getenv("DETECTOR_ENABLE_YOLO", "false").lower() == "true"
 GROQ_API_KEY = os.getenv("GROQ_API_KEY", "")
+GROQ_ENABLED = os.getenv("DETECTOR_GROQ_ENABLED", "false").lower() == "true" and bool(GROQ_API_KEY)
 GROQ_VISION_MODEL = os.getenv("GROQ_VISION_MODEL", "meta-llama/llama-4-scout-17b-16e-instruct")
 
 # ── Fire thresholds ──────────────────────────────────────────────────────────
@@ -877,6 +878,8 @@ def detect_traffic(frame: np.ndarray, camera_id: str = "unknown") -> Dict[str, A
 groq_request_times = deque(maxlen=30)
 
 def can_call_groq() -> bool:
+    if not GROQ_ENABLED:
+        return False
     now = time.time()
     # Remove timestamps older than 60 seconds
     while groq_request_times and now - groq_request_times[0] >= 60:
@@ -887,7 +890,7 @@ def can_call_groq() -> bool:
     return True
 
 def detect_incidents_with_groq(frame: np.ndarray) -> List[Dict[str, Any]]:
-    if not GROQ_API_KEY:
+    if not GROQ_ENABLED:
         return []
     
     if not can_call_groq():
@@ -977,7 +980,7 @@ def verify_traffic_jam_with_groq(frame: np.ndarray, tracking_info: Dict[str, Any
     """
     default_result = {"is_jam": True, "confidence": 0.8, "reason": "groq_unavailable_default_yes"}
 
-    if not GROQ_API_KEY:
+    if not GROQ_ENABLED:
         return default_result
 
     if not can_call_groq():
@@ -1072,7 +1075,7 @@ def analyze_traffic_with_groq(frame: np.ndarray, camera_id: str = "unknown") -> 
     - traffic_level: EMPTY / LOW / MODERATE / HIGH / GRIDLOCK
     - road_occupancy: % mặt đường bị chiếm
     """
-    if not GROQ_API_KEY:
+    if not GROQ_ENABLED:
         return None
 
     if not can_call_groq():
@@ -1281,6 +1284,7 @@ class DetectorHandler(BaseHTTPRequestHandler):
                 "yolo_iou": YOLO_IOU,
                 "yolo_imgsz": YOLO_IMG_SIZE,
                 "yolo_sliced": YOLO_ENABLE_SLICES,
+                "groq_enabled": GROQ_ENABLED,
                 "traffic_jam_confirm_frames": TRAFFIC_JAM_CONFIRM_FRAMES,
                 "traffic_speed_stopped_threshold": TRAFFIC_SPEED_STOPPED,
                 "traffic_speed_slow_threshold": TRAFFIC_SPEED_SLOW,

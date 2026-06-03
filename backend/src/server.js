@@ -14,6 +14,12 @@ const trafficVolumeService = require('./services/trafficVolumeService');
 
 const PORT = process.env.PORT || 3000;
 
+function shouldAutostartScanner() {
+  if (process.env.SCANNER_AUTOSTART !== 'true') return false;
+  const pm2Instance = process.env.NODE_APP_INSTANCE;
+  return pm2Instance === undefined || pm2Instance === '0';
+}
+
 async function bootstrap() {
   // --- Connect MongoDB ---
   await connectDatabase();
@@ -51,10 +57,12 @@ async function bootstrap() {
   alertService.init(io);
   trafficVolumeService.init(io);
 
-  if (process.env.SCANNER_AUTOSTART === 'true') {
+  if (shouldAutostartScanner()) {
     scannerService.start().catch((err) => {
       console.error('[Scanner] autostart failed:', err);
     });
+  } else if (process.env.SCANNER_AUTOSTART === 'true') {
+    console.log(`[Scanner] autostart skipped in PM2 worker ${process.env.NODE_APP_INSTANCE}`);
   }
 
   // --- Socket.io connection handler ---

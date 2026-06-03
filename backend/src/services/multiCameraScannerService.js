@@ -24,21 +24,33 @@ function parsePositiveFloat(value, fallback) {
 }
 
 const defaults = {
-  cameraLimit: parsePositiveInt(process.env.SCANNER_CAMERA_LIMIT, 12),
-  concurrency: parsePositiveInt(process.env.SCANNER_CONCURRENCY, 4),
+  cameraLimit: parsePositiveInt(process.env.SCANNER_CAMERA_LIMIT, 80),
+  concurrency: parsePositiveInt(process.env.SCANNER_CONCURRENCY, 8),
   detectorUrl: process.env.AI_DETECTOR_URL || '',
-  intervalMs: parsePositiveInt(process.env.SCANNER_INTERVAL_MS, 10000),
+  detectorTimeoutMs: parsePositiveInt(process.env.SCANNER_DETECT_TIMEOUT_MS, 20000),
+  failureCooldownMs: parsePositiveInt(process.env.SCANNER_FAILURE_COOLDOWN_MS, 60000),
+  frameTimeoutMs: parsePositiveInt(process.env.SCANNER_FRAME_TIMEOUT_MS, 8000),
+  intervalMs: parsePositiveInt(process.env.SCANNER_INTERVAL_MS, 1000),
   minConfidence: parsePositiveFloat(process.env.SCANNER_MIN_CONFIDENCE, 0.6),
   mockDetections: process.env.SCANNER_MOCK_DETECTIONS === 'true',
-  source: process.env.SCANNER_CAMERA_SOURCE || 'hcm',
+  source: process.env.SCANNER_CAMERA_SOURCE || 'all',
+  staleTargetMs: parsePositiveInt(process.env.SCANNER_STALE_TARGET_MS, 5 * 60 * 1000),
 };
 
 const state = {
   activeWorkers: 0,
+  cameraStats: new Map(),
   config: { ...defaults },
   cursor: 0,
   lastStrategy: null,
   lastRun: null,
+  metrics: {
+    avgCameraDurationMs: 0,
+    failed: 0,
+    processed: 0,
+    scanRuns: 0,
+    startedAt: null,
+  },
   queueLength: 0,
   running: false,
   scanning: false,
@@ -51,20 +63,36 @@ function publicConfig() {
     cameraLimit: state.config.cameraLimit,
     concurrency: state.config.concurrency,
     detectorConfigured: Boolean(state.config.detectorUrl),
+    detectorTimeoutMs: state.config.detectorTimeoutMs,
+    failureCooldownMs: state.config.failureCooldownMs,
+    frameTimeoutMs: state.config.frameTimeoutMs,
     intervalMs: state.config.intervalMs,
     minConfidence: state.config.minConfidence,
     mockDetections: state.config.mockDetections,
     source: state.config.source,
+    staleTargetMs: state.config.staleTargetMs,
     strategy: 'priority_round_robin',
   };
 }
 
 function getStatus() {
+  const now = Date.now();
+  const cameraStats = Array.from(state.cameraStats.values());
+  const stalled = cameraStats.filter((item) => item.cooldownUntil && item.cooldownUntil > now).length;
   return {
     activeWorkers: state.activeWorkers,
     config: publicConfig(),
     lastRun: state.lastRun,
     lastStrategy: state.lastStrategy,
+    metrics: {
+      ...state.metrics,
+      camerasTracked: cameraStats.length,
+      cooldownCameras: stalled,
+      throughputPerMinute:
+        state.metrics.startedAt && state.metrics.processed
+          ? Math.round((state.metrics.processed * 60000) / Math.max(Date.now() - state.metrics.startedAt, 1))
+          : 0,
+    },
     queueLength: state.queueLength,
     running: state.running,
     scanning: state.scanning,
@@ -77,11 +105,15 @@ function normalizeStartOptions(options = {}) {
     cameraLimit: parsePositiveInt(options.cameraLimit, state.config.cameraLimit),
     concurrency: parsePositiveInt(options.concurrency, state.config.concurrency),
     detectorUrl: typeof options.detectorUrl === 'string' ? options.detectorUrl : state.config.detectorUrl,
+    detectorTimeoutMs: parsePositiveInt(options.detectorTimeoutMs, state.config.detectorTimeoutMs),
+    failureCooldownMs: parsePositiveInt(options.failureCooldownMs, state.config.failureCooldownMs),
+    frameTimeoutMs: parsePositiveInt(options.frameTimeoutMs, state.config.frameTimeoutMs),
     intervalMs: parsePositiveInt(options.intervalMs, state.config.intervalMs),
     minConfidence: parsePositiveFloat(options.minConfidence, state.config.minConfidence),
     mockDetections:
       typeof options.mockDetections === 'boolean' ? options.mockDetections : state.config.mockDetections,
     source: typeof options.source === 'string' && options.source.trim() ? options.source.trim() : state.config.source,
+    staleTargetMs: parsePositiveInt(options.staleTargetMs, state.config.staleTargetMs),
   };
 }
 
@@ -103,12 +135,73 @@ function levelScore(level) {
   return { MODERATE: 15, HIGH: 35, CRITICAL: 55 }[level] || 0;
 }
 
-function scoreCamera(camera, activeCameraIds, total, index) {
+function getCameraRuntimeStats(cameraId) {
+  if (!state.cameraStats.has(cameraId)) {
+    state.cameraStats.set(cameraId, {
+      avgDurationMs: 0,
+      consecutiveFailures: 0,
+      cooldownUntil: 0,
+      failures: 0,
+      lastError: null,
+      lastScannedAt: 0,
+      successes: 0,
+    });
+  }
+  return state.cameraStats.get(cameraId);
+}
+
+function recordCameraSuccess(camera, durationMs) {
+  const stats = getCameraRuntimeStats(camera.camera_id);
+  stats.avgDurationMs = stats.avgDurationMs
+    ? Math.round((stats.avgDurationMs * 0.8) + (durationMs * 0.2))
+    : durationMs;
+  stats.consecutiveFailures = 0;
+  stats.cooldownUntil = 0;
+  stats.lastError = null;
+  stats.lastScannedAt = Date.now();
+  stats.successes += 1;
+  state.metrics.processed += 1;
+  state.metrics.avgCameraDurationMs = state.metrics.avgCameraDurationMs
+    ? Math.round((state.metrics.avgCameraDurationMs * 0.9) + (durationMs * 0.1))
+    : durationMs;
+}
+
+function recordCameraFailure(camera, error) {
+  const stats = getCameraRuntimeStats(camera.camera_id);
+  stats.consecutiveFailures += 1;
+  stats.failures += 1;
+  stats.lastError = error?.message || String(error || 'unknown error');
+  stats.lastScannedAt = Date.now();
+  const multiplier = Math.min(stats.consecutiveFailures, 5);
+  stats.cooldownUntil = Date.now() + (state.config.failureCooldownMs * multiplier);
+  state.metrics.failed += 1;
+}
+
+function scoreCamera(camera, activeCameraIds, total, index, now = Date.now()) {
   const health = getCachedHealth(camera.camera_id);
   const volume = trafficVolumeService.getVolume(camera.camera_id);
+  const runtime = getCameraRuntimeStats(camera.camera_id);
   const roundRobinDistance = (index - state.cursor + total) % total;
   let score = Math.max(total - roundRobinDistance, 0) / Math.max(total, 1);
   const reasons = ['round_robin'];
+
+  if (runtime.cooldownUntil && runtime.cooldownUntil > now) {
+    score -= 500;
+    reasons.push('failure_cooldown');
+  }
+  if (runtime.lastScannedAt) {
+    const scanAgeMs = now - runtime.lastScannedAt;
+    const staleBoost = Math.min(scanAgeMs / state.config.staleTargetMs, 3) * 30;
+    score += staleBoost;
+    if (scanAgeMs >= state.config.staleTargetMs) reasons.push('stale_scan');
+  } else {
+    score += 80;
+    reasons.push('never_scanned');
+  }
+  if (runtime.consecutiveFailures > 0) {
+    score -= Math.min(runtime.consecutiveFailures * 20, 120);
+    reasons.push('recent_failures');
+  }
 
   if (activeCameraIds.has(camera.camera_id)) {
     score += 100;
@@ -142,10 +235,11 @@ function scoreCamera(camera, activeCameraIds, total, index) {
 function selectPriorityBatch(cameras, limit) {
   if (!cameras.length) return [];
   const total = cameras.length;
+  const now = Date.now();
   const activeCameraIds = new Set(alertService.getActiveAlerts().map((alert) => alert.camera_id));
   const ranked = cameras
     .map((camera, index) => {
-      const scored = scoreCamera(camera, activeCameraIds, total, index);
+      const scored = scoreCamera(camera, activeCameraIds, total, index, now);
       return {
         camera,
         index,
@@ -162,6 +256,7 @@ function selectPriorityBatch(cameras, limit) {
     cursor: state.cursor,
     selected: selected.length,
     total,
+    tracked: state.cameraStats.size,
     top: selected.slice(0, 5).map((item) => ({
       camera_id: item.camera.camera_id,
       reasons: item.reasons,
@@ -227,7 +322,7 @@ async function fetchHanoiFrame(camera) {
   const proxyBase = getProxyBaseUrl();
   const url =
     `${proxyBase}/hanoi_snapshot/${encodeURIComponent(camera.camera_id)}?timeout=${Math.ceil(HANOI_SNAPSHOT_TIMEOUT_MS / 1000)}`;
-  const frame = await fetchBufferWithTimeout(url, HANOI_SNAPSHOT_TIMEOUT_MS + 3000);
+  const frame = await fetchBufferWithTimeout(url, Math.min(HANOI_SNAPSHOT_TIMEOUT_MS + 3000, state.config.frameTimeoutMs + 5000));
   return {
     ...frame,
     metadata: {
@@ -251,15 +346,7 @@ async function fetchCameraFrame(camera) {
     throw new Error('Camera has no snapshot_url or stream_url');
   }
 
-  const response = await fetch(url);
-  if (!response.ok) {
-    throw new Error(`Frame request failed with ${response.status}`);
-  }
-
-  return {
-    buffer: Buffer.from(await response.arrayBuffer()),
-    contentType: response.headers.get('content-type') || 'image/jpeg',
-  };
+  return fetchBufferWithTimeout(url, state.config.frameTimeoutMs);
 }
 
 function normalizeDetections(payload) {
@@ -289,9 +376,12 @@ function normalizeDetections(payload) {
 
 async function detectFrame(camera, frame, tickId) {
   if (state.config.detectorUrl) {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), state.config.detectorTimeoutMs);
     const response = await fetch(state.config.detectorUrl, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
+      signal: controller.signal,
       body: JSON.stringify({
         camera: {
           camera_id: camera.camera_id,
@@ -305,7 +395,7 @@ async function detectFrame(camera, frame, tickId) {
         metadata: frame.metadata || {},
         timestamp: new Date().toISOString(),
       }),
-    });
+    }).finally(() => clearTimeout(timer));
 
     if (!response.ok) {
       throw new Error(`Detector failed with ${response.status}`);
@@ -468,8 +558,11 @@ async function runPool(cameras, tickId) {
       state.activeWorkers += 1;
       state.queueLength = Math.max(cameras.length - cursor, 0);
       try {
-        results.push(await processCamera(camera, tickId));
+        const result = await processCamera(camera, tickId);
+        recordCameraSuccess(camera, result.durationMs);
+        results.push(result);
       } catch (err) {
+        recordCameraFailure(camera, err);
         failures.push({
           camera_id: camera.camera_id,
           error: err.message,
@@ -507,11 +600,16 @@ async function scanOnce() {
       cameras: cameras.length,
       detections,
       durationMs: Date.now() - startedAt,
+      estimatedFullCycleMs:
+        state.lastStrategy?.total && results.length
+          ? Math.round((Date.now() - startedAt) * (state.lastStrategy.total / Math.max(results.length, 1)))
+          : null,
       failed: failures.length,
       finishedAt: new Date().toISOString(),
       processed: results.length,
       startedAt: new Date(startedAt).toISOString(),
     };
+    state.metrics.scanRuns += 1;
 
     return {
       failures,
@@ -551,6 +649,7 @@ async function start(options = {}) {
 
   state.running = true;
   state.startedAt = new Date().toISOString();
+  state.metrics.startedAt = Date.now();
   console.log(
     `[Scanner] started: source=${state.config.source}, concurrency=${state.config.concurrency}, interval=${state.config.intervalMs}ms`
   );
