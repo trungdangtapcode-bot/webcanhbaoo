@@ -42,9 +42,11 @@
       0x017e: 0x9e, 0x0178: 0x9f,
     };
 
-    const API_BASE = window.location.protocol === "file:" || ["4173", "5173"].includes(window.location.port)
-      ? "http://localhost:3000"
-      : "";
+    const API_BASE = window.SMART_ALERT_API_BASE || (
+      window.location.protocol === "file:" || ["4173", "5173"].includes(window.location.port)
+        ? "http://localhost:3000"
+        : ""
+    );
     const AUTH_SESSION_KEY = "smart-alert-auth-session";
     const cameras = new Map();
     const alerts = [];
@@ -1123,6 +1125,7 @@
         ? hanoiProxyUrl
         : snapshotUrl || streamUrl || ("http://localhost:5000/video_feed/" + encodeURIComponent(camId));
       const liveBadge = document.querySelector(".live-badge");
+      let hanoiRetryCount = 0;
 
       document.getElementById("modal-cam-name").textContent = camName;
       if (liveBadge) liveBadge.textContent = isHanoiRealtime ? "Realtime WSS metadata" : "Live AI stream";
@@ -1139,9 +1142,20 @@
       stream.onerror = () => {
         shell.classList.add("stream-offline");
         if (isHanoiRealtime) {
-          document.getElementById("stream-placeholder-title").textContent = "Hanoi proxy unavailable";
+          if (hanoiRetryCount < 8) {
+            hanoiRetryCount += 1;
+            document.getElementById("stream-placeholder-title").textContent = "Starting Hanoi decoder";
+            document.getElementById("stream-placeholder-copy").textContent =
+              "The backend is connecting to the Hanoi WSS stream. Video will appear when the first frame is decoded.";
+            window.setTimeout(() => {
+              const joiner = sourceUrl.includes("?") ? "&" : "?";
+              stream.src = sourceUrl + joiner + "retry=" + hanoiRetryCount + "&ts=" + Date.now();
+            }, 2500);
+            return;
+          }
+          document.getElementById("stream-placeholder-title").textContent = "Hanoi stream unavailable";
           document.getElementById("stream-placeholder-copy").textContent =
-            "Start the Hanoi WSS proxy on port 5001, then reopen this camera.";
+            "The decoder could not reach this WSS camera yet. Try another Hanoi camera or refresh in a moment.";
           return;
         }
         document.getElementById("stream-placeholder-title").textContent = "Stream source unavailable";
@@ -1172,12 +1186,7 @@
       if (configuredBase) {
         return configuredBase.replace(/\/$/, "") + "/hanoi_feed/" + encodeURIComponent(camId);
       }
-
-      const isDev = window.location.protocol === "file:" || ["4173", "5173"].includes(window.location.port);
-      if (isDev) {
-        return "http://localhost:5001/hanoi_feed/" + encodeURIComponent(camId);
-      }
-      return "/api/cameras/hanoi/" + encodeURIComponent(camId) + "/mjpeg";
+      return apiUrl("/api/cameras/hanoi/" + encodeURIComponent(camId) + "/mjpeg");
     }
 
     async function loadCameraHistory(cameraId) {

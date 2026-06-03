@@ -8,10 +8,9 @@ const floodService = require('./floodService');
 const trafficVolumeService = require('./trafficVolumeService');
 const { fetchSnapshot, getHcmCameras } = require('./hcmCameraService');
 const { getHanoiCameras } = require('./hanoiCameraService');
+const { ensureHanoiProxyStarted, getProxyBaseUrl } = require('./hanoiProxyService');
 
 const VALID_EVENT_TYPES = new Set(['traffic_jam', 'traffic_volume', 'fire', 'flood']);
-const HANOI_MJPEG_PROXY_BASE_URL =
-  process.env.HANOI_MJPEG_PROXY_BASE_URL || 'http://127.0.0.1:5001';
 const HANOI_SNAPSHOT_TIMEOUT_MS = parsePositiveInt(process.env.HANOI_SNAPSHOT_TIMEOUT_MS, 18000);
 
 function parsePositiveInt(value, fallback) {
@@ -220,7 +219,12 @@ async function fetchBufferWithTimeout(url, timeoutMs) {
 }
 
 async function fetchHanoiFrame(camera) {
-  const proxyBase = HANOI_MJPEG_PROXY_BASE_URL.replace(/\/$/, '');
+  const proxyState = await ensureHanoiProxyStarted();
+  if (!proxyState.available) {
+    throw new Error('Hanoi WSS proxy unavailable');
+  }
+
+  const proxyBase = getProxyBaseUrl();
   const url =
     `${proxyBase}/hanoi_snapshot/${encodeURIComponent(camera.camera_id)}?timeout=${Math.ceil(HANOI_SNAPSHOT_TIMEOUT_MS / 1000)}`;
   const frame = await fetchBufferWithTimeout(url, HANOI_SNAPSHOT_TIMEOUT_MS + 3000);

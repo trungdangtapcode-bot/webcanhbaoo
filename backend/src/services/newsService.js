@@ -20,6 +20,39 @@ const CATEGORY_CONFIG = {
   },
 };
 
+const DIRECT_RSS_FEEDS = [
+  {
+    category: 'storm_flood',
+    query: 'vnexpress-thoi-su',
+    url: 'https://vnexpress.net/rss/thoi-su.rss',
+  },
+  {
+    category: 'storm_flood',
+    query: 'thanhnien-thoi-su',
+    url: 'https://thanhnien.vn/rss/thoi-su.rss',
+  },
+  {
+    category: 'traffic',
+    query: 'vnexpress-giao-thong',
+    url: 'https://vnexpress.net/rss/giao-thong.rss',
+  },
+  {
+    category: 'traffic',
+    query: 'thanhnien-giao-thong',
+    url: 'https://thanhnien.vn/rss/xe.htm',
+  },
+  {
+    category: 'fire',
+    query: 'vnexpress-phap-luat',
+    url: 'https://vnexpress.net/rss/phap-luat.rss',
+  },
+  {
+    category: 'fire',
+    query: 'thanhnien-thoi-su',
+    url: 'https://thanhnien.vn/rss/thoi-su.rss',
+  },
+];
+
 const cache = new Map();
 
 function getCategories() {
@@ -126,6 +159,7 @@ function parseRssItems(xml, category, query) {
   return Array.from(String(xml || '').matchAll(/<item>([\s\S]*?)<\/item>/gi)).map((match) => {
     const itemXml = match[1];
     const publishedAt = readTag(itemXml, 'pubDate');
+    const parsedDate = publishedAt ? new Date(publishedAt) : null;
     const description = stripHtml(readTag(itemXml, 'description'));
     const title = stripHtml(readTag(itemXml, 'title'));
     const source = stripHtml(readTag(itemXml, 'source'));
@@ -139,7 +173,7 @@ function parseRssItems(xml, category, query) {
       url: readTag(itemXml, 'link'),
       source: source || 'Google News',
       source_url: readTagAttr(itemXml, 'source', 'url'),
-      published_at: publishedAt ? new Date(publishedAt).toISOString() : null,
+      published_at: parsedDate && !Number.isNaN(parsedDate.getTime()) ? parsedDate.toISOString() : null,
     };
   }).filter((item) => item.title && item.url && isRelevantToCategory(item, category));
 }
@@ -158,6 +192,26 @@ async function fetchFeed(category, query) {
   }
 
   return parseRssItems(await response.text(), category, query);
+}
+
+async function fetchDirectFeed(feed) {
+  const response = await fetch(feed.url, {
+    headers: {
+      'user-agent': 'SmartAlertSystem/1.0',
+      accept: 'application/rss+xml, application/xml, text/xml',
+    },
+    signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+  });
+
+  if (!response.ok) {
+    throw new Error(`Direct news feed request failed (${response.status})`);
+  }
+
+  return parseRssItems(await response.text(), feed.category, feed.query).map((item) => ({
+    ...item,
+    source: item.source === 'Google News' ? new URL(feed.url).hostname.replace(/^www\./, '') : item.source,
+    source_url: item.source_url || feed.url,
+  }));
 }
 
 function dedupeAndSort(items) {
@@ -182,6 +236,11 @@ function getCategoryQueries(category) {
   return CATEGORY_CONFIG[category].queries.map((query) => ({ category, query }));
 }
 
+function getDirectFeeds(category) {
+  if (category === 'all') return DIRECT_RSS_FEEDS;
+  return DIRECT_RSS_FEEDS.filter((feed) => feed.category === category);
+}
+
 async function getNews(options = {}) {
   const category = normalizeCategory(options.category);
   const limit = Math.min(Math.max(Number(options.limit) || 24, 1), 80);
@@ -203,7 +262,19 @@ async function getNews(options = {}) {
   const settled = await Promise.allSettled(
     feedRequests.map(({ category: itemCategory, query }) => fetchFeed(itemCategory, query))
   );
-  const items = dedupeAndSort(settled.flatMap((result) => (result.status === 'fulfilled' ? result.value : [])));
+  let items = dedupeAndSort(settled.flatMap((result) => (result.status === 'fulfilled' ? result.value : [])));
+  let fallbackFailedFeeds = 0;
+  let fallbackUsed = false;
+
+  if (!items.length) {
+    const fallbackSettled = await Promise.allSettled(getDirectFeeds(category).map(fetchDirectFeed));
+    items = dedupeAndSort(
+      fallbackSettled.flatMap((result) => (result.status === 'fulfilled' ? result.value : []))
+    );
+    fallbackFailedFeeds = fallbackSettled.filter((result) => result.status === 'rejected').length;
+    fallbackUsed = true;
+  }
+
   const updatedAt = new Date().toISOString();
 
   cache.set(cacheKey, {
@@ -219,6 +290,8 @@ async function getNews(options = {}) {
     news: items.slice(0, limit),
     cached: false,
     failed_feeds: settled.filter((result) => result.status === 'rejected').length,
+    fallback_failed_feeds: fallbackFailedFeeds,
+    fallback_used: fallbackUsed,
   };
 }
 

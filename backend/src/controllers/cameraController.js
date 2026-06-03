@@ -5,15 +5,17 @@ const { isDatabaseConnected } = require('../config/database');
 const { findHanoiCamera, getHanoiCameras, getHanoiSourceInfo } = require('../services/hanoiCameraService');
 const { fetchSnapshot, findHcmCamera, getHcmCameras } = require('../services/hcmCameraService');
 const {
+  ensureHanoiProxyStarted,
+  getHanoiProxyStatus,
+  getProxyBaseUrl,
+} = require('../services/hanoiProxyService');
+const {
   checkCameraHealth,
   getCachedHealth,
   getCameraHealth,
   getHealthSummary,
 } = require('../services/cameraHealthService');
 const trafficVolumeService = require('../services/trafficVolumeService');
-
-const HANOI_MJPEG_PROXY_BASE_URL =
-  process.env.HANOI_MJPEG_PROXY_BASE_URL || 'http://127.0.0.1:5001';
 
 // Demo cameras used when MongoDB is not available
 const DEMO_CAMERAS = [
@@ -115,7 +117,8 @@ async function getHanoiTrafficCameras(req, res) {
       cameras,
       source: 'hanoi_video_wall',
       stream_mode: 'wss_video',
-      stream_playback: 'requires_proxy_decoder',
+      stream_playback: 'backend_mjpeg_proxy',
+      proxy: getHanoiProxyStatus(),
       ...getHanoiSourceInfo(),
     });
   } catch (err) {
@@ -138,7 +141,8 @@ async function getHanoiCameraStreamInfo(req, res) {
       stream_type: camera.stream_type,
       stream_url: camera.stream_url,
       metadata: camera.metadata,
-      playback_note: 'The Hanoi source is a WSS realtime stream. Add a decoder/proxy before direct browser playback.',
+      proxy: getHanoiProxyStatus(),
+      playback_note: 'The Hanoi source is decoded through the backend MJPEG proxy for browser playback.',
     });
   } catch (err) {
     console.error('[CameraController] Hanoi stream info error:', err);
@@ -155,14 +159,27 @@ async function proxyHanoiCameraMjpeg(req, res) {
     const camera = await findHanoiCamera(req.params.cameraId);
     if (!camera) return res.status(404).json({ error: 'Hanoi camera not found' });
 
+    const proxyState = await ensureHanoiProxyStarted();
+    if (!proxyState.available) {
+      return res.status(503).json({
+        error: 'Hanoi MJPEG proxy unavailable',
+        message: 'The backend could not start or reach the Hanoi WSS decoder yet.',
+        proxy: {
+          ...getHanoiProxyStatus(),
+          ...proxyState,
+        },
+      });
+    }
+
     const proxyUrl =
-      `${HANOI_MJPEG_PROXY_BASE_URL.replace(/\/$/, '')}/hanoi_feed/${encodeURIComponent(camera.camera_id)}`;
+      `${getProxyBaseUrl()}/hanoi_feed/${encodeURIComponent(camera.camera_id)}`;
     const upstream = await fetch(proxyUrl);
 
     if (!upstream.ok || !upstream.body) {
       return res.status(502).json({
         error: 'Hanoi MJPEG proxy unavailable',
         status: upstream.status,
+        proxy: getHanoiProxyStatus(),
       });
     }
 
