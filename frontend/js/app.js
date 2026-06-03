@@ -66,6 +66,9 @@
     let activeCameraSource = new URLSearchParams(window.location.search).get("city") === "hanoi" ? "hanoi" : "hcm";
     let activeWorkspacePanel = "cameras";
     let streamRefreshTimer = null;
+    let hanoiStreamRetryTimer = null;
+    let hanoiStatusTimer = null;
+    let streamSessionId = 0;
     let tileLayer = null;
     let statsRange = "24h";
     let nearbyRadius = 3000;
@@ -1107,6 +1110,7 @@
 
     function openVideoModal(camId) {
       closeVideoModal();
+      const sessionId = ++streamSessionId;
       const cam = cameras.get(camId);
       const camName = cam ? maybeRepairMojibake(cam.data.name) : "Camera";
       const shell = document.querySelector(".video-shell");
@@ -1138,8 +1142,12 @@
         ? "Live frames are loading through the local camera proxy."
         : "The AI video proxy will appear here when the camera feed is available.";
       shell.classList.remove("stream-offline");
-      stream.onload = () => shell.classList.remove("stream-offline");
+      stream.onload = () => {
+        if (sessionId !== streamSessionId) return;
+        shell.classList.remove("stream-offline");
+      };
       stream.onerror = () => {
+        if (sessionId !== streamSessionId) return;
         shell.classList.add("stream-offline");
         if (isHanoiRealtime) {
           if (hanoiRetryCount < 8) {
@@ -1147,7 +1155,9 @@
             document.getElementById("stream-placeholder-title").textContent = "Starting Hanoi decoder";
             document.getElementById("stream-placeholder-copy").textContent =
               "The backend is connecting to the Hanoi WSS stream. Video will appear when the first frame is decoded.";
-            window.setTimeout(() => {
+            if (hanoiStreamRetryTimer) window.clearTimeout(hanoiStreamRetryTimer);
+            hanoiStreamRetryTimer = window.setTimeout(() => {
+              if (sessionId !== streamSessionId) return;
               const joiner = sourceUrl.includes("?") ? "&" : "?";
               stream.src = sourceUrl + joiner + "retry=" + hanoiRetryCount + "&ts=" + Date.now();
             }, 2500);
@@ -1166,6 +1176,7 @@
 
       if (isHanoiRealtime) {
         stream.src = sourceUrl;
+        watchHanoiDecoderStatus(camId, sessionId, shell);
       } else if (isSnapshotStream) {
         const loadFrame = () => {
           const joiner = sourceUrl.includes("?") ? "&" : "?";
@@ -1179,6 +1190,34 @@
 
       loadCameraHistory(camId);
       document.getElementById("video-modal").classList.add("active");
+    }
+
+    function watchHanoiDecoderStatus(camId, sessionId, shell) {
+      let checks = 0;
+      const poll = async () => {
+        if (sessionId !== streamSessionId) return;
+        checks += 1;
+        const json = await fetchJsonOrNull(
+          "/api/cameras/hanoi/" + encodeURIComponent(camId) + "/status"
+        );
+        const status = json?.status || {};
+        const hasRecentFrame =
+          status.camera_id === camId &&
+          status.last_frame_at > 0 &&
+          Number(status.latest_age_ms || 0) < 15000;
+
+        if (hasRecentFrame) {
+          shell.classList.remove("stream-offline");
+          document.getElementById("stream-placeholder-title").textContent = "Live Hanoi stream";
+          document.getElementById("stream-placeholder-copy").textContent =
+            "Decoded video frames are coming through the backend proxy.";
+          return;
+        }
+
+        if (checks >= 18) return;
+        hanoiStatusTimer = window.setTimeout(poll, checks < 4 ? 1500 : 3000);
+      };
+      hanoiStatusTimer = window.setTimeout(poll, 1200);
     }
 
     function getHanoiProxyUrl(camId) {
@@ -1214,10 +1253,19 @@
     }
 
     function closeVideoModal() {
+      streamSessionId += 1;
       document.getElementById("video-modal").classList.remove("active");
       if (streamRefreshTimer) {
         window.clearInterval(streamRefreshTimer);
         streamRefreshTimer = null;
+      }
+      if (hanoiStreamRetryTimer) {
+        window.clearTimeout(hanoiStreamRetryTimer);
+        hanoiStreamRetryTimer = null;
+      }
+      if (hanoiStatusTimer) {
+        window.clearTimeout(hanoiStatusTimer);
+        hanoiStatusTimer = null;
       }
       const stream = document.getElementById("video-stream");
       stream.onload = null;

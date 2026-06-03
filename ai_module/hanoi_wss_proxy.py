@@ -36,6 +36,7 @@ JPEG_QUALITY = int(os.getenv("HANOI_PROXY_JPEG_QUALITY", "4"))
 HEADER_BYTES = int(os.getenv("HANOI_WSS_HEADER_BYTES", "12"))
 IDLE_SECONDS = int(os.getenv("HANOI_PROXY_IDLE_SECONDS", "75"))
 SNAPSHOT_TIMEOUT = float(os.getenv("HANOI_PROXY_SNAPSHOT_TIMEOUT", "12"))
+STALE_SECONDS = float(os.getenv("HANOI_PROXY_STALE_SECONDS", "20"))
 CAMERA_CACHE = Path(os.getenv(
     "HANOI_CAMERA_CACHE_FILE",
     Path(__file__).resolve().parents[1] / "backend" / "hanoi_cameras.json",
@@ -232,6 +233,7 @@ class CameraStream:
         self.error: Optional[str] = None
         self.thread: Optional[threading.Thread] = None
         self.stop_event = threading.Event()
+        self.decoder_started_at = 0.0
 
     def ensure_started(self):
         with self.condition:
@@ -282,6 +284,8 @@ class CameraStream:
             writer_stop = threading.Event()
             try:
                 self._set_status("connecting")
+                with self.condition:
+                    self.decoder_started_at = time.time()
                 process = start_ffmpeg()
                 start_writer_thread(self.wss_url, process.stdin, writer_stop)
                 self._start_idle_watchdog(process)
@@ -315,6 +319,33 @@ class CameraStream:
             while not self.stop_event.is_set() and process.poll() is None:
                 if self._is_idle():
                     log.info("Stopping idle decoder for %s", self.camera_key)
+                    try:
+                        process.terminate()
+                    except Exception:
+                        pass
+                    break
+                with self.condition:
+                    clients = self.clients
+                    latest_at = self.latest_at
+                    age = time.time() - latest_at if latest_at else None
+                    cycle_age = time.time() - self.decoder_started_at if self.decoder_started_at else 0
+                    waiting_age = time.time() - self.last_access
+                    status = self.status
+
+                is_stale_live = (
+                    clients > 0 and
+                    latest_at > 0 and
+                    age and age > STALE_SECONDS and
+                    cycle_age > STALE_SECONDS
+                )
+                is_stale_startup = (
+                    clients > 0 and
+                    latest_at <= 0 and
+                    status in {"connecting", "decoding"} and
+                    waiting_age > max(SNAPSHOT_TIMEOUT, STALE_SECONDS)
+                )
+                if is_stale_live or is_stale_startup:
+                    log.info("Restarting stale decoder for %s", self.camera_key)
                     try:
                         process.terminate()
                     except Exception:
@@ -399,6 +430,7 @@ def health():
         "idle_seconds": IDLE_SECONDS,
         "jpeg_quality": JPEG_QUALITY,
         "snapshot_timeout": SNAPSHOT_TIMEOUT,
+        "stale_seconds": STALE_SECONDS,
     })
 
 

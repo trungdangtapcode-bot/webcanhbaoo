@@ -6,6 +6,7 @@ const {
   getCameraHealthStatus,
   getCameraSnapshot,
   getCameras,
+  getHanoiCameraProxyStatus,
   getHanoiCameraStreamInfo,
   getHanoiTrafficCameras,
   getHcmTrafficCameras,
@@ -22,6 +23,9 @@ router.get('/hanoi', getHanoiTrafficCameras);
 
 // GET /api/cameras/hanoi/:cameraId/mjpeg - decoded browser-viewable stream proxy
 router.get('/hanoi/:cameraId/mjpeg', proxyHanoiCameraMjpeg);
+
+// GET /api/cameras/hanoi/:cameraId/status - decoder status for browser UI
+router.get('/hanoi/:cameraId/status', getHanoiCameraProxyStatus);
 
 // GET /api/cameras/hanoi/:cameraId/stream-info - raw WSS/HTTPS source metadata
 router.get('/hanoi/:cameraId/stream-info', getHanoiCameraStreamInfo);

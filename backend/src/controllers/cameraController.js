@@ -151,6 +151,50 @@ async function getHanoiCameraStreamInfo(req, res) {
 }
 
 /**
+ * GET /api/cameras/hanoi/:cameraId/status
+ * Returns decoder health for a Hanoi camera from the local WSS proxy.
+ */
+async function getHanoiCameraProxyStatus(req, res) {
+  try {
+    const camera = await findHanoiCamera(req.params.cameraId);
+    if (!camera) return res.status(404).json({ error: 'Hanoi camera not found' });
+
+    const proxyState = await ensureHanoiProxyStarted();
+    if (!proxyState.available) {
+      return res.status(503).json({
+        error: 'Hanoi MJPEG proxy unavailable',
+        proxy: {
+          ...getHanoiProxyStatus(),
+          ...proxyState,
+        },
+      });
+    }
+
+    const statusUrl =
+      `${getProxyBaseUrl()}/hanoi_status/${encodeURIComponent(camera.camera_id)}`;
+    const upstream = await fetch(statusUrl, {
+      signal: AbortSignal.timeout(Number(process.env.HANOI_PROXY_STATUS_TIMEOUT_MS || 2500)),
+    });
+
+    if (!upstream.ok) {
+      return res.status(upstream.status).json({
+        error: 'Unable to read Hanoi decoder status',
+        proxy: getHanoiProxyStatus(),
+      });
+    }
+
+    return res.json({
+      camera_id: camera.camera_id,
+      proxy: getHanoiProxyStatus(),
+      status: await upstream.json(),
+    });
+  } catch (err) {
+    console.error('[CameraController] Hanoi proxy status error:', err);
+    return res.status(500).json({ error: 'Unable to load Hanoi proxy status' });
+  }
+}
+
+/**
  * GET /api/cameras/hanoi/:cameraId/mjpeg
  * Proxies decoded MJPEG from the local Hanoi WSS proxy.
  */
@@ -410,6 +454,7 @@ module.exports = {
   getCameraHealthStatus,
   getCameras,
   getHanoiCameraStreamInfo,
+  getHanoiCameraProxyStatus,
   getHanoiTrafficCameras,
   getHcmTrafficCameras,
   proxyHanoiCameraMjpeg,

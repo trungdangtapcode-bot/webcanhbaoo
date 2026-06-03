@@ -1,6 +1,6 @@
 const fs = require('fs');
 const path = require('path');
-const { spawn } = require('child_process');
+const { spawn, spawnSync } = require('child_process');
 
 const DEFAULT_PROXY_BASE_URL = 'http://127.0.0.1:5001';
 const HANOI_PROXY_BASE_URL = process.env.HANOI_MJPEG_PROXY_BASE_URL || DEFAULT_PROXY_BASE_URL;
@@ -26,9 +26,28 @@ function getPythonCommand() {
     path.resolve(__dirname, '../../venv/bin/python'),
     path.resolve(__dirname, '../../../ai_module/venv/Scripts/python.exe'),
     path.resolve(__dirname, '../../../ai_module/venv/bin/python'),
+    'python',
+    'python3',
   ];
 
-  return candidates.find((candidate) => fs.existsSync(candidate)) || 'python';
+  const existingCandidates = candidates.filter((candidate) =>
+    candidate.includes(path.sep) ? fs.existsSync(candidate) : true
+  );
+
+  return existingCandidates.find(canRunHanoiProxy) || existingCandidates[0] || 'python';
+}
+
+function canRunHanoiProxy(pythonCommand) {
+  try {
+    const result = spawnSync(
+      pythonCommand,
+      ['-c', 'import flask, imageio_ffmpeg, websockets'],
+      { stdio: 'ignore', windowsHide: true }
+    );
+    return result.status === 0;
+  } catch (_err) {
+    return false;
+  }
 }
 
 async function checkProxyHealth() {
