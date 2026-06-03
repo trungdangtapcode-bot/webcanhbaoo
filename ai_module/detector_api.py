@@ -29,23 +29,54 @@ import requests
 import time
 from collections import defaultdict, deque
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
 import cv2
 import numpy as np
 from dotenv import load_dotenv
 
-load_dotenv()
+MODULE_DIR = Path(__file__).resolve().parent
+load_dotenv(MODULE_DIR / ".env")
 
 HOST = os.getenv("DETECTOR_HOST", "127.0.0.1")
 PORT = int(os.getenv("DETECTOR_PORT", "5055"))
 ENABLE_YOLO = os.getenv("DETECTOR_ENABLE_YOLO", "false").lower() == "true"
 GROQ_API_KEY = os.getenv("GROQ_API_KEY", "")
-GROQ_ENABLED = os.getenv("DETECTOR_GROQ_ENABLED", "false").lower() == "true" and bool(GROQ_API_KEY)
 GROQ_VISION_MODEL = os.getenv("GROQ_VISION_MODEL", "meta-llama/llama-4-scout-17b-16e-instruct")
+OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY", "")
+AI_PROVIDER = os.getenv("DETECTOR_AI_PROVIDER", "groq").strip().lower()
+REQUESTED_AI_MODEL = os.getenv(
+    "DETECTOR_AI_MODEL",
+    "nvidia/nemotron-3-super-120b-a12b:free" if AI_PROVIDER == "openrouter" else GROQ_VISION_MODEL,
+)
+AI_TEXT_MODEL_FALLBACK = os.getenv("DETECTOR_AI_TEXT_MODEL_FALLBACK", "x-ai/grok-4.3")
+IMAGE_ONLY_AI_MODELS = {"x-ai/grok-imagine-image-quality"}
+AI_MODEL_FALLBACK_REASON = ""
+AI_MODEL = REQUESTED_AI_MODEL
+if AI_PROVIDER == "openrouter" and REQUESTED_AI_MODEL in IMAGE_ONLY_AI_MODELS:
+    AI_MODEL = AI_TEXT_MODEL_FALLBACK
+    AI_MODEL_FALLBACK_REASON = (
+        f"{REQUESTED_AI_MODEL} outputs images, so detector uses {AI_TEXT_MODEL_FALLBACK} for image-to-JSON recognition"
+    )
+AI_ENDPOINT = os.getenv(
+    "DETECTOR_AI_ENDPOINT",
+    "https://openrouter.ai/api/v1/chat/completions"
+    if AI_PROVIDER == "openrouter"
+    else "https://api.groq.com/openai/v1/chat/completions",
+)
+AI_API_KEY = OPENROUTER_API_KEY if AI_PROVIDER == "openrouter" else GROQ_API_KEY
+AI_ENABLED_DEFAULT = os.getenv("DETECTOR_GROQ_ENABLED", "false") if AI_PROVIDER == "groq" else "true"
+AI_ENABLED = os.getenv("DETECTOR_AI_ENABLED", AI_ENABLED_DEFAULT).lower() == "true" and bool(AI_API_KEY)
+AI_RATE_LIMIT_PER_MIN = int(os.getenv("DETECTOR_AI_RATE_LIMIT_PER_MIN", "20" if AI_PROVIDER == "openrouter" else "30"))
+AI_REFERER = os.getenv("DETECTOR_AI_REFERER", "http://localhost:3000")
+AI_TITLE = os.getenv("DETECTOR_AI_TITLE", "Smart Alert Detector Demo")
+OPENCV_INCIDENT_FALLBACK = os.getenv("DETECTOR_OPENCV_INCIDENT_FALLBACK", "false").lower() == "true"
+OPENCV_FIRE_SAFETY_NET = os.getenv("DETECTOR_OPENCV_FIRE_SAFETY_NET", "true").lower() == "true"
 
 # ── Fire thresholds ──────────────────────────────────────────────────────────
 MIN_FIRE_RATIO = float(os.getenv("DETECTOR_FIRE_RATIO", "0.025"))
+STRONG_FIRE_RATIO = float(os.getenv("DETECTOR_STRONG_FIRE_RATIO", "0.08"))
 # Require this many consecutive positive frames before alerting (per-camera)
 FIRE_CONFIRM_FRAMES = int(os.getenv("DETECTOR_FIRE_CONFIRM_FRAMES", "2"))
 
@@ -87,6 +118,13 @@ YOLO_IMG_SIZE = int(os.getenv("DETECTOR_YOLO_IMG_SIZE", "1280"))
 YOLO_ENABLE_SLICES = os.getenv("DETECTOR_YOLO_ENABLE_SLICES", "true").lower() == "true"
 VEHICLE_CLASSES = {2, 3, 5, 7}
 
+ENABLE_FIRE_YOLO = os.getenv("DETECTOR_ENABLE_FIRE_YOLO", "true").lower() == "true"
+FIRE_YOLO_WEIGHTS = os.getenv("DETECTOR_FIRE_YOLO_WEIGHTS", "fire_smoke_yolov8n.pt")
+FIRE_YOLO_CONF = float(os.getenv("DETECTOR_FIRE_YOLO_CONF", "0.35"))
+FIRE_YOLO_IOU = float(os.getenv("DETECTOR_FIRE_YOLO_IOU", "0.45"))
+FIRE_YOLO_IMG_SIZE = int(os.getenv("DETECTOR_FIRE_YOLO_IMG_SIZE", "640"))
+FIRE_YOLO_CLASSES = {"fire", "smoke"}
+
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [DETECTOR] %(message)s",
@@ -96,6 +134,8 @@ log = logging.getLogger(__name__)
 
 model = None
 model_name: Optional[str] = None
+fire_model = None
+fire_model_name: Optional[str] = None
 
 # Per-camera fire frame counters: camera_id -> int
 _fire_counters: Dict[str, int] = defaultdict(int)
@@ -310,6 +350,28 @@ class TrafficStateTracker:
 _traffic_trackers: Dict[str, TrafficStateTracker] = defaultdict(TrafficStateTracker)
 
 
+def resolve_weight_candidate(candidate: str) -> str:
+    candidate_path = Path(candidate)
+    if candidate_path.is_absolute() or candidate_path.exists():
+        return str(candidate_path)
+
+    module_candidate = MODULE_DIR / candidate_path
+    if module_candidate.exists():
+        return str(module_candidate)
+
+    return candidate
+
+
+def is_git_lfs_pointer(candidate: str) -> bool:
+    path = Path(candidate)
+    if not path.exists() or path.stat().st_size > 1024:
+        return False
+    try:
+        return path.read_text(encoding="utf-8").startswith("version https://git-lfs.github.com/spec/v1")
+    except UnicodeDecodeError:
+        return False
+
+
 def load_yolo():
     global model, model_name
     if not ENABLE_YOLO or model is not None:
@@ -327,6 +389,10 @@ def load_yolo():
             candidates.append(candidate)
 
     for candidate in candidates:
+        candidate = resolve_weight_candidate(candidate)
+        if is_git_lfs_pointer(candidate):
+            log.warning("YOLO candidate skipped (%s): Git LFS pointer, real weights are not downloaded", candidate)
+            continue
         try:
             model = YOLO(candidate)
             model_name = candidate
@@ -339,6 +405,34 @@ def load_yolo():
     model = None
     model_name = None
     return model
+
+
+def load_fire_yolo():
+    global fire_model, fire_model_name
+    if not ENABLE_FIRE_YOLO or fire_model is not None:
+        return fire_model
+
+    try:
+        from ultralytics import YOLO
+    except Exception as exc:
+        log.warning("Fire YOLO disabled: ultralytics import failed: %s", exc)
+        return None
+
+    candidate = resolve_weight_candidate(FIRE_YOLO_WEIGHTS)
+    if is_git_lfs_pointer(candidate):
+        log.warning("Fire YOLO skipped (%s): Git LFS pointer, real weights are not downloaded", candidate)
+        return None
+
+    try:
+        fire_model = YOLO(candidate)
+        fire_model_name = candidate
+        log.info("Fire YOLO loaded: %s classes=%s", candidate, getattr(fire_model, "names", {}))
+        return fire_model
+    except Exception as exc:
+        log.warning("Fire YOLO disabled: failed to load %s: %s", candidate, exc)
+        fire_model = None
+        fire_model_name = None
+        return None
 
 
 def box_iou(a: List[float], b: List[float]) -> float:
@@ -378,6 +472,68 @@ def collect_vehicle_boxes(results: Any, offset: Tuple[int, int] = (0, 0)) -> Lis
             x1, y1, x2, y2 = box.xyxy[0].tolist()
             boxes.append([x1 + ox, y1 + oy, x2 + ox, y2 + oy, conf])
     return boxes
+
+
+def detect_fire_yolo(frame: np.ndarray, camera_id: str = "unknown") -> Dict[str, Any] | None:
+    yolo = load_fire_yolo()
+    if yolo is None:
+        return None
+
+    results = yolo(
+        frame,
+        verbose=False,
+        conf=FIRE_YOLO_CONF,
+        iou=FIRE_YOLO_IOU,
+        imgsz=FIRE_YOLO_IMG_SIZE,
+        agnostic_nms=True,
+    )
+
+    detections: List[Dict[str, Any]] = []
+    class_counts: Dict[str, int] = defaultdict(int)
+    confidences: List[float] = []
+    for result in results:
+        names = getattr(result, "names", getattr(yolo, "names", {}))
+        for box in result.boxes:
+            cls_id = int(box.cls[0])
+            label = str(names.get(cls_id, cls_id)).lower()
+            if label not in FIRE_YOLO_CLASSES:
+                continue
+            conf = float(box.conf[0])
+            x1, y1, x2, y2 = [round(float(v), 2) for v in box.xyxy[0].tolist()]
+            detections.append({
+                "label": label,
+                "confidence": round(conf, 3),
+                "box": [x1, y1, x2, y2],
+            })
+            class_counts[label] += 1
+            confidences.append(conf)
+
+    if not detections:
+        return None
+
+    max_conf = max(confidences)
+    has_fire = class_counts.get("fire", 0) > 0
+    severity = "critical" if has_fire and max_conf >= 0.8 else "high" if max_conf >= 0.65 else "medium"
+    primary_label = "fire" if has_fire else "smoke"
+    log.info(
+        "Fire YOLO candidate at %s: event=%s conf=%.3f classes=%s",
+        camera_id, primary_label, max_conf, dict(class_counts),
+    )
+    return {
+        "event_type": "fire",
+        "confidence": round(max_conf, 3),
+        "severity": severity,
+        "metadata": {
+            "detector": "yolov8_fire_smoke_v1",
+            "fire_yolo_model": fire_model_name,
+            "fire_yolo_conf": FIRE_YOLO_CONF,
+            "fire_yolo_iou": FIRE_YOLO_IOU,
+            "fire_yolo_imgsz": FIRE_YOLO_IMG_SIZE,
+            "primary_label": primary_label,
+            "class_counts": dict(class_counts),
+            "detections": detections[:20],
+        },
+    }
 
 
 def traffic_slices(frame: np.ndarray) -> List[Tuple[np.ndarray, Tuple[int, int]]]:
@@ -457,7 +613,8 @@ def _fire_color_mask(hsv: np.ndarray) -> np.ndarray:
     """
     Narrower HSV ranges specifically for fire/flame colours.
 
-    - Flame orange-red:  H  0–22,  S >= 150,  V >= 150  (bright saturated)
+    - Flame red/orange:  H  0–12,  S >= 150,  V >= 150  (bright saturated)
+    - Flame yellow:      H 13–35,  S >=  80,  V >= 170  (bright screen/video flames)
     - Deep red wrap:     H 170–180, S >= 140,  V >= 120
     Avoids sunset/orange signage (lower brightness/saturation) and
     red traffic lights (smaller area, handled by component filter).
@@ -465,11 +622,18 @@ def _fire_color_mask(hsv: np.ndarray) -> np.ndarray:
     # Flame orange / red-orange (strict to avoid yellow box junctions)
     orange_lower = np.array([0,  150, 150])
     orange_upper = np.array([12, 255, 255])
+    # Yellow-orange flame areas, common in videos/screens and large fires
+    yellow_lower = np.array([13,  80, 170])
+    yellow_upper = np.array([35, 255, 255])
     # Wrap-around deep red
     red_lower    = np.array([170, 140, 120])
     red_upper    = np.array([180, 255, 255])
 
-    mask = cv2.inRange(hsv, orange_lower, orange_upper) | cv2.inRange(hsv, red_lower, red_upper)
+    mask = (
+        cv2.inRange(hsv, orange_lower, orange_upper) |
+        cv2.inRange(hsv, yellow_lower, yellow_upper) |
+        cv2.inRange(hsv, red_lower, red_upper)
+    )
     kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (5, 5))
     mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, kernel)
     return mask
@@ -542,7 +706,8 @@ def detect_fire(frame: np.ndarray, camera_id: str = "unknown") -> Dict[str, Any]
         return None
 
     # Extra filter: require brightness variance (real fire flickers)
-    if not _has_fire_flicker(frame, mask):
+    strong_fire_mass = fire_ratio >= STRONG_FIRE_RATIO
+    if not _has_fire_flicker(frame, mask) and not strong_fire_mass:
         _fire_counters[camera_id] = 0
         return None
 
@@ -563,6 +728,8 @@ def detect_fire(frame: np.ndarray, camera_id: str = "unknown") -> Dict[str, Any]
         "severity": severity,
         "metadata": {
             "fire_color_ratio": round(fire_ratio, 4),
+            "strong_fire_mass": strong_fire_mass,
+            "strong_fire_ratio_threshold": STRONG_FIRE_RATIO,
             "confirm_frames": _fire_counters[camera_id],
             "detector": "opencv_color_v3",
         },
@@ -588,12 +755,21 @@ def _flood_mask(hsv: np.ndarray) -> np.ndarray:
     # Range 1 — muddy/brown flood water
     muddy_lower = np.array([5,  30,  30])
     muddy_upper = np.array([35, 200, 180])
+    tan_lower = np.array([8,  12,  70])
+    tan_upper = np.array([45, 190, 235])
 
     # Range 2 — grey-blue stagnant water on urban roads
     grey_lower  = np.array([90,  15,  30])
     grey_upper  = np.array([130, 150, 180])
+    reflective_lower = np.array([0, 0, 55])
+    reflective_upper = np.array([180, 70, 210])
 
-    mask = cv2.inRange(hsv_roi, muddy_lower, muddy_upper) | cv2.inRange(hsv_roi, grey_lower, grey_upper)
+    mask = (
+        cv2.inRange(hsv_roi, muddy_lower, muddy_upper) |
+        cv2.inRange(hsv_roi, tan_lower, tan_upper) |
+        cv2.inRange(hsv_roi, grey_lower, grey_upper) |
+        cv2.inRange(hsv_roi, reflective_lower, reflective_upper)
+    )
 
     kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (7, 7))
     mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN,  kernel)
@@ -874,56 +1050,97 @@ def detect_traffic(frame: np.ndarray, camera_id: str = "unknown") -> Dict[str, A
 # Combined
 # ─────────────────────────────────────────────────────────────────────────────
 
-# Rate limiting for Groq API (30 requests per minute)
-groq_request_times = deque(maxlen=30)
+# Rate limiting for AI provider API.
+ai_request_times = deque(maxlen=max(1, AI_RATE_LIMIT_PER_MIN))
+ai_backoff_until = 0.0
 
-def can_call_groq() -> bool:
-    if not GROQ_ENABLED:
+def can_call_ai() -> bool:
+    if not AI_ENABLED:
         return False
     now = time.time()
+    if now < ai_backoff_until:
+        return False
     # Remove timestamps older than 60 seconds
-    while groq_request_times and now - groq_request_times[0] >= 60:
-        groq_request_times.popleft()
-    
-    if len(groq_request_times) >= 30:
+    while ai_request_times and now - ai_request_times[0] >= 60:
+        ai_request_times.popleft()
+
+    if len(ai_request_times) >= AI_RATE_LIMIT_PER_MIN:
         return False
     return True
 
-def detect_incidents_with_groq(frame: np.ndarray) -> List[Dict[str, Any]]:
-    if not GROQ_ENABLED:
-        return []
-    
-    if not can_call_groq():
-        log.warning("Groq rate limit reached (30 req/min). Skipping AI detection for this frame.")
-        return []
-        
+
+def set_ai_backoff(exc: Exception) -> None:
+    global ai_backoff_until
+    error_text = str(exc)
+    if "429" in error_text:
+        ai_backoff_until = time.time() + 90.0
+    elif AI_PROVIDER == "openrouter" and "402" in error_text:
+        ai_backoff_until = time.time() + 300.0
+    elif AI_PROVIDER == "openrouter" and ("400" in error_text or "404" in error_text):
+        ai_backoff_until = time.time() + 60.0
+
+
+def ai_headers() -> Dict[str, str]:
+    headers = {
+        "Authorization": f"Bearer {AI_API_KEY}",
+        "Content-Type": "application/json",
+    }
+    if AI_PROVIDER == "openrouter":
+        headers["HTTP-Referer"] = AI_REFERER
+        headers["X-Title"] = AI_TITLE
+    return headers
+
+
+def call_ai_chat(payload: Dict[str, Any], timeout: int = 15) -> requests.Response:
+    ai_request_times.append(time.time())
+    return requests.post(AI_ENDPOINT, headers=ai_headers(), json=payload, timeout=timeout)
+
+
+def verify_incident_with_ai(frame: np.ndarray, incident_type: str, local_result: Dict[str, Any]) -> Dict[str, Any]:
+    default_result = {
+        "is_verified": True,
+        "confidence": local_result.get("confidence", 0.8),
+        "reason": "ai_unavailable_default_yes",
+        "status": "unavailable",
+    }
+
+    if not AI_ENABLED:
+        return {**default_result, "status": "disabled"}
+
+    if not can_call_ai():
+        log.warning("%s rate limit — skipping %s verification", AI_PROVIDER, incident_type)
+        return default_result
+
     try:
-        # Record this request timestamp
-        groq_request_times.append(time.time())
-        
-        # Encode frame to base64
-        _, buffer = cv2.imencode('.jpg', frame)
+        _, buffer = cv2.imencode('.jpg', frame, [cv2.IMWRITE_JPEG_QUALITY, 80])
         img_b64 = base64.b64encode(buffer).decode('utf-8')
-        
-        prompt = (
-            "Examine this traffic camera image carefully for real fire or real flooding incidents. "
-            "For flood, do NOT report rain, wet road surface, puddles, reflections, shiny asphalt, or water spray. "
-            "Only report flood when standing water visibly covers a roadway/lane/sidewalk area with meaningful depth, "
-            "such as submerged curb, lane surface covered by water, or vehicles/pedestrians moving through water. "
-            "Return flood only when confidence is at least 0.75. "
-            "Return a JSON object with a single key 'events' containing an array of events found. If none, return {\"events\": []}. "
-            "Example formats: "
-            "{\"events\": [{\"event_type\": \"fire\", \"severity\": \"high\", \"confidence\": 0.95}]} or {\"events\": []}. "
-            "IMPORTANT: ONLY output valid JSON. Do not include markdown blocks."
-        )
-        
-        headers = {
-            "Authorization": f"Bearer {GROQ_API_KEY}",
-            "Content-Type": "application/json"
-        }
-        
+
+        if incident_type == "fire":
+            prompt = (
+                f"Our YOLO fire/smoke detector detected a possible fire or smoke hazard with {local_result.get('confidence', 0):.2f} confidence.\n"
+                "Examine this traffic camera image carefully and determine if there is REAL fire, flame, or smoke. "
+                "Ignore orange objects, lights, screens, reflections, and fire hydrants unless there is visible flame or smoke. "
+                "Return a JSON object with:\n"
+                "- \"is_verified\": true/false\n"
+                "- \"confidence\": 0.0 to 1.0\n"
+                "- \"reason\": brief explanation\n"
+                "ONLY output valid JSON."
+            )
+        else:
+            prompt = (
+                f"Our computer vision system detected possible flooding with water ratio {local_result.get('water_ratio', 0):.2f}.\n"
+                "Examine this traffic camera image carefully and determine if there is REAL flooding. "
+                "Do NOT report rain, wet road surface, puddles, reflections, shiny asphalt, or water spray as flood. "
+                "Only verify as true if standing water visibly covers a roadway/lane/sidewalk area with meaningful depth.\n"
+                "Return a JSON object with:\n"
+                "- \"is_verified\": true/false\n"
+                "- \"confidence\": 0.0 to 1.0\n"
+                "- \"reason\": brief explanation\n"
+                "ONLY output valid JSON."
+            )
+
         payload = {
-            "model": GROQ_VISION_MODEL,
+            "model": AI_MODEL,
             "response_format": {"type": "json_object"},
             "messages": [
                 {
@@ -937,38 +1154,31 @@ def detect_incidents_with_groq(frame: np.ndarray) -> List[Dict[str, Any]]:
             "temperature": 0.1,
             "max_tokens": 150
         }
-        
-        log.info(f"Calling Groq ({GROQ_VISION_MODEL}) for direct detection...")
-        resp = requests.post("https://api.groq.com/openai/v1/chat/completions", headers=headers, json=payload, timeout=15)
+
+        resp = call_ai_chat(payload, timeout=15)
         resp.raise_for_status()
-        
+
         answer = resp.json()["choices"][0]["message"]["content"].strip()
         data = json.loads(answer)
-        events = data.get("events", [])
-        
-        filtered_events = []
-        for e in events:
-            event_type = e.get("event_type")
-            confidence = float(e.get("confidence") or 0)
-            if event_type == "flood" and confidence < 0.75:
-                log.info("Groq flood candidate rejected: confidence %.2f below 0.75", confidence)
-                continue
-            if event_type not in ("fire", "flood"):
-                continue
-            e["metadata"] = {
-                "detector": "groq_vision_llm",
-                "flood_policy": "rain_wet_road_puddle_reflection_excluded" if event_type == "flood" else None,
-            }
-            filtered_events.append(e)
 
-        if filtered_events:
-            log.info(f"Groq detected incidents: {filtered_events}")
-        return filtered_events
+        result = {
+            "is_verified": bool(data.get("is_verified", False)),
+            "confidence": float(data.get("confidence", 0.5)),
+            "reason": str(data.get("reason", "no_reason")),
+            "status": "ok",
+        }
+        log.info(
+            "%s %s verification: is_verified=%s, confidence=%.2f, reason=%s",
+            AI_PROVIDER, incident_type, result["is_verified"], result["confidence"], result["reason"],
+        )
+        return result
     except Exception as e:
-        log.error(f"Groq detection failed: {e}")
-        return []
+        set_ai_backoff(e)
+        log.error("%s %s verification failed: %s", AI_PROVIDER, incident_type, e)
+        return {**default_result, "status": "failed", "reason": str(e)}
 
-def verify_traffic_jam_with_groq(frame: np.ndarray, tracking_info: Dict[str, Any]) -> Dict[str, Any]:
+
+def verify_traffic_jam_with_ai(frame: np.ndarray, tracking_info: Dict[str, Any]) -> Dict[str, Any]:
     """
     Nâng cấp: Groq trả về JSON chi tiết thay vì chỉ YES/NO.
     Bao gồm thông tin từ temporal analysis để Groq tham khảo.
@@ -978,18 +1188,21 @@ def verify_traffic_jam_with_groq(frame: np.ndarray, tracking_info: Dict[str, Any
         confidence: float (0.0–1.0)
         reason: str
     """
-    default_result = {"is_jam": True, "confidence": 0.8, "reason": "groq_unavailable_default_yes"}
+    default_result = {
+        "is_jam": True,
+        "confidence": 0.8,
+        "reason": "ai_unavailable_default_yes",
+        "status": "unavailable",
+    }
 
-    if not GROQ_ENABLED:
-        return default_result
+    if not AI_ENABLED:
+        return {**default_result, "status": "disabled"}
 
-    if not can_call_groq():
+    if not can_call_ai():
         log.warning("Groq rate limit — skipping traffic verification")
         return default_result
 
     try:
-        groq_request_times.append(time.time())
-
         _, buffer = cv2.imencode('.jpg', frame, [cv2.IMWRITE_JPEG_QUALITY, 80])
         img_b64 = base64.b64encode(buffer).decode('utf-8')
 
@@ -1017,13 +1230,8 @@ def verify_traffic_jam_with_groq(frame: np.ndarray, tracking_info: Dict[str, Any
             "ONLY output valid JSON."
         )
 
-        headers = {
-            "Authorization": f"Bearer {GROQ_API_KEY}",
-            "Content-Type": "application/json"
-        }
-
         payload = {
-            "model": GROQ_VISION_MODEL,
+            "model": AI_MODEL,
             "response_format": {"type": "json_object"},
             "messages": [
                 {
@@ -1038,10 +1246,7 @@ def verify_traffic_jam_with_groq(frame: np.ndarray, tracking_info: Dict[str, Any
             "max_tokens": 200
         }
 
-        resp = requests.post(
-            "https://api.groq.com/openai/v1/chat/completions",
-            headers=headers, json=payload, timeout=15,
-        )
+        resp = call_ai_chat(payload, timeout=15)
         resp.raise_for_status()
 
         answer = resp.json()["choices"][0]["message"]["content"].strip()
@@ -1052,20 +1257,22 @@ def verify_traffic_jam_with_groq(frame: np.ndarray, tracking_info: Dict[str, Any
             "confidence": float(data.get("confidence", 0.5)),
             "road_occupancy": data.get("road_occupancy", None),
             "reason": str(data.get("reason", "no_reason")),
+            "status": "ok",
         }
 
         log.info(
-            "Groq traffic verification: is_jam=%s, confidence=%.2f, reason=%s",
-            result["is_jam"], result["confidence"], result["reason"],
+            "%s traffic verification: is_jam=%s, confidence=%.2f, reason=%s",
+            AI_PROVIDER, result["is_jam"], result["confidence"], result["reason"],
         )
         return result
 
     except Exception as e:
-        log.error(f"Groq traffic verification failed: {e}")
-        return default_result
+        set_ai_backoff(e)
+        log.error("%s traffic verification failed: %s", AI_PROVIDER, e)
+        return {**default_result, "status": "failed", "reason": str(e)}
 
 
-def analyze_traffic_with_groq(frame: np.ndarray, camera_id: str = "unknown") -> Dict[str, Any] | None:
+def analyze_traffic_with_ai(frame: np.ndarray, camera_id: str = "unknown") -> Dict[str, Any] | None:
     """
     Gửi ảnh camera cho Groq Vision AI để phân tích lưu lượng giao thông.
     Dùng khi YOLO không khả dụng hoặc để bổ sung thêm thông tin.
@@ -1075,16 +1282,14 @@ def analyze_traffic_with_groq(frame: np.ndarray, camera_id: str = "unknown") -> 
     - traffic_level: EMPTY / LOW / MODERATE / HIGH / GRIDLOCK
     - road_occupancy: % mặt đường bị chiếm
     """
-    if not GROQ_ENABLED:
+    if not AI_ENABLED:
         return None
 
-    if not can_call_groq():
+    if not can_call_ai():
         log.warning("Groq rate limit — skipping AI traffic analysis")
         return None
 
     try:
-        groq_request_times.append(time.time())
-
         _, buffer = cv2.imencode('.jpg', frame, [cv2.IMWRITE_JPEG_QUALITY, 75])
         img_b64 = base64.b64encode(buffer).decode('utf-8')
 
@@ -1103,13 +1308,8 @@ def analyze_traffic_with_groq(frame: np.ndarray, camera_id: str = "unknown") -> 
             "IMPORTANT: ONLY output valid JSON. Do not include markdown blocks."
         )
 
-        headers = {
-            "Authorization": f"Bearer {GROQ_API_KEY}",
-            "Content-Type": "application/json"
-        }
-
         payload = {
-            "model": GROQ_VISION_MODEL,
+            "model": AI_MODEL,
             "response_format": {"type": "json_object"},
             "messages": [
                 {
@@ -1124,11 +1324,8 @@ def analyze_traffic_with_groq(frame: np.ndarray, camera_id: str = "unknown") -> 
             "max_tokens": 200
         }
 
-        log.info("Calling Groq for traffic volume analysis (camera=%s)...", camera_id)
-        resp = requests.post(
-            "https://api.groq.com/openai/v1/chat/completions",
-            headers=headers, json=payload, timeout=15,
-        )
+        log.info("Calling %s for traffic volume analysis (camera=%s)...", AI_PROVIDER, camera_id)
+        resp = call_ai_chat(payload, timeout=15)
         resp.raise_for_status()
 
         answer = resp.json()["choices"][0]["message"]["content"].strip()
@@ -1155,8 +1352,8 @@ def analyze_traffic_with_groq(frame: np.ndarray, camera_id: str = "unknown") -> 
         severity = level_to_severity.get(traffic_level, "normal")
 
         log.info(
-            "Groq traffic analysis (camera=%s): %d vehicles, level=%s, occupancy=%s%%, desc=%s",
-            camera_id, vehicle_count, traffic_level,
+            "%s traffic analysis (camera=%s): %d vehicles, level=%s, occupancy=%s%%, desc=%s",
+            AI_PROVIDER, camera_id, vehicle_count, traffic_level,
             road_occupancy, description[:60],
         )
 
@@ -1170,7 +1367,8 @@ def analyze_traffic_with_groq(frame: np.ndarray, camera_id: str = "unknown") -> 
                 "traffic_level": traffic_level,
                 "road_occupancy": road_occupancy,
                 "description": description,
-                "detector": "groq_vision_traffic_v1",
+                "detector": f"{AI_PROVIDER}_vision_traffic_v1",
+                "ai_model": AI_MODEL,
             },
         }
 
@@ -1180,35 +1378,99 @@ def analyze_traffic_with_groq(frame: np.ndarray, camera_id: str = "unknown") -> 
             result["confidence"] = 0.85
             result["severity"] = "high"
             result["avg_speed"] = 0
-            result["metadata"]["detector"] = "groq_vision_traffic_jam_v1"
+            result["metadata"]["detector"] = f"{AI_PROVIDER}_vision_traffic_jam_v1"
             log.info("Groq detected GRIDLOCK at camera=%s — reporting as traffic_jam", camera_id)
 
         return result
 
     except Exception as e:
-        log.error(f"Groq traffic analysis failed: {e}")
+        set_ai_backoff(e)
+        log.error("%s traffic analysis failed: %s", AI_PROVIDER, e)
         return None
 
 
-def detect(frame: np.ndarray, camera_id: str = "unknown") -> List[Dict[str, Any]]:
+def detect(
+    frame: np.ndarray,
+    camera_id: str = "unknown",
+    diagnostics: Optional[List[Dict[str, Any]]] = None,
+) -> List[Dict[str, Any]]:
     detections = []
-    
-    # 1. Fire and Flood Detection (Directly via Groq Vision API)
-    groq_events = detect_incidents_with_groq(frame)
-    if groq_events:
-        detections.extend(groq_events)
 
-    # 1b. OpenCV fallback for fire/flood when Groq is unavailable or rate-limited
-    if not groq_events:
-        # Fire (OpenCV)
+    # 1. Fire Detection (Fire/Smoke YOLO first, then Groq verify).
+    fire_result = detect_fire_yolo(frame, camera_id)
+    if fire_result is None and OPENCV_FIRE_SAFETY_NET:
         fire_result = detect_fire(frame, camera_id)
         if fire_result:
-            detections.append(fire_result)
+            fire_result["metadata"]["fallback_reason"] = "fire_yolo_no_detection"
 
-        # Flood (OpenCV + Gabor texture)
-        flood_result = detect_flood(frame)
-        if flood_result:
-            detections.append(flood_result)
+    if fire_result:
+        log.info("Fire candidate detected by %s (camera=%s). Verifying with AI...", fire_result["metadata"].get("detector"), camera_id)
+        ai_verify = verify_incident_with_ai(frame, "fire", fire_result)
+        if ai_verify["is_verified"]:
+            ai_status = ai_verify.get("status", "unavailable")
+            fire_result["metadata"]["verified_by_ai"] = ai_status == "ok"
+            fire_result["metadata"]["ai_provider"] = AI_PROVIDER
+            fire_result["metadata"]["ai_model"] = AI_MODEL
+            fire_result["metadata"]["ai_status"] = ai_status
+            fire_result["metadata"]["ai_reason"] = ai_verify["reason"]
+            if ai_status == "ok":
+                # Combine confidences (60% local, 40% AI)
+                local_conf = fire_result.get("confidence", 0.8)
+                ai_conf = ai_verify.get("confidence", 0.8)
+                fire_result["confidence"] = round(max(local_conf * 0.6 + ai_conf * 0.4, 0.65), 3)
+            else:
+                fire_result["metadata"]["fallback_reason"] = "ai_unavailable"
+            detections.append(fire_result)
+        else:
+            log.info("AI provider rejected the fire (reason: %s).", ai_verify["reason"])
+
+    # 1b. Flood Detection (Local first, then AI verify)
+    flood_result = detect_flood(frame)
+    if flood_result:
+        log.info("Flood detected by OpenCV (camera=%s). Verifying with AI...", camera_id)
+        ai_verify = verify_incident_with_ai(frame, "flood", flood_result)
+        flood_meta = flood_result.get("metadata", {})
+        strong_local_flood = (
+            flood_result.get("water_ratio", 0.0) >= FLOOD_ALERT_RATIO and
+            flood_meta.get("bottom_coverage", 0.0) >= max(0.35, FLOOD_MIN_BOTTOM_COVERAGE) and
+            flood_meta.get("largest_blob_ratio", 0.0) >= max(0.20, FLOOD_MIN_LARGEST_BLOB_RATIO)
+        )
+        flood_diagnostic = {
+            "type": "flood_candidate",
+            "accepted": bool(
+                (ai_verify["is_verified"] and ai_verify.get("status") == "ok") or
+                (ai_verify.get("status") != "ok" and strong_local_flood)
+            ),
+            "candidate": flood_result,
+            "ai_provider": AI_PROVIDER,
+            "ai_model": AI_MODEL,
+            "ai_status": ai_verify.get("status", "unavailable"),
+            "ai_reason": ai_verify["reason"],
+            "local_fallback": bool(ai_verify.get("status") != "ok" and strong_local_flood),
+        }
+        if ai_verify["is_verified"]:
+            ai_status = ai_verify.get("status", "unavailable")
+            flood_result["metadata"]["verified_by_ai"] = ai_status == "ok"
+            flood_result["metadata"]["ai_provider"] = AI_PROVIDER
+            flood_result["metadata"]["ai_model"] = AI_MODEL
+            flood_result["metadata"]["ai_status"] = ai_status
+            flood_result["metadata"]["ai_reason"] = ai_verify["reason"]
+            if ai_status == "ok":
+                local_conf = flood_result.get("confidence", 0.8)
+                ai_conf = ai_verify.get("confidence", 0.8)
+                flood_result["confidence"] = round(max(local_conf * 0.6 + ai_conf * 0.4, 0.65), 3)
+                detections.append(flood_result)
+                flood_diagnostic["accepted"] = True
+            elif strong_local_flood:
+                flood_result["metadata"]["fallback_reason"] = "ai_unavailable_strong_local_flood"
+                flood_result["metadata"]["local_fallback"] = True
+                detections.append(flood_result)
+            else:
+                flood_result["metadata"]["fallback_reason"] = "ai_unavailable"
+        else:
+            log.info("AI provider rejected the flood (reason: %s).", ai_verify["reason"])
+        if diagnostics is not None:
+            diagnostics.append(flood_diagnostic)
 
     # 2. Traffic Detection
     traffic_result = detect_traffic(frame, camera_id)
@@ -1219,43 +1481,52 @@ def detect(frame: np.ndarray, camera_id: str = "unknown") -> List[Dict[str, Any]
             # Đã qua temporal confirmation → double-check với Groq
             log.info(
                 "Traffic jam confirmed by temporal analysis (camera=%s). "
-                "Verifying with Groq AI...",
+                "Verifying with configured AI provider...",
                 camera_id,
             )
-            groq_verification = verify_traffic_jam_with_groq(
+            ai_verification = verify_traffic_jam_with_ai(
                 frame, traffic_result.get("metadata", {})
             )
 
-            if groq_verification["is_jam"]:
-                traffic_result["metadata"]["verified_by_ai"] = True
-                traffic_result["metadata"]["ai_confidence"] = groq_verification["confidence"]
-                traffic_result["metadata"]["ai_reason"] = groq_verification["reason"]
-                if groq_verification.get("road_occupancy") is not None:
-                    traffic_result["metadata"]["ai_road_occupancy"] = groq_verification["road_occupancy"]
+            if ai_verification["is_jam"]:
+                ai_status = ai_verification.get("status", "unavailable")
+                traffic_result["metadata"]["verified_by_ai"] = ai_status == "ok"
+                traffic_result["metadata"]["ai_provider"] = AI_PROVIDER
+                traffic_result["metadata"]["ai_model"] = AI_MODEL
+                traffic_result["metadata"]["ai_status"] = ai_status
+                traffic_result["metadata"]["ai_confidence"] = ai_verification["confidence"]
+                traffic_result["metadata"]["ai_reason"] = ai_verification["reason"]
+                if ai_verification.get("road_occupancy") is not None:
+                    traffic_result["metadata"]["ai_road_occupancy"] = ai_verification["road_occupancy"]
 
-                # Combine confidence: 60% temporal + 40% AI
-                temporal_conf = traffic_result["confidence"]
-                ai_conf = groq_verification["confidence"]
-                combined_conf = temporal_conf * 0.6 + ai_conf * 0.4
-                traffic_result["confidence"] = round(max(combined_conf, 0.65), 3)
+                if ai_status == "ok":
+                    # Combine confidence: 60% temporal + 40% AI
+                    temporal_conf = traffic_result["confidence"]
+                    ai_conf = ai_verification["confidence"]
+                    combined_conf = temporal_conf * 0.6 + ai_conf * 0.4
+                    traffic_result["confidence"] = round(max(combined_conf, 0.65), 3)
+                else:
+                    traffic_result["metadata"]["fallback_reason"] = "ai_unavailable"
 
                 detections.append(traffic_result)
             else:
                 log.info(
-                    "Groq AI rejected the traffic jam (reason: %s). "
+                    "AI provider rejected the traffic jam (reason: %s). "
                     "Downgrading to moderate volume.",
-                    groq_verification["reason"],
+                    ai_verification["reason"],
                 )
                 traffic_result["event_type"] = "traffic_volume"
                 traffic_result["severity"] = "moderate"
                 traffic_result["metadata"]["ai_rejected"] = True
-                traffic_result["metadata"]["ai_reason"] = groq_verification["reason"]
+                traffic_result["metadata"]["ai_provider"] = AI_PROVIDER
+                traffic_result["metadata"]["ai_model"] = AI_MODEL
+                traffic_result["metadata"]["ai_reason"] = ai_verification["reason"]
                 detections.append(traffic_result)
         else:
             detections.append(traffic_result)
     else:
         # 2b. YOLO không khả dụng → gửi ảnh cho AI phân tích lưu lượng
-        ai_traffic = analyze_traffic_with_groq(frame, camera_id)
+        ai_traffic = analyze_traffic_with_ai(frame, camera_id)
         if ai_traffic:
             detections.append(ai_traffic)
 
@@ -1284,7 +1555,25 @@ class DetectorHandler(BaseHTTPRequestHandler):
                 "yolo_iou": YOLO_IOU,
                 "yolo_imgsz": YOLO_IMG_SIZE,
                 "yolo_sliced": YOLO_ENABLE_SLICES,
-                "groq_enabled": GROQ_ENABLED,
+                "fire_yolo_enabled": ENABLE_FIRE_YOLO,
+                "fire_yolo_requested_weights": FIRE_YOLO_WEIGHTS,
+                "fire_yolo_loaded_weights": fire_model_name,
+                "fire_yolo_conf": FIRE_YOLO_CONF,
+                "fire_yolo_iou": FIRE_YOLO_IOU,
+                "fire_yolo_imgsz": FIRE_YOLO_IMG_SIZE,
+                "fire_yolo_classes": sorted(FIRE_YOLO_CLASSES),
+                "ai_provider": AI_PROVIDER,
+                "ai_endpoint": AI_ENDPOINT,
+                "ai_requested_model": REQUESTED_AI_MODEL,
+                "ai_model": AI_MODEL,
+                "ai_model_fallback_reason": AI_MODEL_FALLBACK_REASON,
+                "ai_enabled": AI_ENABLED,
+                "ai_rate_limit_per_min": AI_RATE_LIMIT_PER_MIN,
+                "ai_backoff_seconds": max(0, round(ai_backoff_until - time.time())),
+                "groq_enabled": AI_ENABLED if AI_PROVIDER == "groq" else False,
+                "groq_backoff_seconds": max(0, round(ai_backoff_until - time.time())),
+                "opencv_incident_fallback": OPENCV_INCIDENT_FALLBACK,
+                "opencv_fire_safety_net": OPENCV_FIRE_SAFETY_NET,
                 "traffic_jam_confirm_frames": TRAFFIC_JAM_CONFIRM_FRAMES,
                 "traffic_speed_stopped_threshold": TRAFFIC_SPEED_STOPPED,
                 "traffic_speed_slow_threshold": TRAFFIC_SPEED_SLOW,
@@ -1303,9 +1592,14 @@ class DetectorHandler(BaseHTTPRequestHandler):
             payload = json.loads(self.rfile.read(length).decode("utf-8"))
             frame = decode_frame(payload.get("image_base64", ""))
             camera_id = payload.get("camera", {}).get("camera_id", "unknown")
-            detections = detect(frame, camera_id)
+            is_demo = bool(payload.get("metadata", {}).get("demo"))
+            diagnostics: Optional[List[Dict[str, Any]]] = [] if is_demo else None
+            detections = detect(frame, camera_id, diagnostics=diagnostics)
             log.info("%s -> %d detections", camera_id, len(detections))
-            self._send_json(200, {"detections": detections})
+            response_payload: Dict[str, Any] = {"detections": detections}
+            if diagnostics is not None:
+                response_payload["diagnostics"] = diagnostics
+            self._send_json(200, response_payload)
         except Exception as exc:
             log.exception("detect failed")
             self._send_json(400, {"error": str(exc)})
@@ -1316,6 +1610,7 @@ class DetectorHandler(BaseHTTPRequestHandler):
 
 def main():
     load_yolo()
+    load_fire_yolo()
     server = ThreadingHTTPServer((HOST, PORT), DetectorHandler)
     log.info("Detector API listening on http://%s:%s", HOST, PORT)
     log.info("Use AI_DETECTOR_URL=http://%s:%s/detect in backend", HOST, PORT)

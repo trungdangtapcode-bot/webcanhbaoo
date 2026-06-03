@@ -3,6 +3,7 @@ opencv-python>=4.9.0
 numpy>=1.26.0
 requests>=2.31.0
 python-dotenv>=1.0.0
+dill>=0.4.0
 sort-tracker-py>=1.0.0
 yt-dlp>=2024.1.0
 Flask>=3.0.0

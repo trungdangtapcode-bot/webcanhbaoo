@@ -1,0 +1,191 @@
+<!DOCTYPE html>
+<html lang="en" class="wa-theme-default wa-palette-default wa-brand-blue wa-dark">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="description" content="Smart Alert USB camera detector demo" />
+  <title>Smart Alert Detector Demo</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@awesome.me/webawesome@3.7.0/dist/styles/themes/default.css" />
+  <script>
+    function syncWebAwesomeTheme(theme) {
+      const root = document.documentElement;
+      root.classList.add("wa-theme-default", "wa-palette-default", "wa-brand-blue");
+      root.classList.toggle("wa-light", theme === "light");
+      root.classList.toggle("wa-dark", theme !== "light");
+    }
+
+    (function initStoredTheme() {
+      try {
+        const requestedTheme = new URLSearchParams(window.location.search).get("theme");
+        const savedTheme = localStorage.getItem("smart-alert-theme");
+        const prefersLight = window.matchMedia && window.matchMedia("(prefers-color-scheme: light)").matches;
+        const theme = requestedTheme === "light" || requestedTheme === "dark"
+          ? requestedTheme
+          : savedTheme || (prefersLight ? "light" : "dark");
+        document.documentElement.dataset.theme = theme;
+        syncWebAwesomeTheme(theme);
+      } catch (_err) {
+        document.documentElement.dataset.theme = "dark";
+        syncWebAwesomeTheme("dark");
+      }
+    })();
+  </script>
+  <link rel="stylesheet" href="./css/style.css?v=20260603-kimi-detector" />
+</head>
+<body class="demo-page">
+  <div id="toast-container" class="toast-container"></div>
+  <div class="demo-standalone-shell">
+    <header class="demo-topbar">
+      <div class="demo-topbar-inner">
+        <div class="brand-lockup">
+          <div class="brand-mark" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none">
+              <path d="M12 3.2 19 6v5.2c0 4.5-2.8 8.4-7 9.6-4.2-1.2-7-5.1-7-9.6V6l7-2.8Z" stroke="currentColor" stroke-width="1.8" />
+              <path d="M8.6 12.2 10.8 14.4 15.7 9.4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" />
+            </svg>
+          </div>
+          <div>
+            <h1 class="brand-title"><span>Smart</span> <span>Alert</span></h1>
+            <div class="brand-subtitle">Standalone detector demo</div>
+          </div>
+        </div>
+
+        <div class="demo-topbar-actions">
+          <div class="demo-status-strip" aria-label="Detector status">
+            <div>
+              <span>Detector</span>
+              <strong id="demo-detector-state">Checking</strong>
+            </div>
+            <div>
+              <span>AI</span>
+              <strong id="demo-groq-state">--</strong>
+            </div>
+          </div>
+          <a class="secondary-action demo-dashboard-link" href="./index.html">Dashboard</a>
+          <button class="theme-toggle" id="theme-toggle" type="button" title="Switch theme" aria-label="Switch theme" aria-pressed="false">
+            <svg class="theme-icon" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+              <path class="theme-icon-sun" d="M12 7.2a4.8 4.8 0 1 0 0 9.6 4.8 4.8 0 0 0 0-9.6ZM12 2.8v2M12 19.2v2M4.2 4.2l1.4 1.4M18.4 18.4l1.4 1.4M2.8 12h2M19.2 12h2M4.2 19.8l1.4-1.4M18.4 5.6l1.4-1.4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" />
+              <path class="theme-icon-moon" d="M18.6 15.1A7.3 7.3 0 0 1 8.9 5.4 7.7 7.7 0 1 0 18.6 15.1Z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" />
+            </svg>
+          </button>
+        </div>
+      </div>
+    </header>
+
+    <main class="demo-standalone-main">
+      <section class="demo-title-block">
+        <div>
+          <span class="section-kicker">Local camera</span>
+          <h2>USB detector test</h2>
+          <p>Run the browser camera through the YOLO + AI detector service without entering the main dashboard workspace.</p>
+        </div>
+        <div class="demo-status-pill" id="demo-run-state">Idle</div>
+      </section>
+
+      <section class="stat-grid demo-stat-grid" aria-label="Demo summary">
+        <div class="stat-card">
+          <div class="stat-value" id="demo-frame-count">0</div>
+          <div class="stat-label">Frames</div>
+        </div>
+        <div class="stat-card fire">
+          <div class="stat-value" id="demo-fire-count">0</div>
+          <div class="stat-label">Fire</div>
+        </div>
+        <div class="stat-card flood">
+          <div class="stat-value" id="demo-flood-count">0</div>
+          <div class="stat-label">Flood</div>
+        </div>
+        <div class="stat-card traffic">
+          <div class="stat-value" id="demo-traffic-count">0</div>
+          <div class="stat-label">Traffic</div>
+        </div>
+      </section>
+
+      <div class="demo-grid">
+        <section class="section demo-camera-section" aria-label="Camera preview">
+          <div class="section-head">
+            <div>
+              <span class="section-kicker">Input</span>
+              <h2 class="section-title">Camera preview</h2>
+            </div>
+          </div>
+
+          <div class="demo-video-shell">
+            <video id="demo-video" autoplay playsinline muted></video>
+            <canvas id="demo-canvas" hidden></canvas>
+            <div class="demo-video-empty" id="demo-video-empty">
+              <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                <path d="M4 8.5A2.5 2.5 0 0 1 6.5 6h11A2.5 2.5 0 0 1 20 8.5v7A2.5 2.5 0 0 1 17.5 18h-11A2.5 2.5 0 0 1 4 15.5v-7Z" stroke="currentColor" stroke-width="1.8" />
+                <path d="M12 14.6a2.6 2.6 0 1 0 0-5.2 2.6 2.6 0 0 0 0 5.2Z" stroke="currentColor" stroke-width="1.8" />
+              </svg>
+              <span id="demo-video-empty-copy">Camera is off</span>
+            </div>
+          </div>
+
+          <div class="demo-control-row">
+            <button class="primary-action" id="demo-start-camera" type="button">Start camera</button>
+            <button class="secondary-action" id="demo-stop-camera" type="button" disabled>Stop</button>
+            <button class="toggle-action" id="demo-capture" type="button" disabled>Scan frame</button>
+          </div>
+
+          <div class="demo-file-input">
+            <label for="demo-image-input">Test image</label>
+            <input id="demo-image-input" type="file" accept="image/*" />
+            <button class="secondary-action" id="demo-scan-image" type="button" disabled>Scan image</button>
+          </div>
+        </section>
+
+        <aside class="demo-controls-panel" aria-label="Detector controls">
+          <div class="demo-field">
+            <label for="demo-camera-select">Camera</label>
+            <select id="demo-camera-select"></select>
+          </div>
+          <div class="demo-field">
+            <label for="demo-scan-interval">Auto scan</label>
+            <select id="demo-scan-interval">
+              <option value="0">Off</option>
+              <option value="15000">Every 15 seconds</option>
+              <option value="30000">Every 30 seconds</option>
+              <option value="60000">Every 60 seconds</option>
+            </select>
+          </div>
+          <button class="secondary-action demo-wide-action" id="demo-refresh-health" type="button">Refresh detector</button>
+
+          <div class="demo-meter-list">
+            <div class="demo-meter">
+              <span>YOLO</span>
+              <strong id="demo-yolo-state">--</strong>
+            </div>
+            <div class="demo-meter">
+              <span>Model</span>
+              <strong id="demo-model-state">--</strong>
+            </div>
+            <div class="demo-meter">
+              <span>Last scan</span>
+              <strong id="demo-last-scan">--</strong>
+            </div>
+          </div>
+        </aside>
+      </div>
+
+      <section class="section demo-results-section">
+        <div class="section-head">
+          <div>
+            <span class="section-kicker">Output</span>
+            <h2 class="section-title">Detector results</h2>
+          </div>
+          <button class="secondary-action" id="demo-clear-results" type="button">Clear</button>
+        </div>
+        <div class="demo-results" id="demo-results">
+          <div class="empty-state compact">
+            <div class="empty-title">No frames scanned</div>
+            <div class="empty-copy">Start the camera and scan a frame.</div>
+          </div>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <script src="./js/demo.js?v=20260603-kimi-detector"></script>
+</body>
+</html>

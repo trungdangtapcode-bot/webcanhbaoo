@@ -1,3 +1,12 @@
+const path = require('path');
+
+const projectRoot = path.resolve(__dirname, '..');
+const defaultAiModulePython = process.platform === 'win32'
+  ? path.join(projectRoot, 'ai_module', 'venv', 'Scripts', 'python.exe')
+  : path.join(projectRoot, 'ai_module', 'venv', 'bin', 'python');
+const aiModulePython = process.env.AI_MODULE_PYTHON || defaultAiModulePython;
+const hanoiProxyPython = process.env.HANOI_PROXY_PYTHON || aiModulePython;
+
 module.exports = {
   apps: [
     {
@@ -39,7 +48,7 @@ module.exports = {
       name: 'hanoi-wss-proxy',
       cwd: '..',
       script: './ai_module/hanoi_wss_proxy.py',
-      interpreter: process.env.AI_MODULE_PYTHON || process.env.HANOI_PROXY_PYTHON || './ai_module/venv/bin/python',
+      interpreter: hanoiProxyPython,
       instances: 1,
       exec_mode: 'fork',
       env: {
@@ -73,28 +82,54 @@ module.exports = {
       name: 'ai-detector-api',
       cwd: '..',
       script: './ai_module/detector_api.py',
-      interpreter: process.env.AI_MODULE_PYTHON || './ai_module/venv/bin/python',
+      interpreter: aiModulePython,
       instances: 1,
       exec_mode: 'fork',
       env: {
         DETECTOR_HOST: '127.0.0.1',
         DETECTOR_PORT: '5055',
         DETECTOR_ENABLE_YOLO: 'true',
-        DETECTOR_YOLO_WEIGHTS: 'yolov8n.pt',
-        DETECTOR_YOLO_FALLBACK_WEIGHTS: 'yolov8m.pt',
+        DETECTOR_YOLO_WEIGHTS: './ai_module/yolo26x.pt',
+        DETECTOR_YOLO_FALLBACK_WEIGHTS: './ai_module/yolov8m.pt',
         DETECTOR_YOLO_IMG_SIZE: '640',
         DETECTOR_YOLO_ENABLE_SLICES: 'false',
-        DETECTOR_GROQ_ENABLED: 'false',
+        DETECTOR_ENABLE_FIRE_YOLO: 'true',
+        DETECTOR_FIRE_YOLO_WEIGHTS: './ai_module/fire_smoke_yolov8n.pt',
+        DETECTOR_FIRE_YOLO_CONF: '0.35',
+        DETECTOR_FIRE_YOLO_IOU: '0.45',
+        DETECTOR_FIRE_YOLO_IMG_SIZE: '640',
+        DETECTOR_AI_PROVIDER: 'openrouter',
+        DETECTOR_AI_ENDPOINT: 'https://openrouter.ai/api/v1/chat/completions',
+        DETECTOR_AI_MODEL: 'moonshotai/kimi-k2.6:free',
+        DETECTOR_AI_TEXT_MODEL_FALLBACK: 'moonshotai/kimi-k2.6:free',
+        DETECTOR_AI_ENABLED: 'true',
+        DETECTOR_AI_RATE_LIMIT_PER_MIN: '20',
+        DETECTOR_OPENCV_INCIDENT_FALLBACK: 'false',
+        DETECTOR_OPENCV_FIRE_SAFETY_NET: 'true',
+        DETECTOR_STRONG_FIRE_RATIO: '0.08',
       },
       env_production: {
         DETECTOR_HOST: '127.0.0.1',
         DETECTOR_PORT: '5055',
         DETECTOR_ENABLE_YOLO: 'true',
-        DETECTOR_YOLO_WEIGHTS: 'yolov8n.pt',
-        DETECTOR_YOLO_FALLBACK_WEIGHTS: 'yolov8m.pt',
+        DETECTOR_YOLO_WEIGHTS: './ai_module/yolo26x.pt',
+        DETECTOR_YOLO_FALLBACK_WEIGHTS: './ai_module/yolov8m.pt',
         DETECTOR_YOLO_IMG_SIZE: '640',
         DETECTOR_YOLO_ENABLE_SLICES: 'false',
-        DETECTOR_GROQ_ENABLED: 'false',
+        DETECTOR_ENABLE_FIRE_YOLO: 'true',
+        DETECTOR_FIRE_YOLO_WEIGHTS: './ai_module/fire_smoke_yolov8n.pt',
+        DETECTOR_FIRE_YOLO_CONF: '0.35',
+        DETECTOR_FIRE_YOLO_IOU: '0.45',
+        DETECTOR_FIRE_YOLO_IMG_SIZE: '640',
+        DETECTOR_AI_PROVIDER: 'openrouter',
+        DETECTOR_AI_ENDPOINT: 'https://openrouter.ai/api/v1/chat/completions',
+        DETECTOR_AI_MODEL: 'moonshotai/kimi-k2.6:free',
+        DETECTOR_AI_TEXT_MODEL_FALLBACK: 'moonshotai/kimi-k2.6:free',
+        DETECTOR_AI_ENABLED: 'true',
+        DETECTOR_AI_RATE_LIMIT_PER_MIN: '20',
+        DETECTOR_OPENCV_INCIDENT_FALLBACK: 'false',
+        DETECTOR_OPENCV_FIRE_SAFETY_NET: 'true',
+        DETECTOR_STRONG_FIRE_RATIO: '0.08',
       },
       max_memory_restart: '900M',
       log_date_format: 'YYYY-MM-DD HH:mm:ss Z',
