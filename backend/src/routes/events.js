@@ -7,6 +7,7 @@ const {
   getAlertQueue,
   getEvents,
   getActiveEvents,
+  deleteAlertQueueItem,
   updateAlertQueueItem,
 } = require('../controllers/eventController');
 
@@ -24,6 +25,9 @@ router.get('/queue', getAlertQueue);
 
 // PATCH /api/events/queue/:camera_id/:event_type - update operator status
 router.patch('/queue/:camera_id/:event_type', updateAlertQueueItem);
+
+// DELETE /api/events/queue/:camera_id/:event_type - remove operator queue item
+router.delete('/queue/:camera_id/:event_type', deleteAlertQueueItem);
 
 // GET /api/events - public history for dashboard, reports, and statistics
 router.get('/', getEvents);

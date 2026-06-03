@@ -143,6 +143,7 @@
         flood: '<path d="M4 9.5c1.5 0 1.5-1 3-1s1.5 1 3 1 1.5-1 3-1 1.5 1 3 1 1.5-1 3-1" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><path d="M4 14c1.5 0 1.5-1 3-1s1.5 1 3 1 1.5-1 3-1 1.5 1 3 1 1.5-1 3-1" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><path d="M4 18.5c1.5 0 1.5-1 3-1s1.5 1 3 1 1.5-1 3-1 1.5 1 3 1 1.5-1 3-1" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>',
         news: '<path d="M5 5.5h10.5A2.5 2.5 0 0 1 18 8v10.5H6.5A2.5 2.5 0 0 1 4 16V6.5a1 1 0 0 1 1-1Z" stroke="currentColor" stroke-width="1.8"/><path d="M18 9h1a1 1 0 0 1 1 1v6.5a2 2 0 0 1-2 2M8 10h6M8 13h6M8 16h3" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>',
         alert: '<path d="M12 3.5 21 20H3L12 3.5Z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/><path d="M12 9v4.7" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><path d="M12 17.2h.01" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/>',
+        close: '<path d="M6 6l12 12M18 6 6 18" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>',
       };
       return '<svg viewBox="0 0 24 24" fill="none" aria-hidden="true">' + (icons[type] || icons.camera) + "</svg>";
     }
@@ -211,6 +212,11 @@
 
     function escapeAttr(value) {
       return escapeHtml(value).replace(/`/g, "&#096;");
+    }
+
+    function escapeCssSelector(value) {
+      if (window.CSS && typeof window.CSS.escape === "function") return window.CSS.escape(value);
+      return String(value).replace(/["\\]/g, "\\$&");
     }
 
     function formatTime(value, withSeconds = true) {
@@ -1031,11 +1037,19 @@
       const log = document.getElementById("alert-log");
       log.querySelectorAll(".empty-state").forEach((el) => el.remove());
       const meta = getAlertMeta(alertData.event_type);
+      const key = queueKey(alertData.camera_id, alertData.event_type);
+      const existingRow = log.querySelector(`.alert-row[data-queue-key="${escapeCssSelector(key)}"]`);
+      if (existingRow) {
+        existingRow.remove();
+        const oldIndex = alerts.findIndex((item) => queueKey(item.camera_id, item.event_type) === key);
+        if (oldIndex >= 0) alerts.splice(oldIndex, 1);
+      }
 
       const row = document.createElement("div");
-      const queueStatus = alertData.queue_status || getQueueStatus(alertData.camera_id, alertData.event_type);
+      const queueStatus = alertData.queue_status || alertData.status || getQueueStatus(alertData.camera_id, alertData.event_type);
       row.className = "alert-row";
       row.dataset.cameraId = alertData.camera_id;
+      row.dataset.queueKey = key;
       row.dataset.queueStatus = queueStatus;
       row.dataset.type = alertData.event_type;
       row.innerHTML = `
@@ -1050,11 +1064,14 @@
           <select class="alert-queue-select" data-camera-id="${escapeAttr(alertData.camera_id)}" data-event-type="${escapeAttr(alertData.event_type)}" aria-label="Alert queue status">
             ${renderQueueStatusOptions(queueStatus)}
           </select>
+          <button class="alert-delete-btn" type="button" data-delete-queue="true" data-camera-id="${escapeAttr(alertData.camera_id)}" data-event-type="${escapeAttr(alertData.event_type)}" title="Delete alert" aria-label="Delete alert">
+            ${iconSvg("close")}
+          </button>
         </div>
       `;
 
       row.addEventListener("click", (event) => {
-        if (event.target.closest(".alert-queue-select")) return;
+        if (event.target.closest(".alert-queue-select, .alert-delete-btn")) return;
         const cam = cameras.get(alertData.camera_id);
         if (cam) {
           focusCamera(alertData.camera_id);
@@ -1076,6 +1093,18 @@
 
       document.getElementById("alert-count").textContent = alerts.length;
       applyFilter();
+    }
+
+    function removeAlertRow(cameraId, eventType) {
+      const key = queueKey(cameraId, eventType);
+      alertQueue.delete(key);
+      const row = document.querySelector(`.alert-row[data-queue-key="${escapeCssSelector(key)}"]`);
+      row?.remove();
+      const index = alerts.findIndex((item) => item.camera_id === cameraId && item.event_type === eventType);
+      if (index >= 0) alerts.splice(index, 1);
+      document.getElementById("alert-count").textContent = alerts.length;
+      if (!document.querySelectorAll(".alert-row").length) renderEmptyAlerts();
+      else applyFilter();
     }
 
     function applyFilter() {
@@ -1748,9 +1777,21 @@
       const json = await fetchJsonOrNull("/api/events/queue");
       if (!json) return;
       alertQueue.clear();
+      alerts.length = 0;
+      document.getElementById("alert-log").innerHTML = "";
       (json.queue || []).forEach((item) => {
         alertQueue.set(queueKey(item.camera_id, item.event_type), item);
+        const cam = cameras.get(item.camera_id);
+        addAlertRow({
+          ...item,
+          queue_status: item.status || "new",
+          camera_name: item.camera_name || cam?.data?.name || item.camera_id,
+          lat: cam?.data?.location?.lat,
+          lng: cam?.data?.location?.lng,
+          timestamp: item.first_seen || item.updated_at || item.last_seen,
+        });
       });
+      if (!(json.queue || []).length) renderEmptyAlerts();
       applyQueueStatusToRows();
     }
 
@@ -1772,6 +1813,21 @@
       if (json?.item) {
         alertQueue.set(key, json.item);
         applyQueueStatusToRows();
+      }
+    }
+
+    async function deleteAlertQueueItem(cameraId, eventType) {
+      const key = queueKey(cameraId, eventType);
+      const previous = alertQueue.get(key);
+      removeAlertRow(cameraId, eventType);
+
+      const ok = await fetch(apiUrl(`/api/events/queue/${encodeURIComponent(cameraId)}/${encodeURIComponent(eventType)}`), {
+        method: "DELETE",
+      }).then((res) => res.ok).catch(() => false);
+
+      if (!ok && previous) {
+        alertQueue.set(key, previous);
+        addAlertRow({ ...previous, queue_status: previous.status || "new" });
       }
     }
 
@@ -1911,10 +1967,9 @@
       await loadCameraHealth();
       await loadScannerStatus();
       await loadNews();
-      await loadHistoricalEvents();
+      await loadAlertQueue();
       await loadStatisticsEvents();
       await loadActiveAlerts();
-      await loadAlertQueue();
       await loadTrafficHeatmap();
     }
 
@@ -1990,6 +2045,14 @@
     });
 
     document.addEventListener("click", (event) => {
+      const deleteButton = event.target.closest(".alert-delete-btn");
+      if (deleteButton?.dataset.deleteQueue) {
+        event.preventDefault();
+        event.stopPropagation();
+        deleteAlertQueueItem(deleteButton.dataset.cameraId, deleteButton.dataset.eventType);
+        return;
+      }
+
       const focusButton = event.target.closest("[data-focus-camera-id]");
       if (focusButton?.dataset.focusCameraId) {
         event.preventDefault();

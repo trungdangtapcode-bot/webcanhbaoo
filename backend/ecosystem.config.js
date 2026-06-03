@@ -12,6 +12,9 @@ module.exports = {
       env_production: {
         NODE_ENV: 'production',
         PORT: 3000,
+        ALERT_CLEAR_HEARTBEATS: '3',
+        EVENT_IMAGE_STORAGE: 'active',
+        EVENT_RETENTION_DAYS: '7',
         HANOI_PROXY_AUTOSTART: 'false',
         HANOI_MJPEG_PROXY_BASE_URL: 'http://127.0.0.1:5001',
         AI_DETECTOR_URL: 'http://127.0.0.1:5055/detect',

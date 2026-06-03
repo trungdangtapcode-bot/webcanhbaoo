@@ -445,9 +445,21 @@ async function publishDetection(camera, detection, frame) {
   }
 
   const imageBase64 = frame.buffer.toString('base64');
-  let eventId = null;
+  const activeResult = alertService.upsertActiveAlert({
+    camera_id: camera.camera_id,
+    camera_name: camera.name,
+    confidence: detection.confidence,
+    event_type: detection.event_type,
+    image_base64: imageBase64,
+    lat: camera.location?.lat,
+    lng: camera.location?.lng,
+    metadata,
+    severity: detection.severity || 'medium',
+    timestamp,
+  });
 
-  if (isDatabaseConnected()) {
+  let eventId = null;
+  if (activeResult.created && isDatabaseConnected()) {
     try {
       const persistedImage = getPersistedEventImage(imageBase64, {
         active: detection.active,
@@ -473,19 +485,6 @@ async function publishDetection(camera, detection, frame) {
       console.error('[Scanner] Event persistence failed:', err.message);
     }
   }
-
-  const activeResult = alertService.upsertActiveAlert({
-    camera_id: camera.camera_id,
-    camera_name: camera.name,
-    confidence: detection.confidence,
-    event_type: detection.event_type,
-    image_base64: imageBase64,
-    lat: camera.location?.lat,
-    lng: camera.location?.lng,
-    metadata,
-    severity: detection.severity || 'medium',
-    timestamp,
-  });
 
   return {
     alert_created: activeResult.created,

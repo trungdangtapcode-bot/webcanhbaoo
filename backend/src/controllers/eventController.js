@@ -208,7 +208,7 @@ async function createEvent(req, res) {
       active: isActiveDetection,
     };
 
-    // --- Save event to MongoDB (if connected) ---
+    // --- Build the event payload. It is persisted only for newly-created alerts. ---
     let eventDoc = {
       _id: `demo_${Date.now()}`,
       camera_id,
@@ -218,28 +218,6 @@ async function createEvent(req, res) {
       metadata,
       timestamp: timestamp ? new Date(timestamp) : new Date(),
     };
-
-    if (isDatabaseConnected()) {
-      try {
-        const persistedImage = getPersistedEventImage(image_base64, {
-          active: isActiveDetection,
-          event_type,
-          severity,
-        });
-        const saved = await Event.create({
-          camera_id,
-          event_type,
-          severity,
-          confidence,
-          image_base64: persistedImage,
-          metadata,
-          timestamp: timestamp ? new Date(timestamp) : new Date(),
-        });
-        eventDoc = saved;
-      } catch (err) {
-        console.error('[EventController] Event persistence failed:', err.message);
-      }
-    }
 
     // --- Update active alert state ---
     let activeResult = { created: false };
@@ -262,6 +240,27 @@ async function createEvent(req, res) {
         timestamp: eventDoc.timestamp,
         metadata: { source: 'detection_frame' },
       });
+    }
+
+    if (activeResult.created && isDatabaseConnected()) {
+      try {
+        const persistedImage = getPersistedEventImage(image_base64, {
+          active: isActiveDetection,
+          event_type,
+          severity,
+        });
+        eventDoc = await Event.create({
+          camera_id,
+          event_type,
+          severity,
+          confidence,
+          image_base64: persistedImage,
+          metadata,
+          timestamp: eventDoc.timestamp,
+        });
+      } catch (err) {
+        console.error('[EventController] Event persistence failed:', err.message);
+      }
     }
 
     return res.status(201).json({
@@ -438,21 +437,34 @@ async function getActiveEvents(_req, res) {
 async function getAlertQueue(req, res) {
   const status = alertQueueService.VALID_STATUSES.has(req.query.status) ? req.query.status : undefined;
   return res.json({
-    queue: alertQueueService.listQueue({ status }),
-    summary: alertQueueService.getSummary(),
+    queue: await alertQueueService.listQueue({ status }),
+    summary: await alertQueueService.getSummary(),
   });
 }
 
 async function updateAlertQueueItem(req, res) {
   const { camera_id, event_type } = req.params;
-  const updated = alertQueueService.updateQueueItem(camera_id, event_type, req.body || {});
+  const updated = await alertQueueService.updateQueueItem(camera_id, event_type, req.body || {});
   if (!updated) {
     return res.status(404).json({ error: 'Queue item not found' });
   }
 
   return res.json({
     item: updated,
-    summary: alertQueueService.getSummary(),
+    summary: await alertQueueService.getSummary(),
+  });
+}
+
+async function deleteAlertQueueItem(req, res) {
+  const { camera_id, event_type } = req.params;
+  const result = await alertQueueService.deleteQueueItem(camera_id, event_type);
+  if (!result.deleted) {
+    return res.status(404).json({ error: 'Queue item not found' });
+  }
+
+  return res.json({
+    success: true,
+    summary: await alertQueueService.getSummary(),
   });
 }
 
@@ -462,5 +474,6 @@ module.exports = {
   getAlertQueue,
   getEvents,
   getActiveEvents,
+  deleteAlertQueueItem,
   updateAlertQueueItem,
 };

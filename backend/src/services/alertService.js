@@ -1,8 +1,9 @@
 /**
  * Alert Service - Socket.io emission plus active incident state.
  *
- * The dashboard should show map alert icons only while an incident is active.
- * Historical Event documents remain in MongoDB for reports and statistics.
+ * Push one notification when an incident is first detected. Later detector
+ * hits are treated as heartbeats, and operator queue items remain until a user
+ * explicitly deletes them.
  */
 
 let ioInstance = null;
@@ -17,14 +18,12 @@ function parsePositiveInt(value, fallback) {
 }
 
 const DEFAULT_TTL_MS = parsePositiveInt(process.env.ACTIVE_ALERT_TTL_MS, 900000);
+const CLEAR_HEARTBEATS_REQUIRED = parsePositiveInt(process.env.ALERT_CLEAR_HEARTBEATS, 3);
 const EVENT_TTL_MS = {
   fire: parsePositiveInt(process.env.FIRE_ALERT_TTL_MS, DEFAULT_TTL_MS),
   flood: parsePositiveInt(process.env.FLOOD_ALERT_TTL_MS, DEFAULT_TTL_MS),
   traffic_jam: parsePositiveInt(process.env.TRAFFIC_ALERT_TTL_MS, DEFAULT_TTL_MS),
 };
-
-// Minimum time between alert_update emissions for the same alert (avoid scan spam)
-const UPDATE_COOLDOWN_MS = parsePositiveInt(process.env.ALERT_UPDATE_COOLDOWN_MS, 5 * 60 * 1000);
 
 function getAlertTtlMs(eventType) {
   return EVENT_TTL_MS[eventType] || DEFAULT_TTL_MS;
@@ -40,15 +39,10 @@ function normalizeTimestamp(value) {
 }
 
 function serializeAlert(entry) {
-  // Exclude internal fields: timer (setTimeout handle) and _lastEmittedAt (throttle tracker)
-  const { timer: _timer, _lastEmittedAt: _lea, ...payload } = entry;
+  const { timer: _timer, ...payload } = entry;
   return payload;
 }
 
-/**
- * Initialize with the Socket.io server instance.
- * @param {import('socket.io').Server} io
- */
 function init(io) {
   ioInstance = io;
   console.log('[AlertService] Initialized');
@@ -62,27 +56,16 @@ function scheduleExpiry(key, ttlMs) {
 
   entry.timer = setTimeout(() => {
     clearAlert(entry.camera_id, entry.event_type, {
+      force: true,
       reason: 'stale',
       timestamp: new Date(),
       metadata: { stale_after_ms: ttlMs },
     });
   }, ttlMs);
 
-  if (typeof entry.timer.unref === 'function') {
-    entry.timer.unref();
-  }
+  if (typeof entry.timer.unref === 'function') entry.timer.unref();
 }
 
-/**
- * Create or refresh an active alert. New alerts emit `alert`; refreshes emit
- * `alert_update` so clients can keep the map icon alive without duplicating
- * the visible alert history.
- *
- * @param {object} alertData
- * @param {object} [options]
- * @param {number} [options.ttlMs]
- * @returns {{ created: boolean, alert: object }}
- */
 function upsertActiveAlert(alertData, options = {}) {
   const key = makeKey(alertData.camera_id, alertData.event_type);
   const existing = activeAlerts.get(key);
@@ -97,18 +80,17 @@ function upsertActiveAlert(alertData, options = {}) {
     lat: alertData.lat,
     lng: alertData.lng,
     camera_name: alertData.camera_name || alertData.camera_id,
-    timestamp: now,
+    timestamp: existing?.timestamp || now,
     first_seen: existing?.first_seen || now,
     last_seen: now,
     active: true,
+    clear_heartbeats: 0,
     metadata: {
       ...(existing?.metadata || {}),
       ...(alertData.metadata || {}),
       ttl_ms: ttlMs,
     },
     timer: existing?.timer || null,
-    // Track last time we emitted an update so we can throttle update spam
-    _lastEmittedAt: existing?._lastEmittedAt || null,
   };
 
   activeAlerts.set(key, entry);
@@ -118,47 +100,39 @@ function upsertActiveAlert(alertData, options = {}) {
   const queueItem = alertQueueService.upsertFromAlert(payload);
 
   if (!existing) {
-    // Brand-new alert — always emit immediately
     if (ioInstance) ioInstance.emit('alert', { ...payload, queue_status: queueItem.status });
     else console.error('[AlertService] Socket.io not initialized');
-    entry._lastEmittedAt = Date.now();
     console.log(`[AlertService] alert: ${payload.event_type} @ ${payload.camera_id} (${payload.severity})`);
     return { created: true, alert: payload };
   }
 
-  // Existing alert — check if we should emit an update
-  const severityRank = { low: 0, medium: 1, high: 2, critical: 3 };
-  const severityEscalated =
-    (severityRank[alertData.severity] ?? 1) > (severityRank[existing.severity] ?? 1);
-  const cooldownElapsed =
-    !entry._lastEmittedAt || (Date.now() - entry._lastEmittedAt) >= UPDATE_COOLDOWN_MS;
-
-  if (severityEscalated || cooldownElapsed) {
-    if (ioInstance) ioInstance.emit('alert_update', { ...payload, queue_status: queueItem.status });
-    else console.error('[AlertService] Socket.io not initialized');
-    entry._lastEmittedAt = Date.now();
-    console.log(`[AlertService] alert_update: ${payload.event_type} @ ${payload.camera_id} (${payload.severity})`);
-  } else {
-    console.log(
-      `[AlertService] alert_update suppressed (cooldown): ${payload.event_type} @ ${payload.camera_id}`
-    );
-  }
-
+  console.log(`[AlertService] heartbeat: ${payload.event_type} @ ${payload.camera_id}`);
   return { created: false, alert: payload };
 }
 
-/**
- * Clear an active alert and notify connected clients to remove the map icon.
- *
- * @param {string} cameraId
- * @param {string} eventType
- * @param {object} [options]
- * @returns {{ cleared: boolean, alert?: object }}
- */
 function clearAlert(cameraId, eventType, options = {}) {
   const key = makeKey(cameraId, eventType);
   const entry = activeAlerts.get(key);
   if (!entry) return { cleared: false };
+
+  const force = options.force === true;
+  const nextHeartbeat = (entry.clear_heartbeats || 0) + 1;
+  if (!force && nextHeartbeat < CLEAR_HEARTBEATS_REQUIRED) {
+    entry.clear_heartbeats = nextHeartbeat;
+    entry.last_seen = normalizeTimestamp(options.timestamp);
+    entry.metadata = {
+      ...(entry.metadata || {}),
+      ...(options.metadata || {}),
+      clear_heartbeats: nextHeartbeat,
+      clear_heartbeats_required: CLEAR_HEARTBEATS_REQUIRED,
+    };
+    activeAlerts.set(key, entry);
+    scheduleExpiry(key, getAlertTtlMs(eventType));
+    console.log(
+      `[AlertService] clear heartbeat ${nextHeartbeat}/${CLEAR_HEARTBEATS_REQUIRED}: ${eventType} @ ${cameraId}`
+    );
+    return { cleared: false, pending: true, alert: serializeAlert(entry) };
+  }
 
   if (entry.timer) clearTimeout(entry.timer);
   activeAlerts.delete(key);
@@ -171,23 +145,15 @@ function clearAlert(cameraId, eventType, options = {}) {
     metadata: {
       ...(entry.metadata || {}),
       ...(options.metadata || {}),
+      clear_heartbeats: force ? entry.clear_heartbeats || 0 : nextHeartbeat,
+      clear_heartbeats_required: CLEAR_HEARTBEATS_REQUIRED,
     },
   };
-  const queueItem = alertQueueService.markResolved(cameraId, eventType, {
-    clear_reason: payload.reason,
-    cleared_at: payload.timestamp,
-  });
 
-  if (ioInstance) {
-    ioInstance.emit('alert_cleared', { ...payload, queue_status: queueItem?.status || 'resolved' });
-  } else {
-    console.error('[AlertService] Socket.io not initialized');
-  }
+  if (ioInstance) ioInstance.emit('alert_cleared', payload);
+  else console.error('[AlertService] Socket.io not initialized');
 
-  console.log(
-    `[AlertService] alert_cleared: ${payload.event_type} @ ${payload.camera_id} (${payload.reason})`
-  );
-
+  console.log(`[AlertService] alert_cleared: ${payload.event_type} @ ${payload.camera_id} (${payload.reason})`);
   return { cleared: true, alert: payload };
 }
 
@@ -197,7 +163,6 @@ function getActiveAlerts() {
     .sort((a, b) => new Date(b.last_seen) - new Date(a.last_seen));
 }
 
-// Backwards-compatible name for older callers.
 function emitAlert(alertData) {
   return upsertActiveAlert(alertData);
 }

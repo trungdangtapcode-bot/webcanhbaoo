@@ -1614,6 +1614,30 @@
       font-weight: 680;
     }
 
+    .alert-delete-btn {
+      display: grid;
+      place-items: center;
+      width: 30px;
+      height: 30px;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      color: var(--text-muted);
+      background: var(--panel-elevated);
+      cursor: pointer;
+      transition: color var(--fast), border-color var(--fast), background var(--fast);
+    }
+
+    .alert-delete-btn:hover {
+      border-color: rgba(255, 91, 99, 0.5);
+      color: var(--red);
+      background: rgba(255, 91, 99, 0.1);
+    }
+
+    .alert-delete-btn svg {
+      width: 14px;
+      height: 14px;
+    }
+
     .alert-row[data-queue-status="new"] .alert-queue-select {
       border-color: rgba(49, 214, 192, 0.46);
     }

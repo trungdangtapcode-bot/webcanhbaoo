@@ -76,6 +76,11 @@ jobs:
               pm2 startOrReload ecosystem.config.js --env production --update-env
             pm2 save
 
+            echo "Cleaning old Event documents..."
+            EVENT_RETENTION_DAYS="${EVENT_RETENTION_DAYS:-7}" \
+              node scripts/db_maintenance.js --delete-events-older-than-days="${EVENT_RETENTION_DAYS:-7}" --execute \
+              || echo "Event cleanup skipped."
+
             echo "Checking backend health..."
             wait_for_url "backend" "http://127.0.0.1:3000/api/health" 30 2
 

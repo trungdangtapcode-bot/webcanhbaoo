@@ -1,4 +1,6 @@
 const VALID_STATUSES = new Set(['new', 'in_progress', 'confirmed', 'false_alarm', 'resolved']);
+const AlertQueueItem = require('../models/AlertQueueItem');
+const { isDatabaseConnected } = require('../config/database');
 
 const queue = new Map();
 
@@ -18,13 +20,51 @@ function serialize(entry) {
     severity: entry.severity,
     status: entry.status,
     confidence: entry.confidence,
-    first_seen: entry.first_seen,
-    last_seen: entry.last_seen,
-    updated_at: entry.updated_at,
+    first_seen: normalizeDateString(entry.first_seen),
+    last_seen: normalizeDateString(entry.last_seen),
+    updated_at: normalizeDateString(entry.updated_at),
     assignee: entry.assignee,
     note: entry.note,
     metadata: entry.metadata || {},
   };
+}
+
+function normalizeDateString(value) {
+  if (!value) return new Date().toISOString();
+  const date = value instanceof Date ? value : new Date(value);
+  return Number.isNaN(date.getTime()) ? new Date().toISOString() : date.toISOString();
+}
+
+function cacheEntry(entry) {
+  queue.set(makeKey(entry.camera_id, entry.event_type), serialize(entry));
+}
+
+function persistQueueItem(entry) {
+  if (!isDatabaseConnected()) return;
+  AlertQueueItem.findOneAndUpdate(
+    { camera_id: entry.camera_id, event_type: entry.event_type },
+    {
+      $set: {
+        camera_name: entry.camera_name,
+        confidence: entry.confidence,
+        last_seen: entry.last_seen,
+        metadata: entry.metadata || {},
+        severity: entry.severity,
+        status: entry.status,
+        updated_at: entry.updated_at,
+      },
+      $setOnInsert: {
+        camera_id: entry.camera_id,
+        event_type: entry.event_type,
+        first_seen: entry.first_seen,
+        assignee: entry.assignee || null,
+        note: entry.note || '',
+      },
+    },
+    { upsert: true, new: true, setDefaultsOnInsert: true }
+  ).catch((err) => {
+    console.error('[AlertQueue] persistence failed:', err.message);
+  });
 }
 
 function upsertFromAlert(alertData) {
@@ -49,11 +89,13 @@ function upsertFromAlert(alertData) {
     note: existing?.note || '',
   };
 
-  queue.set(key, entry);
-  return serialize(entry);
+  const serialized = serialize(entry);
+  queue.set(key, serialized);
+  persistQueueItem(serialized);
+  return serialized;
 }
 
-function markResolved(cameraId, eventType, metadata = {}) {
+async function markResolved(cameraId, eventType, metadata = {}) {
   const key = makeKey(cameraId, eventType);
   const entry = queue.get(key);
   if (!entry) return null;
@@ -61,22 +103,49 @@ function markResolved(cameraId, eventType, metadata = {}) {
   entry.status = 'resolved';
   entry.updated_at = new Date().toISOString();
   entry.metadata = { ...(entry.metadata || {}), ...metadata };
-  return serialize(entry);
+  const serialized = serialize(entry);
+  queue.set(key, serialized);
+  persistQueueItem(serialized);
+  return serialized;
 }
 
-function updateQueueItem(cameraId, eventType, updates = {}) {
+async function updateQueueItem(cameraId, eventType, updates = {}) {
   const key = makeKey(cameraId, eventType);
-  const entry = queue.get(key);
+  let entry = queue.get(key);
+  if (!entry && isDatabaseConnected()) {
+    entry = await AlertQueueItem.findOne({ camera_id: cameraId, event_type: eventType }).lean();
+  }
   if (!entry) return null;
 
   entry.status = normalizeStatus(updates.status, entry.status);
   if (updates.assignee !== undefined) entry.assignee = String(updates.assignee || '').slice(0, 80) || null;
   if (updates.note !== undefined) entry.note = String(updates.note || '').slice(0, 500);
   entry.updated_at = new Date().toISOString();
-  return serialize(entry);
+  const serialized = serialize(entry);
+  queue.set(key, serialized);
+  persistQueueItem(serialized);
+  return serialized;
 }
 
-function listQueue({ status } = {}) {
+async function deleteQueueItem(cameraId, eventType) {
+  const key = makeKey(cameraId, eventType);
+  const existed = queue.delete(key);
+  let deletedCount = existed ? 1 : 0;
+  if (isDatabaseConnected()) {
+    const result = await AlertQueueItem.deleteOne({ camera_id: cameraId, event_type: eventType });
+    deletedCount = Math.max(deletedCount, result.deletedCount || 0);
+  }
+  return { deleted: deletedCount > 0 };
+}
+
+async function listQueue({ status } = {}) {
+  if (isDatabaseConnected()) {
+    const filter = status ? { status } : {};
+    const items = await AlertQueueItem.find(filter).sort({ updated_at: -1 }).lean();
+    items.forEach(cacheEntry);
+    return items.map(serialize);
+  }
+
   return Array.from(queue.values())
     .filter((entry) => !status || entry.status === status)
     .sort((a, b) => {
@@ -88,17 +157,29 @@ function listQueue({ status } = {}) {
     .map(serialize);
 }
 
-function getSummary() {
+async function getSummary() {
   const summary = { total: 0, new: 0, in_progress: 0, confirmed: 0, false_alarm: 0, resolved: 0 };
+
+  if (isDatabaseConnected()) {
+    const rows = await AlertQueueItem.aggregate([{ $group: { _id: '$status', count: { $sum: 1 } } }]);
+    for (const row of rows) {
+      summary[row._id] = row.count;
+      summary.total += row.count;
+    }
+    return summary;
+  }
+
   for (const entry of queue.values()) {
+    const status = normalizeStatus(entry.status);
     summary.total += 1;
-    summary[entry.status] = (summary[entry.status] || 0) + 1;
+    summary[status] = (summary[status] || 0) + 1;
   }
   return summary;
 }
 
 module.exports = {
   VALID_STATUSES,
+  deleteQueueItem,
   getSummary,
   listQueue,
   markResolved,
