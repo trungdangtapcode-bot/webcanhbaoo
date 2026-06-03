@@ -1,42 +1,68 @@
-name: CI/CD Deployment
+name: Deploy to VPS
 
 on:
   push:
     branches:
-      - main # Chạy workflow này mỗi khi có code mới đẩy lên nhánh main
+      - main
+  workflow_dispatch:
+
+concurrency:
+  group: production-vps
+  cancel-in-progress: true
 
 jobs:
   deploy:
     runs-on: ubuntu-latest
+    timeout-minutes: 45
 
     steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
+      - name: Checkout code
+        uses: actions/checkout@v4
 
-    - name: Deploy to VPS
-      uses: appleboy/ssh-action@v1.0.3
-      with:
-        host: ${{ secrets.VPS_HOST }}
-        username: ${{ secrets.VPS_USERNAME }}
-        key: ${{ secrets.VPS_SSH_KEY }}
-        script: |
-          # Di chuyển vào thư mục dự án
-          cd ~/webcanhbaoo
-          
-          # Cập nhật code mới nhất từ GitHub
-          git reset --hard
-          git pull origin main
-          
-          # Cài đặt thư viện mới cho Node.js (nếu có)
-          cd backend
-          npm install
-          
-          # Cài đặt thư viện mới cho Python (nếu có)
-          cd ../ai_module
-          source venv/bin/activate
-          pip install -r requirements.txt
-          
-          # Khởi động lại toàn bộ hệ thống qua PM2
-          pm2 restart all
-          
-          echo "🎉 Triển khai thành công!"
+      - name: Deploy on VPS
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USERNAME }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          script_stop: true
+          command_timeout: 45m
+          script: |
+            set -Eeuo pipefail
+
+            APP_DIR="${{ secrets.VPS_APP_DIR }}"
+            if [ -z "$APP_DIR" ]; then
+              APP_DIR="$HOME/webcanhbaoo"
+            fi
+            cd "$APP_DIR"
+
+            echo "Fetching latest main..."
+            git fetch origin main
+            git reset --hard origin/main
+
+            echo "Installing backend dependencies..."
+            cd "$APP_DIR/backend"
+            npm ci
+
+            echo "Preparing Hanoi proxy Python environment..."
+            cd "$APP_DIR/ai_module"
+            if [ ! -x venv/bin/python ]; then
+              python3 -m venv venv
+            fi
+            ./venv/bin/python -m pip install --upgrade pip
+            ./venv/bin/pip install -r requirements.txt
+
+            echo "Reloading PM2 services..."
+            cd "$APP_DIR/backend"
+            mkdir -p logs
+            HANOI_PROXY_PYTHON="$APP_DIR/ai_module/venv/bin/python" \
+              pm2 startOrReload ecosystem.config.js --env production --update-env
+            pm2 save
+
+            echo "Checking backend health..."
+            curl --fail --silent --show-error http://127.0.0.1:3000/api/health >/dev/null
+
+            echo "Checking Hanoi proxy health..."
+            curl --fail --silent --show-error http://127.0.0.1:5001/health >/dev/null
+
+            echo "Deployment completed."
