@@ -62,7 +62,16 @@ jobs:
 
             echo "Installing backend dependencies..."
             cd "$APP_DIR/backend"
-            if [ ! -d node_modules ] || [ -z "$OLD_REV" ] || git diff --name-only "$OLD_REV" "$NEW_REV" | grep -q '^backend/package-lock.json$'; then
+            NEED_NPM_INSTALL=false
+            if [ ! -d node_modules ]; then
+              NEED_NPM_INSTALL=true
+            elif [ -z "$OLD_REV" ]; then
+              NEED_NPM_INSTALL=true
+            elif ! git diff --quiet "$OLD_REV" "$NEW_REV" -- package-lock.json; then
+              NEED_NPM_INSTALL=true
+            fi
+
+            if [ "$NEED_NPM_INSTALL" = "true" ]; then
               npm ci
             else
               echo "Backend dependencies unchanged; skipping npm ci."
