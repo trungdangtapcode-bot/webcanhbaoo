@@ -1007,7 +1007,7 @@ def detect_traffic(frame: np.ndarray, camera_id: str = "unknown") -> Dict[str, A
     )
 
     # ─── Bypass temporal tracking for static demo images ───
-    if camera_id == "uploaded_image_demo" and vehicle_count >= TRAFFIC_MIN_VEHICLES and vehicle_density >= TRAFFIC_MIN_DENSITY:
+    if camera_id in ("uploaded_image_demo", "browser_usb_demo") and vehicle_count >= TRAFFIC_MIN_VEHICLES and vehicle_density >= TRAFFIC_MIN_DENSITY:
         is_jammed = True
         speed_class = "stopped"
 
