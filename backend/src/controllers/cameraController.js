@@ -177,8 +177,9 @@ async function getHanoiCameraProxyStatus(req, res) {
       });
     }
 
+    const shouldStart = ['1', 'true', 'yes'].includes(String(req.query.start || '').toLowerCase());
     const statusUrl =
-      `${getProxyBaseUrl()}/hanoi_status/${encodeURIComponent(camera.camera_id)}`;
+      `${getProxyBaseUrl()}/hanoi_status/${encodeURIComponent(camera.camera_id)}${shouldStart ? '?start=true' : ''}`;
     const upstream = await fetch(statusUrl, {
       signal: AbortSignal.timeout(Number(process.env.HANOI_PROXY_STATUS_TIMEOUT_MS || 2500)),
     });

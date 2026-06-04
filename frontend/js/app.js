@@ -1189,7 +1189,7 @@
       };
 
       if (isHanoiRealtime) {
-        stream.src = sourceUrl;
+        prewarmHanoiDecoder(camId, sessionId, stream, sourceUrl);
         watchHanoiDecoderStatus(camId, sessionId, shell);
       } else if (isSnapshotStream) {
         const loadFrame = () => {
@@ -1228,10 +1228,31 @@
           return;
         }
 
-        if (checks >= 18) return;
-        hanoiStatusTimer = window.setTimeout(poll, checks < 4 ? 1500 : 3000);
+        if (checks === 5) {
+          document.getElementById("stream-placeholder-title").textContent = "Still connecting to Hanoi video";
+          document.getElementById("stream-placeholder-copy").textContent =
+            "The decoder is still waiting for the first HEVC frame. This camera may be busy or slow upstream.";
+        }
+
+        if (checks >= 12) {
+          shell.classList.add("stream-offline");
+          document.getElementById("stream-placeholder-title").textContent = "Hanoi stream is slow";
+          document.getElementById("stream-placeholder-copy").textContent =
+            "Try closing and opening this camera again, or choose another Hanoi camera while the decoder recovers.";
+          return;
+        }
+        hanoiStatusTimer = window.setTimeout(poll, checks < 4 ? 1200 : 2500);
       };
-      hanoiStatusTimer = window.setTimeout(poll, 1200);
+      hanoiStatusTimer = window.setTimeout(poll, 900);
+    }
+
+    async function prewarmHanoiDecoder(camId, sessionId, stream, sourceUrl) {
+      await fetchJsonOrNull(
+        "/api/cameras/hanoi/" + encodeURIComponent(camId) + "/status?start=true"
+      );
+      if (sessionId !== streamSessionId) return;
+      const joiner = sourceUrl.includes("?") ? "&" : "?";
+      stream.src = sourceUrl + joiner + "ts=" + Date.now();
     }
 
     function getHanoiProxyUrl(camId) {

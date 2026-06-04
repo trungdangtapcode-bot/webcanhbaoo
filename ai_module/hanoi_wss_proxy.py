@@ -439,6 +439,8 @@ def hanoi_status(camera_key: str):
     stream = get_stream(camera_key)
     if not stream:
         return jsonify({"error": "Hanoi camera not found or WSS URL missing"}), 404
+    if str(request.args.get("start", "")).lower() in {"1", "true", "yes"}:
+        stream.ensure_started()
     return jsonify(stream.public_status())
 
 
