@@ -77,6 +77,9 @@
     let activeNewsCategory = "all";
     let userLocation = null;
     let geoWatchId = null;
+    let userLocationMarker = null;
+    let userLocationAccuracyCircle = null;
+    let realtimeSocket = null;
 
     const map = L.map("map", {
       zoomControl: false,
@@ -1534,6 +1537,128 @@
       });
     }
 
+    function getGeolocationBlockMessage() {
+      if (!navigator.geolocation) return "Trình duyệt này không hỗ trợ lấy vị trí.";
+      if (window.isSecureContext === false) {
+        return "Trình duyệt chỉ cho phép lấy vị trí trên HTTPS hoặc localhost.";
+      }
+      return "";
+    }
+
+    function getGeolocationErrorMessage(error) {
+      if (error?.code === 1) return "Bạn cần cho phép quyền vị trí để web tự định vị.";
+      if (error?.code === 2) return "Không lấy được vị trí hiện tại từ thiết bị.";
+      if (error?.code === 3) return "Lấy vị trí quá lâu, hãy thử lại.";
+      return error?.message || "Không lấy được vị trí hiện tại.";
+    }
+
+    function setLocateButtonState(state, title) {
+      const button = document.getElementById("locate-me-btn");
+      if (!button) return;
+      button.classList.toggle("enabled", state === "ready");
+      button.classList.toggle("loading", state === "loading");
+      button.setAttribute("aria-pressed", state === "ready" ? "true" : "false");
+      if (title) {
+        button.title = title;
+        button.setAttribute("aria-label", title);
+      }
+    }
+
+    function updateUserLocationMarker(location, accuracy = 0) {
+      if (!map || !Number.isFinite(location?.lat) || !Number.isFinite(location?.lng)) return;
+      const latLng = [location.lat, location.lng];
+      if (!userLocationMarker) {
+        userLocationMarker = L.marker(latLng, {
+          keyboard: false,
+          zIndexOffset: 900,
+          icon: L.divIcon({
+            className: "user-location-marker",
+            iconSize: [22, 22],
+            iconAnchor: [11, 11],
+          }),
+        }).addTo(map);
+        userLocationMarker.bindTooltip("Vị trí hiện tại của bạn", { direction: "top", opacity: 0.92 });
+      } else {
+        userLocationMarker.setLatLng(latLng);
+      }
+
+      const radius = Math.max(20, Math.min(Number(accuracy) || 0, 1500));
+      if (!userLocationAccuracyCircle) {
+        userLocationAccuracyCircle = L.circle(latLng, {
+          radius,
+          className: "user-location-accuracy",
+          interactive: false,
+        }).addTo(map);
+      } else {
+        userLocationAccuracyCircle.setLatLng(latLng);
+        userLocationAccuracyCircle.setRadius(radius);
+      }
+    }
+
+    function publishUserLocation(location) {
+      if (!realtimeSocket || !Number.isFinite(location?.lat) || !Number.isFinite(location?.lng)) return;
+      realtimeSocket.emit("update-location", {
+        camera_id: "USB_CAM_001",
+        lat: location.lat,
+        lng: location.lng,
+        address: "Vị trí hiện tại từ trình duyệt",
+      });
+    }
+
+    function applyUserLocation(position, options = {}) {
+      const coords = position?.coords || position || {};
+      const lat = Number(coords.latitude ?? coords.lat);
+      const lng = Number(coords.longitude ?? coords.lng);
+      if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null;
+
+      userLocation = { lat, lng };
+      updateUserLocationMarker(userLocation, coords.accuracy);
+      publishUserLocation(userLocation);
+      setLocateButtonState("ready", "Vị trí hiện tại đã sẵn sàng");
+      updateNearbyStatus();
+      checkNearbyActiveAlerts();
+      if (options.focus) {
+        map.flyTo([lat, lng], Math.max(map.getZoom(), 15), { duration: 0.65 });
+      }
+      return userLocation;
+    }
+
+    function startUserLocationWatch() {
+      if (geoWatchId !== null || !navigator.geolocation) return;
+      geoWatchId = navigator.geolocation.watchPosition(
+        (position) => applyUserLocation(position),
+        (error) => updateNearbyStatus(getGeolocationErrorMessage(error)),
+        {
+          enableHighAccuracy: true,
+          timeout: 12000,
+          maximumAge: 15000,
+        }
+      );
+    }
+
+    async function requestUserLocation(options = {}) {
+      const blockMessage = getGeolocationBlockMessage();
+      if (blockMessage) {
+        setLocateButtonState("idle", blockMessage);
+        if (!options.silent) updateNearbyStatus(blockMessage);
+        return null;
+      }
+
+      setLocateButtonState("loading", "Đang lấy vị trí hiện tại...");
+      if (!options.silent) updateNearbyStatus("Đang lấy vị trí hiện tại...");
+      try {
+        const position = await getCurrentPosition();
+        const location = applyUserLocation(position, options);
+        startUserLocationWatch();
+        return location;
+      } catch (error) {
+        const message = getGeolocationErrorMessage(error);
+        setLocateButtonState("idle", message);
+        if (!options.silent) updateNearbyStatus(message);
+        return null;
+      }
+    }
+
     async function submitEmergencyReport(event) {
       event.preventDefault();
       const status = document.getElementById("emergency-status");
@@ -1548,11 +1673,10 @@
 
       if (document.getElementById("emergency-use-location").checked) {
         try {
-          const position = await getCurrentPosition();
-          payload.lat = position.coords.latitude;
-          payload.lng = position.coords.longitude;
-          userLocation = { lat: payload.lat, lng: payload.lng };
-          updateNearbyStatus();
+          const location = await requestUserLocation({ silent: true });
+          if (!location) throw new Error("location_unavailable");
+          payload.lat = location.lat;
+          payload.lng = location.lng;
         } catch (_err) {
           status.textContent = "Location unavailable. Sending through selected camera...";
         }
@@ -1626,13 +1750,12 @@
       status.textContent = "Reading your current location...";
       status.classList.remove("error");
       try {
-        const position = await getCurrentPosition();
-        const lat = position.coords.latitude;
-        const lng = position.coords.longitude;
+        const location = await requestUserLocation({ focus: false, silent: true });
+        if (!location) throw new Error("location_unavailable");
+        const lat = location.lat;
+        const lng = location.lng;
         document.getElementById("contribute-camera-lat").value = lat.toFixed(6);
         document.getElementById("contribute-camera-lng").value = lng.toFixed(6);
-        userLocation = { lat, lng };
-        updateNearbyStatus();
         status.textContent = "Location filled. Add a name or address before sending.";
       } catch (_err) {
         status.textContent = "Could not read your location. You can type coordinates manually.";
@@ -1711,6 +1834,10 @@
       }
 
       if (!nearbyNotificationsEnabled) {
+        if (userLocation) {
+          status.textContent = "Đã lấy vị trí. Bật cảnh báo để nhận sự cố trong phạm vi " + formatDistance(nearbyRadius) + ".";
+          return;
+        }
         status.textContent = "Off. Choose a radius and enable alerts to get notified near your position.";
         return;
       }
@@ -1745,18 +1872,12 @@
           return;
         }
 
-        const position = await getCurrentPosition();
-        userLocation = {
-          lat: position.coords.latitude,
-          lng: position.coords.longitude,
-        };
-        nearbyNotificationsEnabled = true;
-        if (navigator.geolocation && geoWatchId === null) {
-          geoWatchId = navigator.geolocation.watchPosition((pos) => {
-            userLocation = { lat: pos.coords.latitude, lng: pos.coords.longitude };
-            updateNearbyStatus();
-          });
+        if (!userLocation) {
+          const location = await requestUserLocation();
+          if (!location) return;
         }
+        nearbyNotificationsEnabled = true;
+        startUserLocationWatch();
         updateNearbyStatus();
         checkNearbyActiveAlerts();
       } catch (_err) {
@@ -2291,6 +2412,7 @@
       await loadStatisticsEvents();
       await loadActiveAlerts();
       await loadTrafficHeatmap();
+      requestUserLocation({ focus: false }).catch(() => {});
     }
 
     document.getElementById("camera-search").addEventListener("input", renderCameraList);
@@ -2298,6 +2420,7 @@
       btn.addEventListener("click", () => setCameraSource(btn.dataset.cameraSource));
     });
     document.getElementById("fit-map-btn").addEventListener("click", fitMapToCameras);
+    document.getElementById("locate-me-btn").addEventListener("click", () => requestUserLocation({ focus: true }));
     document.getElementById("heatmap-toggle").addEventListener("click", toggleTrafficHeatmap);
     document.getElementById("map-only-toggle").addEventListener("click", toggleMapOnlyMode);
     document.getElementById("route-filter-clear").addEventListener("click", clearRouteCameraFilter);
@@ -2422,7 +2545,11 @@
       const socket = API_BASE
         ? io(API_BASE, { transports: ["websocket", "polling"] })
         : io({ transports: ["websocket", "polling"] });
-      socket.on("connect", () => setConnection(true, "Live"));
+      realtimeSocket = socket;
+      socket.on("connect", () => {
+        setConnection(true, "Live");
+        if (userLocation) publishUserLocation(userLocation);
+      });
       socket.on("disconnect", () => setConnection(false, "Offline"));
       socket.on("alert", (data) => {
         if (data.queue_status) {
@@ -2507,6 +2634,11 @@ function addChatMessage(text, sender, id = null) {
 
 function getCurrentLocation() {
   return new Promise((resolve) => {
+    if (userLocation) return resolve(userLocation);
+    if (typeof requestUserLocation === "function") {
+      requestUserLocation({ silent: true }).then(resolve).catch(() => resolve(null));
+      return;
+    }
     if (!navigator.geolocation) return resolve(null);
     navigator.geolocation.getCurrentPosition(
       (pos) => resolve({ lat: pos.coords.latitude, lng: pos.coords.longitude }),

@@ -2206,6 +2206,40 @@
       border-bottom: 0 !important;
     }
 
+    .user-location-marker {
+      position: relative;
+      display: block;
+      box-sizing: border-box;
+      width: 22px !important;
+      height: 22px !important;
+      margin-left: -11px !important;
+      margin-top: -11px !important;
+      border: 3px solid #ffffff;
+      border-radius: 999px;
+      background: #31d6c0;
+      box-shadow: 0 0 0 7px rgba(49, 214, 192, 0.22), 0 10px 24px rgba(0, 0, 0, 0.35);
+    }
+
+    .icon-action.loading {
+      border-color: rgba(49, 214, 192, 0.5);
+      color: var(--teal);
+    }
+
+    .user-location-marker::after {
+      content: "";
+      position: absolute;
+      inset: 4px;
+      border-radius: inherit;
+      background: #071011;
+      opacity: 0.32;
+    }
+
+    .user-location-accuracy {
+      stroke: rgba(49, 214, 192, 0.55);
+      stroke-width: 1.4;
+      fill: rgba(49, 214, 192, 0.12);
+    }
+
     .leaflet-popup-content-wrapper {
       border: 1px solid var(--border) !important;
       border-radius: var(--radius) !important;
