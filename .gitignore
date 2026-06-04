@@ -5,6 +5,7 @@ package-lock.json
 # Environment variables (contains secrets!)
 .env
 backend/.env
+ai_module/.env
 
 # Python
 ai_module/venv/

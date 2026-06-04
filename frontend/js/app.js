@@ -191,6 +191,19 @@
       );
     }
 
+    function getVisibleMapCameraCount() {
+      return Array.from(cameras.keys()).filter((cameraId) => {
+        const matchesRoute = !routeCameraIds || routeCameraIds.has(cameraId);
+        return matchesRoute && cameraMatchesMapIncidentFilter(cameraId);
+      }).length;
+    }
+
+    function updateMapEmptyState(visibleCount = getVisibleMapCameraCount()) {
+      const empty = document.getElementById("map-empty-filter");
+      if (!empty) return;
+      empty.hidden = activeMapIncidentFilter === "all" || visibleCount > 0;
+    }
+
     function maybeRepairMojibake(value) {
       const text = String(value ?? "");
       if (!looksMojibaked(text)) return text;
@@ -732,6 +745,7 @@
       cameras.forEach((_cam, cameraId) => updateCameraMarkerVisibility(cameraId));
       renderCameraList();
       updateMapFilterSummary();
+      if (activeMapIncidentFilter !== "all") renderTrafficHeatmap([]);
       const clearButton = document.getElementById("route-filter-clear");
       if (clearButton) clearButton.hidden = !routeCameraIds;
     }
@@ -755,6 +769,23 @@
       summary.textContent = `${visibleCount} camera ${labels[activeMapIncidentFilter] || "có sự cố"}`;
     }
 
+    function updateMapFilterSummary() {
+      const summary = document.getElementById("map-filter-count");
+      const visibleCount = getVisibleMapCameraCount();
+      updateMapEmptyState(visibleCount);
+      if (!summary) return;
+      if (activeMapIncidentFilter === "all") {
+        summary.textContent = routeCameraIds ? "Camera trong tuyến" : "Tất cả camera";
+        return;
+      }
+      const labels = {
+        traffic_jam: "tắc đường",
+        flood: "ngập",
+        fire: "cháy",
+      };
+      summary.textContent = `${visibleCount} camera ${labels[activeMapIncidentFilter] || "có sự cố"}`;
+    }
+
     function setMapIncidentFilter(filter) {
       activeMapIncidentFilter = ["all", "traffic_jam", "flood", "fire"].includes(filter) ? filter : "all";
       document.querySelectorAll("[data-map-incident-filter]").forEach((button) => {
@@ -763,6 +794,20 @@
         button.setAttribute("aria-pressed", isActive ? "true" : "false");
       });
       refreshCameraMarkerVisibility();
+      loadTrafficHeatmap();
+    }
+
+    function normalizeMapFilterLabels() {
+      const labels = {
+        all: "Tất cả",
+        traffic_jam: "Tắc đường",
+        flood: "Ngập",
+        fire: "Cháy",
+      };
+      document.querySelectorAll("[data-map-incident-filter]").forEach((button) => {
+        button.textContent = labels[button.dataset.mapIncidentFilter] || button.textContent;
+      });
+      updateMapFilterSummary();
     }
 
     function focusCamera(cameraId, zoom = 16) {
@@ -842,9 +887,13 @@
     function clearMarkerAlert(clearData) {
       activeAlerts.delete(activeAlertKey(clearData.camera_id, clearData.event_type));
       renderCameraAlertState(clearData.camera_id, { blink: false, openPopup: false });
+      const cam = cameras.get(clearData.camera_id);
+      const markerEl = cam?.marker?.getElement?.();
+      markerEl?.querySelector(".map-marker")?.classList.remove("marker-blink");
+      if (!getDominantAlertForCamera(clearData.camera_id)) cam?.marker?.closePopup?.();
       updateCameraMarkerVisibility(clearData.camera_id);
       updateMapFilterSummary();
-      updateIncidentFocus(clearData);
+      updateIncidentFocus(getLatestActiveAlert());
     }
 
     function refreshStatistics() {
@@ -2111,7 +2160,7 @@
     function renderTrafficHeatmap(points = []) {
       if (!trafficHeatLayer) return;
       trafficHeatLayer.clearLayers();
-      if (!trafficHeatVisible) return;
+      if (!trafficHeatVisible || activeMapIncidentFilter !== "all") return;
 
       points.forEach((point) => {
         const intensity = Math.max(0.1, Math.min(Number(point.intensity) || 0.1, 1));
@@ -2209,6 +2258,7 @@
 
     async function init() {
       applyTheme(getCurrentTheme(), { persist: false });
+      normalizeMapFilterLabels();
       renderEmptyAlerts();
       renderEmptyNews();
       updateClock();

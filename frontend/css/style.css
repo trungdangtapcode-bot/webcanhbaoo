@@ -1780,6 +1780,46 @@
       pointer-events: none;
     }
 
+    .map-empty-filter {
+      position: absolute;
+      z-index: 690;
+      top: 96px;
+      left: 50%;
+      width: min(360px, calc(100% - 36px));
+      transform: translateX(-50%);
+      display: grid;
+      gap: 6px;
+      padding: 14px 16px;
+      border: 1px solid rgba(246, 184, 75, 0.38);
+      border-radius: var(--radius);
+      background: rgba(16, 22, 29, 0.92);
+      color: var(--text);
+      text-align: center;
+      box-shadow: var(--shadow);
+      backdrop-filter: blur(14px);
+      pointer-events: auto;
+    }
+
+    .map-empty-filter[hidden] {
+      display: none;
+    }
+
+    .map-empty-filter strong {
+      font-size: 14px;
+      line-height: 1.2;
+    }
+
+    .map-empty-filter span {
+      color: var(--text-soft);
+      font-size: 12px;
+      line-height: 1.35;
+    }
+
+    html[data-theme="light"] .map-empty-filter {
+      background: rgba(255, 255, 255, 0.94);
+      border-color: rgba(213, 156, 38, 0.38);
+    }
+
     .toolbar-panel,
     .map-insight {
       border: 1px solid rgba(36, 48, 60, 0.85);
@@ -1833,8 +1873,9 @@
 
     .map-filter-panel {
       gap: 10px;
-      flex-wrap: wrap;
+      flex-wrap: nowrap;
       justify-content: center;
+      flex: 0 1 auto;
     }
 
     .map-filter-label {
@@ -1842,13 +1883,15 @@
       font-size: 12px;
       font-weight: 700;
       white-space: nowrap;
+      min-width: 92px;
+      text-align: right;
     }
 
     .map-filter-buttons {
       display: flex;
       align-items: center;
       gap: 6px;
-      flex-wrap: wrap;
+      flex-wrap: nowrap;
     }
 
     .map-filter-btn {
@@ -2776,6 +2819,20 @@
 
       .toolbar-panel {
         width: 100%;
+      }
+
+      .map-filter-panel,
+      .map-filter-buttons {
+        flex-wrap: wrap;
+      }
+
+      .map-filter-label {
+        min-width: 0;
+        text-align: left;
+      }
+
+      .map-empty-filter {
+        top: 150px;
       }
 
       .toolbar-title h2,

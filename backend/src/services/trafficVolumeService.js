@@ -25,6 +25,7 @@ const THRESHOLD_HIGH     = parsePositiveInt(process.env.VOLUME_THRESHOLD_HIGH,  
 const THRESHOLD_CRITICAL = parsePositiveInt(process.env.VOLUME_THRESHOLD_CRITICAL, 30);
 // Minimum interval between Socket.io emissions for the same camera (ms)
 const EMIT_COOLDOWN_MS   = parsePositiveInt(process.env.VOLUME_EMIT_COOLDOWN_MS,   60 * 1000);
+const HEATMAP_STALE_MS   = parsePositiveInt(process.env.VOLUME_HEATMAP_STALE_MS,    2 * 60 * 1000);
 
 const LEVELS = {
   NORMAL:   'NORMAL',
@@ -175,8 +176,14 @@ function getVolume(cameraId) {
 }
 
 function getHeatmapPoints() {
+  const now = Date.now();
   return getVolumes()
     .filter((camera) => camera.lat != null && camera.lng != null)
+    .filter((camera) => camera.level !== LEVELS.NORMAL)
+    .filter((camera) => {
+      const updatedAt = new Date(camera.lastUpdated).getTime();
+      return Number.isFinite(updatedAt) && now - updatedAt <= HEATMAP_STALE_MS;
+    })
     .map((camera) => {
       const levelWeight = {
         NORMAL: 0.15,

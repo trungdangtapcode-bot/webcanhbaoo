@@ -19,7 +19,7 @@ const WINDOW_DURATION_MS = 120 * 1000; // 120 seconds
 
 // Jam thresholds (can be overridden via env at startup)
 const JAM_SPEED_THRESHOLD   = Number(process.env.JAM_SPEED_THRESHOLD   ?? 5);
-const JAM_VEHICLE_THRESHOLD = Number(process.env.JAM_VEHICLE_THRESHOLD ?? 6);
+const JAM_VEHICLE_THRESHOLD = Number(process.env.JAM_VEHICLE_THRESHOLD ?? 20);
 // Fraction of frames in the window that must satisfy jam condition (0–1)
 const JAM_FRAME_RATIO       = Number(process.env.JAM_FRAME_RATIO       ?? 0.6);
 

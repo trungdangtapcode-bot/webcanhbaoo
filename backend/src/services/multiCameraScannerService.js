@@ -525,6 +525,27 @@ async function processCamera(camera, tickId) {
     published.push(await publishDetection(camera, detection, frame));
   }
 
+  const activeIncidentTypes = new Set(
+    detections
+      .filter((detection) => detection.active !== false && ['traffic_jam', 'fire', 'flood'].includes(detection.event_type))
+      .map((detection) => detection.event_type)
+  );
+  for (const eventType of ['traffic_jam', 'fire', 'flood']) {
+    if (activeIncidentTypes.has(eventType)) continue;
+    const clearResult = alertService.clearAlert(camera.camera_id, eventType, {
+      reason: 'scanner_no_detection',
+      timestamp: new Date(),
+      metadata: {
+        detector_url_configured: Boolean(state.config.detectorUrl),
+        scanner: {
+          concurrency: state.config.concurrency,
+          source: state.config.source,
+        },
+      },
+    });
+    if (clearResult.cleared) published.push({ cleared: true, event_type: eventType });
+  }
+
   // Record vehicle count for traffic volume tracking.
   // Use the traffic_jam detection vehicle_count if present, otherwise 0.
   const trafficDetection = detections.find((d) => d.event_type === 'traffic_jam' || d.event_type === 'traffic_volume');

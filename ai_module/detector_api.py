@@ -98,7 +98,7 @@ FLOOD_MAX_TEXTURE_SCORE = float(os.getenv("DETECTOR_FLOOD_MAX_TEXTURE_SCORE", "0
 FLOOD_MAX_EDGE_DENSITY = float(os.getenv("DETECTOR_FLOOD_MAX_EDGE_DENSITY", "0.18"))
 
 # ── Traffic thresholds ───────────────────────────────────────────────────────
-TRAFFIC_MIN_VEHICLES = int(os.getenv("DETECTOR_TRAFFIC_MIN_VEHICLES", "6"))
+TRAFFIC_MIN_VEHICLES = int(os.getenv("DETECTOR_TRAFFIC_MIN_VEHICLES", "21"))
 # Minimum vehicle density (vehicles per 10 000 px²) to confirm jam
 TRAFFIC_MIN_DENSITY = float(os.getenv("DETECTOR_TRAFFIC_MIN_DENSITY", "0.015"))
 # Displacement thresholds (pixels) for speed classification between frames
@@ -1009,7 +1009,7 @@ def detect_traffic(frame: np.ndarray, camera_id: str = "unknown") -> Dict[str, A
     # ─── Quyết định severity dựa trên temporal state ───
     if is_jammed:
         # Đã confirmed jam qua temporal analysis
-        if speed_class == "stopped" and vehicle_count >= 15:
+        if speed_class == "stopped" and vehicle_count >= TRAFFIC_MIN_VEHICLES:
             severity = "critical"
         elif speed_class == "stopped":
             severity = "high"
@@ -1369,11 +1369,13 @@ def verify_traffic_jam_with_ai(frame: np.ndarray, tracking_info: Dict[str, Any])
         answer = resp.json()["choices"][0]["message"]["content"].strip()
         data = json.loads(answer)
 
+        vehicle_count = int(tracking_info.get("vehicle_count", 0) or 0)
+        raw_is_jam = parse_ai_bool(data.get("is_jam", False))
         result = {
-            "is_jam": bool(data.get("is_jam", False)),
+            "is_jam": raw_is_jam and vehicle_count >= TRAFFIC_MIN_VEHICLES,
             "confidence": float(data.get("confidence", 0.5)),
             "road_occupancy": data.get("road_occupancy", None),
-            "reason": str(data.get("reason", "no_reason")),
+            "reason": str(data.get("reason", "no_reason")) if vehicle_count >= TRAFFIC_MIN_VEHICLES else "vehicle_count_below_threshold",
             "status": "ok",
         }
 
