@@ -1776,6 +1776,8 @@
       left: 18px;
       right: 18px;
       justify-content: space-between;
+      align-items: flex-start;
+      flex-wrap: wrap;
       gap: 14px;
       pointer-events: none;
     }
@@ -1844,6 +1846,10 @@
       padding: 10px 10px 10px 12px;
     }
 
+    .map-toolbar > .toolbar-panel:first-child {
+      flex: 0 1 auto;
+    }
+
     .toolbar-title {
       min-width: 0;
     }
@@ -1869,13 +1875,15 @@
       display: flex;
       align-items: center;
       gap: 8px;
+      flex: 0 0 auto;
     }
 
     .map-filter-panel {
       gap: 10px;
       flex-wrap: nowrap;
       justify-content: center;
-      flex: 0 1 auto;
+      flex: 1 1 340px;
+      max-width: 460px;
     }
 
     .map-filter-label {
@@ -1892,6 +1900,7 @@
       align-items: center;
       gap: 6px;
       flex-wrap: nowrap;
+      min-width: 0;
     }
 
     .map-filter-btn {
@@ -1943,6 +1952,7 @@
 
     .toolbar-metrics {
       display: flex;
+      flex: 0 0 auto;
       gap: 8px;
       margin-left: auto;
     }
@@ -2681,10 +2691,17 @@
       }
     }
 
-    @media (max-width: 1080px) {
+    @media (max-width: 1400px) {
+      .map-toolbar {
+        justify-content: flex-start;
+      }
+
       .toolbar-metrics {
         display: none;
       }
+    }
+
+    @media (max-width: 1080px) {
 
       .map-insight {
         display: none;

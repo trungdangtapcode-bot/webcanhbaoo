@@ -58,7 +58,7 @@ module.exports = {
       env: {
         HANOI_PROXY_HOST: '127.0.0.1',
         HANOI_PROXY_PORT: '5001',
-        HANOI_PROXY_FPS: '5',
+        HANOI_PROXY_FPS: '10',
         HANOI_PROXY_JPEG_QUALITY: '5',
         HANOI_PROXY_IDLE_SECONDS: '90',
         HANOI_PROXY_STALE_SECONDS: '20',
@@ -67,7 +67,7 @@ module.exports = {
       env_production: {
         HANOI_PROXY_HOST: '127.0.0.1',
         HANOI_PROXY_PORT: '5001',
-        HANOI_PROXY_FPS: '5',
+        HANOI_PROXY_FPS: '10',
         HANOI_PROXY_JPEG_QUALITY: '5',
         HANOI_PROXY_IDLE_SECONDS: '90',
         HANOI_PROXY_STALE_SECONDS: '20',
