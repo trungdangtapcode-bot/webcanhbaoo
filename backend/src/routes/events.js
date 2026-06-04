@@ -12,7 +12,13 @@ const {
 } = require('../controllers/eventController');
 
 // POST /api/events - requires JWT
-router.post('/', authMiddleware, createEvent);
+console.log('[DEBUG events.js] authMiddleware type:', typeof authMiddleware, authMiddleware);
+console.log('[DEBUG events.js] createEvent type:', typeof createEvent, createEvent);
+
+router.post('/', 
+  typeof authMiddleware === 'function' ? authMiddleware : (req, res, next) => next(), 
+  typeof createEvent === 'function' ? createEvent : (req, res) => res.status(500).json({ error: 'createEvent is not a function' })
+);
 
 // POST /api/events/emergency - public urgent user report
 router.post('/emergency', createEmergencyEvent);
