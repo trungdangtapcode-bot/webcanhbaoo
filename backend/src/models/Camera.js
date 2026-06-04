@@ -1,5 +1,4 @@
 const mongoose = require('mongoose');
-const crypto = require('crypto');
 
 const cameraSchema = new mongoose.Schema(
   {
@@ -12,29 +11,13 @@ const cameraSchema = new mongoose.Schema(
     },
     name: {
       type: String,
-      required: [true, 'Camera name is required'],
+      required: true,
       trim: true,
     },
     location: {
       lat: { type: Number, required: true },
       lng: { type: Number, required: true },
       address: { type: String, default: '' },
-    },
-    status: {
-      type: String,
-      enum: ['online', 'offline', 'maintenance'],
-      default: 'offline',
-      index: true,
-    },
-    last_seen: {
-      type: Date,
-      default: null,
-    },
-    // Hashed token — camera gửi lên plain token, ta so sánh với hash này
-    api_token_hash: {
-      type: String,
-      default: null,
-      select: false, // Không trả về hash raw trong query
     },
     max_red_light_time: {
       type: Number,
@@ -45,30 +28,49 @@ const cameraSchema = new mongoose.Schema(
       type: Boolean,
       default: true,
     },
-    // Người tạo/quản lý camera
-    created_by: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: 'User',
+    source: {
+      type: String,
+      default: 'local',
+      trim: true,
+      index: true,
+    },
+    external_id: {
+      type: String,
       default: null,
+      trim: true,
+    },
+    stream_type: {
+      type: String,
+      enum: ['proxy', 'snapshot', 'hls', 'mjpeg', 'wss_video'],
+      default: 'proxy',
+    },
+    stream_url: {
+      type: String,
+      default: null,
+      trim: true,
+    },
+    snapshot_url: {
+      type: String,
+      default: null,
+      trim: true,
+    },
+    metadata: {
+      type: mongoose.Schema.Types.Mixed,
+      default: {},
+    },
+    token_hash: {
+      type: String,
+      default: null,
+    },
+    created_at: {
+      type: Date,
+      default: Date.now,
     },
   },
   {
-    timestamps: true,
+    timestamps: false,
     versionKey: false,
   }
 );
-
-// ── Static method: Generate a random API token and return [plainToken, hash] ──
-cameraSchema.statics.generateApiToken = function () {
-  const plainToken = crypto.randomBytes(32).toString('hex'); // 64-char hex
-  const hash = crypto.createHash('sha256').update(plainToken).digest('hex');
-  return { plainToken, hash };
-};
-
-// ── Instance method: Verify an incoming plain token ──────────────────────────
-cameraSchema.methods.verifyToken = function (plainToken) {
-  const hash = crypto.createHash('sha256').update(plainToken).digest('hex');
-  return hash === this.api_token_hash;
-};
 
 module.exports = mongoose.model('Camera', cameraSchema);

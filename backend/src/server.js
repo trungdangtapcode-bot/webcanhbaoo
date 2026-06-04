@@ -9,8 +9,16 @@ const { Server } = require('socket.io');
 const app = require('./app');
 const { connectDatabase } = require('./config/database');
 const alertService = require('./services/alertService');
+const scannerService = require('./services/multiCameraScannerService');
+const trafficVolumeService = require('./services/trafficVolumeService');
 
 const PORT = process.env.PORT || 3000;
+
+function shouldAutostartScanner() {
+  if (process.env.SCANNER_AUTOSTART !== 'true') return false;
+  const pm2Instance = process.env.NODE_APP_INSTANCE;
+  return pm2Instance === undefined || pm2Instance === '0';
+}
 
 async function bootstrap() {
   // --- Connect MongoDB ---
@@ -26,7 +34,12 @@ async function bootstrap() {
   });
 
   // --- Redis adapter (optional — skip if REDIS_URL not set) ---
-  if (process.env.REDIS_URL) {
+  const redisUrl = process.env.REDIS_URL;
+  const redisDisabled =
+    process.env.DISABLE_REDIS === 'true' ||
+    ['0', 'false', 'off', 'disabled', 'none'].includes(String(redisUrl || '').toLowerCase());
+
+  if (redisUrl && !redisDisabled) {
     try {
       const { createRedisClients } = require('./config/redis');
       const { createAdapter } = require('@socket.io/redis-adapter');
@@ -42,6 +55,15 @@ async function bootstrap() {
 
   // --- Initialize alert service with io ---
   alertService.init(io);
+  trafficVolumeService.init(io);
+
+  if (shouldAutostartScanner()) {
+    scannerService.start().catch((err) => {
+      console.error('[Scanner] autostart failed:', err);
+    });
+  } else if (process.env.SCANNER_AUTOSTART === 'true') {
+    console.log(`[Scanner] autostart skipped in PM2 worker ${process.env.NODE_APP_INSTANCE}`);
+  }
 
   const { DEMO_CAMERAS } = require('./controllers/cameraController');
 

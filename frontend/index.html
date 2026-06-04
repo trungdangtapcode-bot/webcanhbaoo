@@ -1,2170 +1,582 @@
-﻿<!DOCTYPE html>
-<html lang="vi">
-
+<!DOCTYPE html>
+<html lang="en" class="wa-theme-default wa-palette-default wa-brand-blue wa-dark">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width,initial-scale=1.0" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="description" content="Smart Alert System - real-time traffic, flood, and fire detection dashboard" />
   <title>Smart Alert System</title>
-  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
-  <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.css" />
-  <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.Default.css" />
-  <style>
-    :root {
-      --bg: #0d1117;
-      --bg2: #161b22;
-      --bg3: #21262d;
-      --border: #30363d;
-      --text: #e6edf3;
-      --muted: #8b949e;
-      --fire: #ff4444;
-      --flood: #3b8fff;
-      --traffic: #ffb03b;
-      --green: #3bff6f;
-      --nav-w: 64px
+  <link rel="stylesheet" href="./vendor/leaflet/leaflet.css" />
+  <link rel="stylesheet" href="./vendor/leaflet-markercluster/MarkerCluster.css" />
+  <link rel="stylesheet" href="./vendor/leaflet-markercluster/MarkerCluster.Default.css" />
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@awesome.me/webawesome@3.7.0/dist/styles/themes/default.css" />
+  <script>
+    function syncWebAwesomeTheme(theme) {
+      const root = document.documentElement;
+      root.classList.add("wa-theme-default", "wa-palette-default", "wa-brand-blue");
+      root.classList.toggle("wa-light", theme === "light");
+      root.classList.toggle("wa-dark", theme !== "light");
     }
 
-    * {
-      margin: 0;
-      padding: 0;
-      box-sizing: border-box
-    }
-
-    body {
-      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol";
-      background: var(--bg);
-      color: var(--text);
-      height: 100vh;
-      overflow: hidden;
-      display: flex;
-      flex-direction: column
-    }
-
-    button {
-      cursor: pointer;
-      font-family: inherit
-    }
-
-    input,
-    select,
-    textarea {
-      font-family: inherit;
-      background: var(--bg3);
-      color: var(--text);
-      border: 1px solid var(--border);
-      border-radius: 6px;
-      padding: 8px 12px;
-      outline: none;
-      width: 100%
-    }
-
-    input:focus,
-    select:focus,
-    textarea:focus {
-      border-color: #58a6ff
-    }
-
-    table {
-      border-collapse: collapse;
-      width: 100%
-    }
-
-    th,
-    td {
-      padding: 10px 12px;
-      text-align: left;
-      border-bottom: 1px solid var(--border);
-      font-size: 13px
-    }
-
-    th {
-      background: var(--bg3);
-      font-size: 11px;
-      text-transform: uppercase;
-      letter-spacing: 1px;
-      color: var(--muted)
-    }
-
-    tr:hover td {
-      background: var(--bg2)
-    }
-
-    /* LOGIN */
-    #login-screen {
-      position: fixed;
-      inset: 0;
-      background: linear-gradient(135deg, #0d1117 0%, #161b22 100%);
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      z-index: 9999
-    }
-
-    .login-box {
-      background: var(--bg2);
-      border: 1px solid var(--border);
-      border-radius: 16px;
-      padding: 40px;
-      width: 360px;
-      box-shadow: 0 20px 60px rgba(0, 0, 0, 0.6)
-    }
-
-    .login-logo {
-      text-align: center;
-      font-size: 40px;
-      margin-bottom: 12px
-    }
-
-    .login-title {
-      text-align: center;
-      font-size: 22px;
-      font-weight: 700;
-      margin-bottom: 4px
-    }
-
-    .login-sub {
-      text-align: center;
-      font-size: 12px;
-      color: var(--muted);
-      margin-bottom: 28px
-    }
-
-    .login-tabs {
-      display: grid;
-      grid-template-columns: 1fr 1fr;
-      gap: 8px;
-      margin-bottom: 18px
-    }
-
-    .login-tab {
-      padding: 9px;
-      border: 1px solid var(--border);
-      background: var(--bg3);
-      color: var(--muted);
-      border-radius: 8px;
-      font-size: 13px;
-      font-weight: 700
-    }
-
-    .login-tab.active {
-      background: rgba(88, 166, 255, .15);
-      border-color: #58a6ff;
-      color: #58a6ff
-    }
-
-    .login-form {
-      display: none
-    }
-
-    .login-form.active {
-      display: block
-    }
-
-    .login-field {
-      margin-bottom: 16px
-    }
-
-    .login-field label {
-      display: block;
-      font-size: 12px;
-      color: var(--muted);
-      margin-bottom: 6px
-    }
-
-    .btn-primary {
-      width: 100%;
-      padding: 12px;
-      background: linear-gradient(135deg, #238636, #2ea043);
-      border: none;
-      border-radius: 8px;
-      color: #fff;
-      font-weight: 700;
-      font-size: 15px;
-      transition: opacity .2s
-    }
-
-    .btn-primary:hover {
-      opacity: .85
-    }
-
-    .auth-secondary {
-      width: 100%;
-      margin-top: 10px;
-      padding: 10px;
-      background: transparent;
-      border: 1px solid var(--border);
-      border-radius: 8px;
-      color: var(--muted);
-      font-weight: 600
-    }
-
-    .auth-secondary:hover {
-      background: var(--bg3);
-      color: var(--text)
-    }
-
-    .login-error {
-      background: rgba(255, 68, 68, .12);
-      border: 1px solid rgba(255, 68, 68, .3);
-      color: var(--fire);
-      padding: 10px 14px;
-      border-radius: 8px;
-      font-size: 13px;
-      margin-bottom: 16px;
-      display: none
-    }
-
-    /* APP LAYOUT */
-    #app {
-      display: none;
-      flex: 1;
-      flex-direction: column;
-      overflow: hidden
-    }
-
-    #app-header {
-      height: 48px;
-      background: var(--bg2);
-      border-bottom: 1px solid var(--border);
-      display: flex;
-      align-items: center;
-      padding: 0 16px;
-      gap: 12px;
-      flex-shrink: 0
-    }
-
-    .header-logo {
-      font-size: 18px
-    }
-
-    .header-title {
-      font-weight: 700;
-      font-size: 14px
-    }
-
-    .header-sep {
-      flex: 1
-    }
-
-    .header-user {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      font-size: 13px
-    }
-
-    .role-badge {
-      padding: 2px 8px;
-      border-radius: 10px;
-      font-size: 10px;
-      font-weight: 700;
-      text-transform: uppercase
-    }
-
-    .role-badge.admin {
-      background: rgba(255, 176, 59, .15);
-      color: var(--traffic)
-    }
-
-    .role-badge.operator {
-      background: rgba(59, 143, 255, .15);
-      color: var(--flood)
-    }
-
-    .role-badge.guest {
-      background: rgba(139, 148, 158, .15);
-      color: var(--muted)
-    }
-
-    .conn-dot {
-      width: 8px;
-      height: 8px;
-      border-radius: 50%;
-      background: var(--fire);
-      animation: pulse 2s infinite
-    }
-
-    .conn-dot.online {
-      background: var(--green)
-    }
-
-    @keyframes pulse {
-
-      0%,
-      100% {
-        opacity: 1
+    (function initStoredTheme() {
+      try {
+        const requestedTheme = new URLSearchParams(window.location.search).get("theme");
+        const savedTheme = localStorage.getItem("smart-alert-theme");
+        const prefersLight = window.matchMedia && window.matchMedia("(prefers-color-scheme: light)").matches;
+        const theme = requestedTheme === "light" || requestedTheme === "dark"
+          ? requestedTheme
+          : savedTheme || (prefersLight ? "light" : "dark");
+        document.documentElement.dataset.theme = theme;
+        syncWebAwesomeTheme(theme);
+      } catch (_err) {
+        document.documentElement.dataset.theme = "dark";
+        syncWebAwesomeTheme("dark");
       }
-
-      50% {
-        opacity: .4
+    })();
+    (function requireAuth() {
+      try {
+        if (!localStorage.getItem("smart-alert-auth-session")) {
+          window.location.replace("login.html");
+        }
+      } catch (_err) {
+        window.location.replace("login.html");
       }
-    }
-
-    .btn-logout {
-      background: rgba(255, 68, 68, .1);
-      border: 1px solid rgba(255, 68, 68, .2);
-      color: var(--fire);
-      padding: 5px 12px;
-      border-radius: 6px;
-      font-size: 12px;
-      font-weight: 600
-    }
-
-    .btn-logout:hover {
-      background: rgba(255, 68, 68, .25)
-    }
-
-    /* MAIN LAYOUT */
-    #layout {
-      display: flex;
-      flex: 1;
-      overflow: hidden
-    }
-
-    /* NAV */
-    #nav {
-      width: var(--nav-w);
-      background: var(--bg2);
-      border-right: 1px solid var(--border);
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      padding: 8px 0;
-      gap: 4px;
-      flex-shrink: 0
-    }
-
-    .nav-item {
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      gap: 3px;
-      padding: 10px 8px;
-      border-radius: 8px;
-      width: 52px;
-      cursor: pointer;
-      transition: background .2s;
-      border: 1px solid transparent
-    }
-
-    .nav-item:hover {
-      background: var(--bg3)
-    }
-
-    .nav-item.active {
-      background: rgba(88, 166, 255, .12);
-      border-color: rgba(88, 166, 255, .2)
-    }
-
-    .nav-icon {
-      font-size: 20px
-    }
-
-    .nav-label {
-      font-size: 9px;
-      color: var(--muted);
-      text-transform: uppercase;
-      letter-spacing: .5px
-    }
-
-    .nav-item.active .nav-label {
-      color: #58a6ff
-    }
-
-    /* CONTENT */
-    #content {
-      flex: 1;
-      overflow: hidden;
-      position: relative
-    }
-
-    .view {
-      display: none;
-      height: 100%;
-      overflow-y: auto;
-      overflow-x: hidden
-    }
-
-    .view.active {
-      display: flex;
-      flex-direction: column
-    }
-
-    .view-header {
-      padding: 16px 20px;
-      border-bottom: 1px solid var(--border);
-      background: var(--bg2);
-      display: flex;
-      align-items: center;
-      gap: 12px;
-      flex-shrink: 0
-    }
-
-    .view-title {
-      font-size: 15px;
-      font-weight: 700
-    }
-
-    .view-body {
-      flex: 1;
-      padding: 20px;
-      overflow-y: auto
-    }
-
-    /* MAP VIEW */
-    #view-map {
-      padding: 0
-    }
-
-    #view-map.active {
-      display: block;
-      position: relative
-    }
-
-    #map {
-      width: 100%;
-      height: 100%
-    }
-
-    /* SIDEBAR overlay for map */
-    #map-sidebar {
-      position: absolute;
-      top: 0;
-      left: 0;
-      width: 300px;
-      height: 100%;
-      background: var(--bg);
-      border-right: 1px solid var(--border);
-      z-index: 1000;
-      display: flex;
-      flex-direction: column
-    }
-
-    #map-sidebar-header {
-      padding: 12px 16px;
-      border-bottom: 1px solid var(--border)
-    }
-
-    #stats-row {
-      display: flex;
-      gap: 8px;
-      padding: 12px;
-      background: var(--bg2);
-      border-bottom: 1px solid var(--border)
-    }
-
-    .stat-card {
-      flex: 1;
-      background: var(--bg3);
-      border-radius: 8px;
-      padding: 8px;
-      text-align: center;
-      border: 1px solid var(--border)
-    }
-
-    .stat-v {
-      font-size: 20px;
-      font-weight: 700;
-      font-family: monospace
-    }
-
-    .stat-l {
-      font-size: 9px;
-      text-transform: uppercase;
-      letter-spacing: 1px;
-      color: var(--muted);
-      margin-top: 2px
-    }
-
-    .stat-card.fire .stat-v {
-      color: var(--fire)
-    }
-
-    .stat-card.flood .stat-v {
-      color: var(--flood)
-    }
-
-    .stat-card.traffic .stat-v {
-      color: var(--traffic)
-    }
-
-    #event-list-wrap {
-      flex: 1;
-      overflow-y: auto;
-      padding: 8px
-    }
-
-    #event-list-wrap::-webkit-scrollbar {
-      width: 4px
-    }
-
-    #event-list-wrap::-webkit-scrollbar-thumb {
-      background: var(--border);
-      border-radius: 4px
-    }
-
-    .ev-item {
-      display: flex;
-      gap: 10px;
-      padding: 10px;
-      border-radius: 8px;
-      margin-bottom: 4px;
-      background: var(--bg2);
-      border: 1px solid var(--border);
-      animation: slideIn .3s ease
-    }
-
-    .ev-item:hover {
-      background: var(--bg3);
-      cursor: pointer
-    }
-
-    .ev-icon {
-      font-size: 18px;
-      flex-shrink: 0;
-      margin-top: 1px
-    }
-
-    .ev-info {
-      flex: 1;
-      min-width: 0
-    }
-
-    .ev-type {
-      font-size: 11px;
-      font-weight: 700;
-      text-transform: uppercase
-    }
-
-    .ev-type.fire {
-      color: var(--fire)
-    }
-
-    .ev-type.flood {
-      color: var(--flood)
-    }
-
-    .ev-type.traffic_jam {
-      color: var(--traffic)
-    }
-
-    .ev-loc {
-      font-size: 11px;
-      color: var(--muted);
-      white-space: nowrap;
-      overflow: hidden;
-      text-overflow: ellipsis;
-      margin-top: 2px
-    }
-
-    .ev-time {
-      font-size: 10px;
-      color: #484f58;
-      margin-top: 2px;
-      font-family: monospace
-    }
-
-    .no-ev {
-      text-align: center;
-      padding: 30px;
-      color: var(--muted);
-      font-size: 13px
-    }
-
-    /* MAP controls */
-    #map-controls {
-      position: absolute;
-      top: 12px;
-      right: 12px;
-      z-index: 1001;
-      display: flex;
-      flex-direction: column;
-      gap: 8px
-    }
-
-    .map-btn {
-      background: var(--bg2);
-      border: 1px solid var(--border);
-      color: var(--text);
-      padding: 8px 12px;
-      border-radius: 8px;
-      font-size: 12px;
-      font-weight: 600;
-      transition: background .2s
-    }
-
-    .map-btn:hover,
-    .map-btn.active {
-      background: rgba(88, 166, 255, .15);
-      border-color: #58a6ff;
-      color: #58a6ff
-    }
-
-    /* TOAST */
-    #toast-wrap {
-      position: fixed;
-      top: 16px;
-      right: 16px;
-      z-index: 99999;
-      display: flex;
-      flex-direction: column;
-      gap: 8px;
-      pointer-events: none
-    }
-
-    .toast {
-      pointer-events: auto;
-      display: flex;
-      align-items: center;
-      gap: 12px;
-      padding: 14px 18px;
-      border-radius: 12px;
-      color: #fff;
-      font-size: 14px;
-      box-shadow: 0 8px 32px rgba(0, 0, 0, .5);
-      animation: toastIn .4s ease, toastOut .4s 4.6s ease forwards;
-      min-width: 300px;
-      max-width: 420px;
-      border: 1px solid rgba(255, 255, 255, .1)
-    }
-
-    .toast.fire {
-      background: linear-gradient(135deg, rgba(255, 68, 68, .9), rgba(180, 0, 0, .95))
-    }
-
-    .toast.flood {
-      background: linear-gradient(135deg, rgba(59, 143, 255, .9), rgba(0, 60, 180, .95))
-    }
-
-    .toast.traffic_jam,
-    .toast.traffic {
-      background: linear-gradient(135deg, rgba(255, 176, 59, .9), rgba(180, 110, 0, .95))
-    }
-
-    .toast-icon {
-      font-size: 26px
-    }
-
-    .toast-title {
-      font-weight: 700;
-      font-size: 14px
-    }
-
-    .toast-detail {
-      font-size: 11px;
-      opacity: .85;
-      margin-top: 2px
-    }
-
-    @keyframes toastIn {
-      from {
-        opacity: 0;
-        transform: translateX(60px)
-      }
-
-      to {
-        opacity: 1;
-        transform: translateX(0)
-      }
-    }
-
-    @keyframes toastOut {
-      from {
-        opacity: 1
-      }
-
-      to {
-        opacity: 0;
-        transform: translateY(-20px)
-      }
-    }
-
-    @keyframes slideIn {
-      from {
-        opacity: 0;
-        transform: translateY(-4px)
-      }
-
-      to {
-        opacity: 1;
-        transform: translateY(0)
-      }
-    }
-
-    /* STATS VIEW */
-    .kpi-grid {
-      display: grid;
-      grid-template-columns: repeat(4, 1fr);
-      gap: 16px;
-      margin-bottom: 24px
-    }
-
-    .kpi-card {
-      background: var(--bg2);
-      border: 1px solid var(--border);
-      border-radius: 12px;
-      padding: 20px
-    }
-
-    .kpi-val {
-      font-size: 32px;
-      font-weight: 800;
-      font-family: monospace
-    }
-
-    .kpi-label {
-      font-size: 12px;
-      color: var(--muted);
-      margin-top: 4px;
-      text-transform: uppercase;
-      letter-spacing: .8px
-    }
-
-    .kpi-card.fire .kpi-val {
-      color: var(--fire)
-    }
-
-    .kpi-card.flood .kpi-val {
-      color: var(--flood)
-    }
-
-    .kpi-card.traffic .kpi-val {
-      color: var(--traffic)
-    }
-
-    .kpi-card.green .kpi-val {
-      color: var(--green)
-    }
-
-    .charts-grid {
-      display: grid;
-      grid-template-columns: 1fr 1fr;
-      gap: 16px
-    }
-
-    .chart-card {
-      background: var(--bg2);
-      border: 1px solid var(--border);
-      border-radius: 12px;
-      padding: 20px
-    }
-
-    .chart-card h3 {
-      font-size: 13px;
-      font-weight: 600;
-      color: var(--muted);
-      margin-bottom: 16px;
-      text-transform: uppercase;
-      letter-spacing: .8px
-    }
-
-    .chart-card canvas {
-      max-height: 220px
-    }
-
-    .days-select {
-      padding: 6px 10px;
-      font-size: 12px;
-      width: auto
-    }
-
-    /* CAMERAS VIEW */
-    .toolbar {
-      display: flex;
-      gap: 10px;
-      align-items: center;
-      flex-wrap: wrap;
-      margin-bottom: 16px
-    }
-
-    .toolbar .flex1 {
-      flex: 1
-    }
-
-    .btn {
-      padding: 8px 16px;
-      border-radius: 8px;
-      font-size: 13px;
-      font-weight: 600;
-      border: 1px solid var(--border);
-      background: var(--bg3);
-      color: var(--text);
-      transition: all .2s
-    }
-
-    .btn:hover {
-      background: var(--bg2)
-    }
-
-    .btn.primary {
-      background: #238636;
-      border-color: #2ea043;
-      color: #fff
-    }
-
-    .btn.primary:hover {
-      background: #2ea043
-    }
-
-    .btn.danger {
-      background: rgba(255, 68, 68, .1);
-      border-color: rgba(255, 68, 68, .3);
-      color: var(--fire)
-    }
-
-    .btn.danger:hover {
-      background: rgba(255, 68, 68, .25)
-    }
-
-    .btn.sm {
-      padding: 5px 10px;
-      font-size: 11px
-    }
-
-    .status-dot {
-      display: inline-block;
-      width: 8px;
-      height: 8px;
-      border-radius: 50%;
-      margin-right: 5px
-    }
-
-    .status-dot.online {
-      background: var(--green)
-    }
-
-    .status-dot.offline {
-      background: var(--muted)
-    }
-
-    .status-dot.maintenance {
-      background: var(--traffic)
-    }
-
-    /* MODAL */
-    .modal-overlay {
-      position: fixed;
-      inset: 0;
-      background: rgba(0, 0, 0, .7);
-      z-index: 10000;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      animation: fadeIn .2s
-    }
-
-    .modal {
-      background: var(--bg2);
-      border: 1px solid var(--border);
-      border-radius: 16px;
-      padding: 28px;
-      width: 420px;
-      max-width: 90vw;
-      box-shadow: 0 20px 60px rgba(0, 0, 0, .6)
-    }
-
-    .modal h2 {
-      font-size: 17px;
-      font-weight: 700;
-      margin-bottom: 20px
-    }
-
-    .form-group {
-      margin-bottom: 14px
-    }
-
-    .form-group label {
-      display: block;
-      font-size: 12px;
-      color: var(--muted);
-      margin-bottom: 6px
-    }
-
-    .form-row {
-      display: grid;
-      grid-template-columns: 1fr 1fr;
-      gap: 10px
-    }
-
-    .modal-footer {
-      display: flex;
-      gap: 10px;
-      justify-content: flex-end;
-      margin-top: 20px
-    }
-
-    .token-box {
-      background: var(--bg);
-      border: 1px solid var(--green);
-      border-radius: 8px;
-      padding: 12px;
-      font-family: monospace;
-      font-size: 12px;
-      word-break: break-all;
-      color: var(--green);
-      margin: 12px 0
-    }
-
-    .warning-text {
-      font-size: 12px;
-      color: var(--traffic);
-      margin-top: 8px
-    }
-
-    @keyframes fadeIn {
-      from {
-        opacity: 0
-      }
-
-      to {
-        opacity: 1
-      }
-    }
-
-    /* HISTORY VIEW */
-    .filter-bar {
-      background: var(--bg2);
-      border: 1px solid var(--border);
-      border-radius: 12px;
-      padding: 16px;
-      margin-bottom: 16px;
-      display: grid;
-      grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
-      gap: 12px
-    }
-
-    .filter-bar label {
-      display: block;
-      font-size: 11px;
-      color: var(--muted);
-      margin-bottom: 5px
-    }
-
-    .pagination {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      margin-top: 16px;
-      justify-content: flex-end
-    }
-
-    .page-btn {
-      padding: 6px 12px;
-      border-radius: 6px;
-      font-size: 12px;
-      font-weight: 600;
-      border: 1px solid var(--border);
-      background: var(--bg3);
-      color: var(--text)
-    }
-
-    .page-btn:disabled {
-      opacity: .4;
-      cursor: not-allowed
-    }
-
-    .page-btn.active {
-      background: #58a6ff;
-      border-color: #58a6ff;
-      color: #000
-    }
-
-    .lv1 {
-      color: var(--traffic)
-    }
-
-    .lv2 {
-      color: var(--flood)
-    }
-
-    .lv3 {
-      color: var(--fire)
-    }
-
-    /* CHATBOT VIEW */
-    #chat-wrap {
-      display: flex;
-      flex-direction: column;
-      height: 100%
-    }
-
-    #chat-msgs {
-      flex: 1;
-      overflow-y: auto;
-      padding: 16px;
-      display: flex;
-      flex-direction: column;
-      gap: 12px
-    }
-
-    #chat-msgs::-webkit-scrollbar {
-      width: 4px
-    }
-
-    #chat-msgs::-webkit-scrollbar-thumb {
-      background: var(--border);
-      border-radius: 4px
-    }
-
-    .chat-msg {
-      max-width: 80%;
-      padding: 12px 16px;
-      border-radius: 12px;
-      font-size: 14px;
-      line-height: 1.5;
-      white-space: pre-wrap
-    }
-
-    .chat-msg.user {
-      background: #1f6feb;
-      color: #fff;
-      align-self: flex-end;
-      border-radius: 12px 12px 2px 12px
-    }
-
-    .chat-msg.bot {
-      background: var(--bg2);
-      border: 1px solid var(--border);
-      align-self: flex-start;
-      border-radius: 12px 12px 12px 2px
-    }
-
-    .chat-msg.loading {
-      opacity: .6;
-      animation: pulse 1s infinite
-    }
-
-    #chat-input-bar {
-      padding: 12px 16px;
-      border-top: 1px solid var(--border);
-      display: flex;
-      gap: 10px
-    }
-
-    #chat-input-bar input {
-      flex: 1
-    }
-
-    #chat-input-bar button {
-      padding: 8px 18px;
-      background: #238636;
-      border: none;
-      color: #fff;
-      border-radius: 8px;
-      font-weight: 600
-    }
-
-    /* USERS VIEW */
-    .user-role-select {
-      padding: 4px 8px;
-      font-size: 12px;
-      width: auto
-    }
-
-    /* LEVEL BADGES */
-    .lv-badge {
-      display: inline-block;
-      padding: 2px 8px;
-      border-radius: 10px;
-      font-size: 10px;
-      font-weight: 700;
-      text-transform: uppercase
-    }
-
-    .lv-badge.l1 {
-      background: rgba(255, 176, 59, .15);
-      color: var(--traffic)
-    }
-
-    .lv-badge.l2 {
-      background: rgba(59, 143, 255, .15);
-      color: var(--flood)
-    }
-
-    .lv-badge.l3 {
-      background: rgba(255, 68, 68, .15);
-      color: var(--fire)
-    }
-
-    /* Leaflet popup dark */
-    .leaflet-popup-content-wrapper {
-      background: var(--bg2) !important;
-      color: var(--text) !important;
-      border-radius: 12px !important;
-      border: 1px solid var(--border) !important;
-      box-shadow: 0 8px 32px rgba(0, 0, 0, .5) !important
-    }
-
-    .leaflet-popup-tip {
-      background: var(--bg2) !important
-    }
-
-    .popup-hdr {
-      font-size: 14px;
-      font-weight: 700;
-      margin-bottom: 4px
-    }
-
-    .popup-row {
-      font-size: 12px;
-      color: var(--muted);
-      margin-bottom: 3px
-    }
-
-    .marker-emoji {
-      font-size: 24px;
-      filter: drop-shadow(0 2px 6px rgba(0, 0, 0, .6));
-      cursor: pointer
-    }
-
-    .marker-cluster-small {
-      background: rgba(59, 255, 111, .3) !important
-    }
-
-    .marker-cluster-small div {
-      background: rgba(59, 255, 111, .6) !important;
-      color: #fff !important;
-      font-weight: 700
-    }
-
-    .marker-cluster-large {
-      background: rgba(255, 68, 68, .3) !important
-    }
-
-    .marker-cluster-large div {
-      background: rgba(255, 68, 68, .6) !important;
-      color: #fff !important;
-      font-weight: 700
-    }
-
-    @media(max-width:900px) {
-      .kpi-grid {
-        grid-template-columns: 1fr 1fr
-      }
-
-      .charts-grid {
-        grid-template-columns: 1fr
-      }
-
-      #map-sidebar {
-        width: 260px
-      }
-    }
-  </style>
+    })();
+  </script>
+  <link rel="stylesheet" href="./css/style.css">
 </head>
-
 <body>
-  <!-- LOGIN -->
-  <div id="login-screen">
-    <div class="login-box">
-      <div class="login-logo">🛡️</div>
-      <div class="login-title">Smart Alert System</div>
-      <div class="login-sub">Hệ thống cảnh báo thiên tai thời gian thực</div>
-      <div class="login-tabs">
-        <button class="login-tab active" id="login-tab-btn" type="button">Đăng nhập</button>
-        <button class="login-tab" id="signup-tab-btn" type="button">Đăng kí</button>
-      </div>
-      <div class="login-error" id="login-err"></div>
-      <div class="login-form active" id="login-form">
-        <div class="login-field"><label>Tên đăng nhập / Email</label><input id="l-user" type="text"
-            placeholder="username hoặc email" autocomplete="username" /></div>
-        <div class="login-field"><label>Mật khẩu</label><input id="l-pass" type="password" placeholder="••••••••"
-            autocomplete="current-password" /></div>
-        <button class="btn-primary" id="login-btn">Đăng nhập</button>
-        <button class="auth-secondary" id="guest-login-btn" type="button">Tiếp tục xem dashboard</button>
-      </div>
-      <div class="login-form" id="signup-form">
-        <div class="login-field"><label>Username</label><input id="s-user" type="text" placeholder="nguyen.van.a"
-            autocomplete="username" /></div>
-        <div class="login-field"><label>Email</label><input id="s-email" type="email" placeholder="a@example.com"
-            autocomplete="email" /></div>
-        <div class="login-field"><label>Họ và tên</label><input id="s-name" type="text" placeholder="Nguyễn Văn A"
-            autocomplete="name" /></div>
-        <div class="login-field"><label>Mật khẩu</label><input id="s-pass" type="password"
-            placeholder="Tối thiểu 8 ký tự" autocomplete="new-password" /></div>
-        <button class="btn-primary" id="signup-btn">Tạo tài khoản</button>
-        <button class="auth-secondary" id="guest-signup-btn" type="button">Để sau</button>
-      </div>
-    </div>
-  </div>
-  <!-- APP -->
-  <div id="app">
-    <header id="app-header">
-      <span class="header-logo">🛡️</span>
-      <span class="header-title">Smart Alert System</span>
-      <div class="header-sep"></div>
-      <span id="conn-dot" class="conn-dot" title="WebSocket"></span>
-      <div class="header-user">
-        <span id="hdr-name">...</span>
-        <span id="hdr-role" class="role-badge">...</span>
-      </div>
-      <button class="btn-logout" id="logout-btn">Đăng xuất</button>
-    </header>
-    <div id="layout">
-      <nav id="nav">
-        <div class="nav-item active" data-view="map"><span class="nav-icon">🗺️</span><span class="nav-label">Bản
-            đồ</span></div>
-        <div class="nav-item" data-view="stats"><span class="nav-icon">📊</span><span class="nav-label">Thống kê</span>
+  <div id="toast-container" class="toast-container"></div>
+  <div class="app-shell">
+    <aside class="sidebar" id="sidebar">
+      <header class="sidebar-header">
+        <div class="brand-row">
+          <div class="brand-lockup">
+            <div class="brand-mark" aria-hidden="true">
+              <svg viewBox="0 0 24 24" fill="none">
+                <path d="M12 3.2 19 6v5.2c0 4.5-2.8 8.4-7 9.6-4.2-1.2-7-5.1-7-9.6V6l7-2.8Z" stroke="currentColor" stroke-width="1.8" />
+                <path d="M8.6 12.2 10.8 14.4 15.7 9.4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" />
+              </svg>
+            </div>
+            <div>
+              <h1 class="brand-title"><span>Smart</span> <span>Alert</span></h1>
+              <div class="brand-subtitle">Traffic, flood, and fire detection</div>
+            </div>
+          </div>
+          <div class="header-actions">
+            <button class="theme-toggle" id="theme-toggle" type="button" title="Switch to light mode" aria-label="Switch to light mode" aria-pressed="false">
+              <svg class="theme-icon" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                <path class="theme-icon-sun" d="M12 7.2a4.8 4.8 0 1 0 0 9.6 4.8 4.8 0 0 0 0-9.6ZM12 2.8v2M12 19.2v2M4.2 4.2l1.4 1.4M18.4 18.4l1.4 1.4M2.8 12h2M19.2 12h2M4.2 19.8l1.4-1.4M18.4 5.6l1.4-1.4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" />
+                <path class="theme-icon-moon" d="M18.6 15.1A7.3 7.3 0 0 1 8.9 5.4 7.7 7.7 0 1 0 18.6 15.1Z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" />
+              </svg>
+            </button>
+            <div class="connection-badge disconnected" id="connection-badge">
+              <span class="connection-dot"></span>
+              <span id="connection-text">Connecting</span>
+            </div>
+          </div>
         </div>
-        <div class="nav-item" data-view="cameras"><span class="nav-icon">📷</span><span class="nav-label">Camera</span>
+
+        <div class="status-row">
+          <div class="status-tile">
+            <div class="status-label">Coverage</div>
+            <div class="status-value">City grid</div>
+          </div>
+          <div class="status-tile">
+            <div class="status-label">Last sync</div>
+            <div class="status-value" id="last-sync">--:--:--</div>
+          </div>
         </div>
-        <div class="nav-item" data-view="history"><span class="nav-icon">📜</span><span class="nav-label">Lịch sử</span>
+      </header>
+
+      <section class="stat-grid" aria-label="Alert summary">
+        <div class="stat-card">
+          <div class="stat-value" id="stat-cameras">0</div>
+          <div class="stat-label">Cameras</div>
         </div>
-        <div class="nav-item" data-view="chatbot"><span class="nav-icon">🤖</span><span class="nav-label">Chatbot</span>
+        <div class="stat-card fire">
+          <div class="stat-value" id="stat-fire">0</div>
+          <div class="stat-label">Fire</div>
         </div>
-        <div class="nav-item admin-only" data-view="users" style="display:none"><span class="nav-icon">👥</span><span
-            class="nav-label">Users</span></div>
+        <div class="stat-card flood">
+          <div class="stat-value" id="stat-flood">0</div>
+          <div class="stat-label">Flood</div>
+        </div>
+        <div class="stat-card traffic">
+          <div class="stat-value" id="stat-traffic">0</div>
+          <div class="stat-label">Traffic</div>
+        </div>
+      </section>
+
+      <section class="quick-action-section" aria-label="Emergency actions">
+        <button class="emergency-button" id="emergency-open" type="button">
+          <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+            <path d="M12 3.5 21 20H3L12 3.5Z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" />
+            <path d="M12 9v4.7" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" />
+            <path d="M12 17.2h.01" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" />
+          </svg>
+          Send emergency report
+        </button>
+      </section>
+
+      <nav class="workspace-nav" aria-label="Dashboard sections">
+        <button class="workspace-tab" type="button" data-workspace-tab="cameras">
+          <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+            <path d="M4 8.5A2.5 2.5 0 0 1 6.5 6h11A2.5 2.5 0 0 1 20 8.5v7A2.5 2.5 0 0 1 17.5 18h-11A2.5 2.5 0 0 1 4 15.5v-7Z" stroke="currentColor" stroke-width="1.7" />
+            <path d="M12 14.6a2.6 2.6 0 1 0 0-5.2 2.6 2.6 0 0 0 0 5.2Z" stroke="currentColor" stroke-width="1.7" />
+          </svg>
+          Cameras
+        </button>
+        <button class="workspace-tab" type="button" data-workspace-tab="overview">
+          <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+            <path d="M5 19V9M12 19V5M19 19v-7" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" />
+            <path d="M4 19h16" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" />
+          </svg>
+          Stats
+        </button>
+        <button class="workspace-tab" type="button" data-workspace-tab="alerts">
+          <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+            <path d="M12 3.5 21 20H3L12 3.5Z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" />
+            <path d="M12 9v4.7" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" />
+          </svg>
+          Alerts
+        </button>
+        <button class="workspace-tab" type="button" data-workspace-tab="nearby">
+          <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+            <path d="M12 21s6-4.7 6-10a6 6 0 1 0-12 0c0 5.3 6 10 6 10Z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" />
+            <path d="M12 13.2a2.2 2.2 0 1 0 0-4.4 2.2 2.2 0 0 0 0 4.4Z" stroke="currentColor" stroke-width="1.8" />
+          </svg>
+          Nearby
+        </button>
+        <button class="workspace-tab" type="button" data-workspace-tab="news">
+          <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+            <path d="M5 5.5h10.5A2.5 2.5 0 0 1 18 8v10.5H6.5A2.5 2.5 0 0 1 4 16V6.5a1 1 0 0 1 1-1Z" stroke="currentColor" stroke-width="1.7" />
+            <path d="M8 10h6M8 13h6M8 16h3" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" />
+          </svg>
+          News
+        </button>
+        <button class="workspace-tab" id="map-only-tab" type="button" data-workspace-tab="map">
+          <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+            <path d="M9 18 3.5 20.5v-15L9 3m0 15 6 3m-6-3V3m6 18 5.5-2.5v-15L15 6m0 15V6M15 6 9 3" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" />
+          </svg>
+          Map only
+        </button>
       </nav>
-      <main id="content">
-        <!-- MAP VIEW -->
-        <div class="view active" id="view-map">
-          <div id="map-sidebar">
-            <div id="map-sidebar-header">
-              <div style="font-size:13px;font-weight:700;margin-bottom:8px">🔔 Sự kiện gần đây</div>
-              <button class="btn sm admin-only" id="clear-btn" style="width:100%;display:none">🗑️ Xóa lịch sử</button>
-            </div>
-            <div id="stats-row">
-              <div class="stat-card fire">
-                <div class="stat-v" id="st-fire">0</div>
-                <div class="stat-l">Fire</div>
-              </div>
-              <div class="stat-card flood">
-                <div class="stat-v" id="st-flood">0</div>
-                <div class="stat-l">Flood</div>
-              </div>
-              <div class="stat-card traffic">
-                <div class="stat-v" id="st-traffic">0</div>
-                <div class="stat-l">Traffic</div>
-              </div>
-            </div>
-            <div id="event-list-wrap">
-              <div class="no-ev">Chưa có sự kiện.<br>Đang theo dõi...</div>
-            </div>
+
+      <section class="account-panel mt-auto" aria-label="Account">
+        <div class="account-profile">
+          <div class="account-avatar">
+            <svg viewBox="0 0 24 24" fill="none"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2M12 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8Z" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
           </div>
-          <div id="map-controls">
-            <button class="map-btn" id="heatmap-btn">🔥 Heatmap</button>
+          <div class="account-user">
+            <div class="account-user-name" id="account-user-name">Operator</div>
           </div>
-          <div id="map" style="position:absolute;top:0;left:300px;right:0;bottom:0"></div>
+          <button class="account-logout-icon" id="account-logout" type="button" title="Logout">
+            <svg viewBox="0 0 24 24" fill="none"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          </button>
         </div>
-        <!-- STATS VIEW -->
-        <div class="view" id="view-stats">
-          <div class="view-header">
-            <span style="font-size:20px">📊</span>
-            <span class="view-title">Thống Kê & Biểu Đồ</span>
-            <div class="header-sep"></div>
-            <select class="days-select" id="stats-days">
-              <option value="7">7 ngày</option>
-              <option value="14">14 ngày</option>
-              <option value="30">30 ngày</option>
+      </section>
+
+      <section class="section compact workspace-panel" id="analytics-section" data-workspace-panel="overview" hidden>
+        <div class="section-head">
+          <div class="section-title">
+            <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+              <path d="M5 19V9M12 19V5M19 19v-7" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" />
+              <path d="M4 19h16" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" />
+            </svg>
+            Incident stats
+          </div>
+          <span class="section-count" id="stats-range-label">24h</span>
+        </div>
+        <div class="analytics-panel">
+          <div class="range-tabs" id="stats-range-tabs">
+            <button class="range-btn active" type="button" data-range="24h">24h</button>
+            <button class="range-btn" type="button" data-range="7d">7d</button>
+            <button class="range-btn" type="button" data-range="30d">30d</button>
+            <button class="range-btn" type="button" data-range="all">All</button>
+            <button class="range-btn" type="button" data-range="custom">Custom</button>
+          </div>
+          <div class="custom-range" id="custom-range">
+            <label class="field">
+              <span class="field-label">From</span>
+              <input id="stats-from" type="datetime-local" />
+            </label>
+            <label class="field">
+              <span class="field-label">To</span>
+              <input id="stats-to" type="datetime-local" />
+            </label>
+          </div>
+          <div class="analytics-grid">
+            <div class="analytics-item">
+              <div class="analytics-value" id="analytics-total">0</div>
+              <div class="analytics-label">Total incidents</div>
+            </div>
+            <div class="analytics-item">
+              <div class="analytics-value" id="analytics-peak">None</div>
+              <div class="analytics-label">Most common</div>
+            </div>
+            <div class="analytics-item">
+              <div class="analytics-value" id="analytics-busiest">None</div>
+              <div class="analytics-label">Hotspot camera</div>
+            </div>
+          </div>
+          <div class="analytics-chart">
+            <div class="analytics-chart-head">
+              <span>Incident trend</span>
+              <span class="analytics-chart-subtitle" id="analytics-chart-subtitle">No events</span>
+            </div>
+            <svg id="incident-line-chart" viewBox="0 0 980 280" role="img" aria-label="Incident trend line chart"></svg>
+          </div>
+        </div>
+      </section>
+
+      <section class="section compact workspace-panel" id="nearby-section" data-workspace-panel="nearby" hidden>
+        <div class="section-head">
+          <div class="section-title">
+            <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+              <path d="M12 21s6-4.7 6-10a6 6 0 1 0-12 0c0 5.3 6 10 6 10Z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" />
+              <path d="M12 13.2a2.2 2.2 0 1 0 0-4.4 2.2 2.2 0 0 0 0 4.4Z" stroke="currentColor" stroke-width="1.8" />
+            </svg>
+            Nearby alerts
+          </div>
+          <span class="section-count" id="nearby-radius-label">3km</span>
+        </div>
+        <div class="nearby-panel">
+          <div class="radius-options" id="radius-options">
+            <button class="radius-btn" type="button" data-radius="500">500m</button>
+            <button class="radius-btn active" type="button" data-radius="3000">3km</button>
+            <button class="radius-btn" type="button" data-radius="5000">5km</button>
+          </div>
+          <div class="nearby-actions">
+            <button class="toggle-action" id="nearby-toggle" type="button">
+              Enable location alerts
+            </button>
+          </div>
+          <div class="nearby-status" id="nearby-status">
+            Off. Choose a radius and enable alerts to get notified near your position.
+          </div>
+        </div>
+      </section>
+
+      <section class="section compact news-section workspace-panel" id="news-section" data-workspace-panel="news" hidden>
+        <div class="section-head">
+          <div class="section-title">
+            <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+              <path d="M5 5.5h10.5A2.5 2.5 0 0 1 18 8v10.5H6.5A2.5 2.5 0 0 1 4 16V6.5a1 1 0 0 1 1-1Z" stroke="currentColor" stroke-width="1.7" />
+              <path d="M18 9h1a1 1 0 0 1 1 1v6.5a2 2 0 0 1-2 2M8 10h6M8 13h6M8 16h3" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" />
+            </svg>
+            Situation news
+          </div>
+          <div class="section-actions">
+            <span class="section-count" id="news-count">0</span>
+            <button class="icon-action" id="news-refresh" type="button" title="Refresh news" aria-label="Refresh news">
+              <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                <path d="M20 12a8 8 0 0 1-13.4 5.9M4 12A8 8 0 0 1 17.4 6.1" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" />
+                <path d="M17.5 3.7v3h-3M6.5 20.3v-3h3" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" />
+              </svg>
+            </button>
+          </div>
+        </div>
+        <div class="news-tabs" id="news-tabs">
+          <button class="news-tab active" type="button" data-news-category="all">All</button>
+          <button class="news-tab" type="button" data-news-category="storm_flood">Storm</button>
+          <button class="news-tab" type="button" data-news-category="fire">Fire</button>
+          <button class="news-tab" type="button" data-news-category="traffic">Traffic</button>
+        </div>
+        <div class="news-list" id="news-list"></div>
+      </section>
+
+      <section class="alert-section workspace-panel" id="alert-section" data-workspace-panel="alerts" hidden>
+        <div class="section-head">
+          <div class="section-title">
+            <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+              <path d="M12 3.5 21 20H3L12 3.5Z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" />
+              <path d="M12 9v4.7" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" />
+              <path d="M12 17.2h.01" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" />
+            </svg>
+            Alert log
+          </div>
+          <span class="section-count" id="alert-count">0</span>
+        </div>
+        <div class="filter-bar" id="filter-bar">
+          <button class="filter-btn active" data-filter="all" id="filter-all" type="button">
+            <span>All</span>
+          </button>
+          <button class="filter-btn" data-filter="traffic_jam" id="filter-traffic" type="button">
+            <span>Traffic</span>
+          </button>
+          <button class="filter-btn" data-filter="fire" id="filter-fire" type="button">
+            <span>Fire</span>
+          </button>
+          <button class="filter-btn" data-filter="flood" id="filter-flood" type="button">
+            <span>Flood</span>
+          </button>
+        </div>
+        <div class="alert-log" id="alert-log"></div>
+      </section>
+    </aside>
+
+    <main class="main-workspace">
+      <section class="camera-workspace workspace-panel" id="camera-workspace" data-workspace-panel="cameras">
+        <section class="section compact main-camera-panel" id="camera-section">
+          <div class="section-head">
+            <div class="section-title">
+              <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                <path d="M4 8.5A2.5 2.5 0 0 1 6.5 6h11A2.5 2.5 0 0 1 20 8.5v7A2.5 2.5 0 0 1 17.5 18h-11A2.5 2.5 0 0 1 4 15.5v-7Z" stroke="currentColor" stroke-width="1.7" />
+                <path d="M9.5 6 11 4h2l1.5 2" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" />
+                <path d="M12 14.6a2.6 2.6 0 1 0 0-5.2 2.6 2.6 0 0 0 0 5.2Z" stroke="currentColor" stroke-width="1.7" />
+              </svg>
+              Cameras
+            </div>
+            <div style="display:flex; gap:8px; align-items:center;">
+              <span class="section-count" id="camera-count">0</span>
+              <button class="camera-collapse-toggle" id="camera-collapse-btn" type="button" aria-label="Hide camera list" aria-expanded="true" title="Hide camera list">
+                <svg viewBox="0 0 24 24" fill="none" width="18" height="18">
+                  <path d="M6 15l6-6 6 6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                </svg>
+              </button>
+            </div>
+          </div>
+          <div class="camera-search">
+            <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+              <path d="m20 20-4.2-4.2M10.8 18a7.2 7.2 0 1 1 0-14.4 7.2 7.2 0 0 1 0 14.4Z" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" />
+            </svg>
+            <input id="camera-search" type="search" placeholder="Search camera or area" autocomplete="off" />
+          </div>
+          <div class="camera-source-tabs" id="camera-source-tabs" aria-label="Camera source">
+            <button class="camera-source-tab active" data-camera-source="hcm" type="button">
+              TP.HCM
+              <span>Snapshots</span>
+            </button>
+            <button class="camera-source-tab" data-camera-source="hanoi" type="button">
+              Hà Nội
+              <span>Realtime WSS</span>
+            </button>
+          </div>
+          <div class="camera-filters" id="camera-filters">
+            <button class="cam-filter-chip active" data-filter="all">All</button>
+            <button class="cam-filter-chip" data-filter="alerts">Alerts</button>
+            <button class="cam-filter-chip" data-filter="live">Live</button>
+            <button class="cam-filter-chip" data-filter="offline">Issues</button>
+            <button class="cam-filter-chip" data-filter="unchecked">Unchecked</button>
+          </div>
+          <div class="scanner-panel" id="scanner-panel">
+            <div class="scanner-row">
+              <div>
+                <div class="scanner-state" id="scanner-state">AI scanner idle</div>
+                <div class="scanner-detail" id="scanner-detail">Worker pool is ready.</div>
+              </div>
+              <button class="toggle-action" id="scanner-toggle" type="button">Start scan</button>
+            </div>
+            <div class="camera-health-row">
+              <div class="health-pill live">
+                <span id="health-live-count">0</span>
+                <small>Live</small>
+              </div>
+              <div class="health-pill offline">
+                <span id="health-offline-count">0</span>
+                <small>Issues</small>
+              </div>
+              <div class="health-pill unchecked">
+                <span id="health-unchecked-count">0</span>
+                <small>Unchecked</small>
+              </div>
+              <button class="toggle-action health-check-action" id="health-check" type="button">Check health</button>
+            </div>
+          </div>
+          <div class="camera-list" id="camera-list"></div>
+        </section>
+        <div class="map-container">
+          <div id="map"></div>
+      <div class="map-toolbar">
+        <div class="toolbar-panel">
+          <div class="toolbar-title">
+            <h2>Operations Map</h2>
+            <p id="operations-clock">--</p>
+          </div>
+          <div class="toolbar-actions">
+            <button class="icon-action" id="fit-map-btn" type="button" title="Fit all cameras" aria-label="Fit all cameras">
+              <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                <path d="M8 4H4v4M16 4h4v4M8 20H4v-4M16 20h4v-4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" />
+                <path d="M9 9h6v6H9V9Z" stroke="currentColor" stroke-width="1.8" />
+              </svg>
+            </button>
+            <button class="icon-action enabled" id="heatmap-toggle" type="button" title="Toggle traffic heatmap" aria-label="Toggle traffic heatmap" aria-pressed="true">
+              <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                <path d="M12 21s6-4.8 6-10a6 6 0 0 0-12 0c0 5.2 6 10 6 10Z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" />
+                <path d="M12 13.5a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5Z" fill="currentColor" opacity=".28" />
+              </svg>
+            </button>
+            <button class="icon-action" id="route-filter-clear" type="button" title="Show all cameras" aria-label="Show all cameras" hidden>
+              <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                <path d="M7 7h10M7 12h7M7 17h4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" />
+                <path d="m16 14 4 4m0-4-4 4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" />
+              </svg>
+            </button>
+            <button class="icon-action" id="map-only-toggle" type="button" title="Map only" aria-label="Map only" aria-pressed="false">
+              <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                <path d="M4 8V4h4M16 4h4v4M20 16v4h-4M8 20H4v-4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" />
+              </svg>
+            </button>
+          </div>
+        </div>
+        <div class="toolbar-panel toolbar-metrics">
+          <div class="metric-chip">
+            <div class="metric-value" id="metric-active">0</div>
+            <div class="metric-label">Active cams</div>
+          </div>
+          <div class="metric-chip">
+            <div class="metric-value" id="metric-last-alert">None</div>
+            <div class="metric-label">Active type</div>
+          </div>
+        </div>
+      </div>
+          <aside class="map-insight">
+        <div class="map-insight-title">
+          <span>Incident focus</span>
+          <span class="section-count" id="incident-focus-count">0</span>
+        </div>
+        <div class="map-insight-body" id="incident-focus-copy">
+          Waiting for incoming detections from camera modules.
+        </div>
+          </aside>
+        </div>
+      </section>
+      <!-- AI Chat Widget -->
+      <div class="chat-widget" id="chat-widget">
+        <button class="chat-toggle" id="chat-toggle" aria-label="Open AI Assistant">
+          <svg viewBox="0 0 24 24" fill="none" aria-hidden="true" width="24" height="24">
+            <path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+          </svg>
+        </button>
+        <div class="chat-panel" id="chat-panel" hidden>
+          <div class="chat-header">
+            <h3>Trợ lý Chỉ đường AI</h3>
+            <button class="chat-close" id="chat-close">&times;</button>
+          </div>
+          <div class="chat-body" id="chat-body">
+            <div class="chat-message ai">Xin chào! Tôi là trợ lý AI thông minh. Bạn muốn đi từ đâu đến đâu? (VD: "Tôi muốn đi từ Dinh Độc Lập đến Phố đi bộ Nguyễn Huệ").</div>
+          </div>
+          <div class="chat-footer">
+            <form id="chat-form">
+              <input type="text" id="chat-input" placeholder="Nhập câu hỏi hoặc điểm đến..." required autocomplete="off">
+              <button type="button" id="btn-force-route" title="Chỉ đường đến điểm này" class="route-btn">
+                <svg viewBox="0 0 24 24" fill="none" width="18" height="18"><path d="M9 20l-5.44-2.72A2 2 0 0 1 2.5 15.36L5 3l14 14-10 3z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+              </button>
+              <button type="submit">Gửi</button>
+            </form>
+          </div>
+        </div>
+      </div>
+    </main>
+  </div>
+
+  <div class="video-modal" id="emergency-modal" role="dialog" aria-modal="true" aria-labelledby="emergency-title">
+    <div class="modal-content compact-modal">
+      <div class="modal-header">
+        <div class="modal-title">
+          <strong id="emergency-title">Send emergency report</strong>
+          <span class="live-badge">Urgent incident</span>
+        </div>
+        <button class="close-modal" id="emergency-close" type="button" aria-label="Close emergency report">
+          <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+            <path d="M6.5 6.5 17.5 17.5M17.5 6.5 6.5 17.5" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" />
+          </svg>
+        </button>
+      </div>
+      <form class="modal-form" id="emergency-form">
+        <div class="modal-form-grid">
+          <label class="field">
+            <span class="field-label">Incident type</span>
+            <select id="emergency-type">
+              <option value="fire">Fire</option>
+              <option value="flood">Flood</option>
+              <option value="traffic_jam">Traffic jam</option>
             </select>
-            <button class="btn sm" id="refresh-stats-btn">🔄 Làm mới</button>
-          </div>
-          <div class="view-body" id="stats-body">
-            <div class="kpi-grid">
-              <div class="kpi-card green">
-                <div class="kpi-val" id="kpi-total">-</div>
-                <div class="kpi-label">Tổng sự kiện</div>
-              </div>
-              <div class="kpi-card fire">
-                <div class="kpi-val" id="kpi-critical">-</div>
-                <div class="kpi-label">🔴 Khẩn cấp</div>
-              </div>
-              <div class="kpi-card traffic">
-                <div class="kpi-val" id="kpi-unresolved">-</div>
-                <div class="kpi-label">⏳ Chưa xử lý</div>
-              </div>
-              <div class="kpi-card flood">
-                <div class="kpi-val" id="kpi-today">-</div>
-                <div class="kpi-label">Hôm nay</div>
-              </div>
-            </div>
-            <div class="charts-grid">
-              <div class="chart-card">
-                <h3>Sự kiện theo ngày</h3><canvas id="chart-daily"></canvas>
-              </div>
-              <div class="chart-card">
-                <h3>Phân loại sự cố</h3><canvas id="chart-type"></canvas>
-              </div>
-              <div class="chart-card">
-                <h3>Phân cấp cảnh báo</h3><canvas id="chart-level"></canvas>
-              </div>
-              <div class="chart-card">
-                <h3>Top Camera nhiều sự cố</h3><canvas id="chart-cam"></canvas>
-              </div>
-            </div>
-          </div>
+          </label>
+          <label class="field">
+            <span class="field-label">Camera fallback</span>
+            <select id="emergency-camera"></select>
+          </label>
         </div>
-        <!-- CAMERAS VIEW -->
-        <div class="view" id="view-cameras">
-          <div class="view-header">
-            <span style="font-size:20px">📷</span>
-            <span class="view-title">Quản Lý Camera</span>
-            <div class="header-sep"></div>
-            <button class="btn primary admin-only" id="add-cam-btn">+ Thêm Camera</button>
-          </div>
-          <div class="view-body">
-            <div class="toolbar">
-              <input id="cam-search" placeholder="🔍 Tìm theo tên hoặc ID..." style="width:240px" />
-              <select id="cam-filter-status" style="width:140px">
-                <option value="">Tất cả trạng thái</option>
-                <option value="online">Online</option>
-                <option value="offline">Offline</option>
-                <option value="maintenance">Bảo trì</option>
-              </select>
-            </div>
-            <div style="overflow-x:auto;border-radius:12px;border:1px solid var(--border)">
-              <table>
-                <thead>
-                  <tr>
-                    <th>ID</th>
-                    <th>Tên Camera</th>
-                    <th>Địa chỉ</th>
-                    <th>Trạng thái</th>
-                    <th>Last Seen</th>
-                    <th>Hành động</th>
-                  </tr>
-                </thead>
-                <tbody id="cam-tbody">
-                  <tr>
-                    <td colspan="6" style="text-align:center;padding:30px;color:var(--muted)">Đang tải...</td>
-                  </tr>
-                </tbody>
-              </table>
-            </div>
-          </div>
+        <label class="checkbox-row">
+          <input id="emergency-use-location" type="checkbox" checked />
+          <span>Use my current position when available, otherwise report through the selected camera.</span>
+        </label>
+        <label class="field">
+          <span class="field-label">Notes</span>
+          <textarea id="emergency-note" maxlength="500" placeholder="Optional details for operators"></textarea>
+        </label>
+        <div class="form-status" id="emergency-status">Ready to send.</div>
+        <div class="modal-actions">
+          <button class="secondary-action" id="emergency-cancel" type="button">Cancel</button>
+          <button class="primary-action" type="submit">
+            <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+              <path d="M4 12 20 4l-4 16-3.4-6.6L4 12Z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" />
+              <path d="m12.6 13.4 3.1-5.1" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" />
+            </svg>
+            Send report
+          </button>
         </div>
-        <!-- HISTORY VIEW -->
-        <div class="view" id="view-history">
-          <div class="view-header">
-            <span style="font-size:20px">📜</span>
-            <span class="view-title">Lịch Sử Sự Kiện</span>
-            <div class="header-sep"></div>
-            <button class="btn sm" id="export-btn">⬇️ Xuất CSV</button>
-          </div>
-          <div class="view-body">
-            <div class="filter-bar">
-              <div><label>Từ ngày</label><input type="datetime-local" id="h-from" /></div>
-              <div><label>Đến ngày</label><input type="datetime-local" id="h-to" /></div>
-              <div><label>Loại sự cố</label>
-                <select id="h-type">
-                  <option value="">Tất cả</option>
-                  <option value="fire">🔥 Hỏa hoạn</option>
-                  <option value="flood">🌊 Lũ lụt</option>
-                  <option value="traffic_jam">🚗 Giao thông</option>
-                </select>
-              </div>
-              <div><label>Mức độ</label>
-                <select id="h-level">
-                  <option value="">Tất cả</option>
-                  <option value="1">1 - Thông tin</option>
-                  <option value="2">2 - Cảnh báo</option>
-                  <option value="3">3 - Khẩn cấp</option>
-                </select>
-              </div>
-              <div><label>Trạng thái</label>
-                <select id="h-resolved">
-                  <option value="">Tất cả</option>
-                  <option value="false">Chưa xử lý</option>
-                  <option value="true">Đã xử lý</option>
-                </select>
-              </div>
-              <div style="display:flex;align-items:flex-end"><button class="btn primary" id="h-search-btn"
-                  style="width:100%">🔍 Tìm kiếm</button></div>
-            </div>
-            <div style="overflow-x:auto;border-radius:12px;border:1px solid var(--border)">
-              <table>
-                <thead>
-                  <tr>
-                    <th>Thời gian</th>
-                    <th>Loại</th>
-                    <th>Cấp</th>
-                    <th>Camera</th>
-                    <th>Địa điểm</th>
-                    <th>Tin cậy</th>
-                    <th>Trạng thái</th>
-                    <th>Hành động</th>
-                  </tr>
-                </thead>
-                <tbody id="hist-tbody">
-                  <tr>
-                    <td colspan="8" style="text-align:center;padding:30px;color:var(--muted)">Nhấn Tìm kiếm để tra cứu.
-                    </td>
-                  </tr>
-                </tbody>
-              </table>
-            </div>
-            <div class="pagination" id="hist-pagination"></div>
-          </div>
-        </div>
-        <!-- CHATBOT VIEW -->
-        <div class="view" id="view-chatbot">
-          <div class="view-header"><span style="font-size:20px">🤖</span><span class="view-title">Chatbot AI Hỗ Trợ Ứng
-              Phó</span></div>
-          <div id="chat-wrap">
-            <div id="chat-msgs">
-              <div class="chat-msg bot">👋 Xin chào! Tôi là AI hỗ trợ ứng phó của Smart Alert System.<br><br>Bạn có thể
-                hỏi tôi về:<br>• Tình hình sự cố hỏa hoạn, lũ lụt, giao thông<br>• Thống kê và báo cáo<br>• Các sự cố
-                chưa được xử lý<br>• Đề xuất hành động ứng phó</div>
-            </div>
-            <div id="chat-input-bar">
-              <input id="chat-input" placeholder="Nhập câu hỏi... (Enter để gửi)" autocomplete="off" />
-              <button id="chat-send">Gửi</button>
-            </div>
-          </div>
-        </div>
-        <!-- USERS VIEW (admin only) -->
-        <div class="view" id="view-users">
-          <div class="view-header">
-            <span style="font-size:20px">👥</span><span class="view-title">Quản Lý Người Dùng</span>
-            <div class="header-sep"></div>
-            <button class="btn primary" id="add-user-btn">+ Tạo tài khoản</button>
-          </div>
-          <div class="view-body">
-            <div style="overflow-x:auto;border-radius:12px;border:1px solid var(--border)">
-              <table>
-                <thead>
-                  <tr>
-                    <th>Username</th>
-                    <th>Email</th>
-                    <th>Họ tên</th>
-                    <th>Quyền</th>
-                    <th>Trạng thái</th>
-                    <th>Đăng nhập lần cuối</th>
-                    <th>Hành động</th>
-                  </tr>
-                </thead>
-                <tbody id="users-tbody">
-                  <tr>
-                    <td colspan="7" style="text-align:center;padding:30px;color:var(--muted)">Đang tải...</td>
-                  </tr>
-                </tbody>
-              </table>
-            </div>
-          </div>
-        </div>
-      </main>
+      </form>
     </div>
   </div>
-  <div id="toast-wrap"></div>
-  <!-- MODAL CONTAINER -->
-  <div id="modal-container"></div>
-  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-  <script src="https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
-  <script src="/socket.io/socket.io.js" onerror="console.warn('Socket.IO not loaded')"></script>
+
+  <div class="video-modal" id="video-modal" role="dialog" aria-modal="true" aria-labelledby="modal-cam-name">
+    <div class="modal-content">
+      <div class="modal-header">
+        <div class="modal-title">
+          <strong id="modal-cam-name">Camera Stream</strong>
+          <span class="live-badge">Live AI stream</span>
+        </div>
+        <button class="close-modal" type="button" onclick="closeVideoModal()" aria-label="Close stream">
+          <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+            <path d="M6.5 6.5 17.5 17.5M17.5 6.5 6.5 17.5" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" />
+          </svg>
+        </button>
+      </div>
+      <div class="video-shell">
+        <div class="stream-placeholder" id="stream-placeholder">
+          <div class="stream-placeholder-card">
+            <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+              <path d="M4 8.5A2.5 2.5 0 0 1 6.5 6h11A2.5 2.5 0 0 1 20 8.5v7A2.5 2.5 0 0 1 17.5 18h-11A2.5 2.5 0 0 1 4 15.5v-7Z" stroke="currentColor" stroke-width="1.8" />
+              <path d="M9.4 6 10.9 4h2.2l1.5 2" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" />
+              <path d="M12 14.6a2.6 2.6 0 1 0 0-5.2 2.6 2.6 0 0 0 0 5.2Z" stroke="currentColor" stroke-width="1.8" />
+            </svg>
+            <div class="stream-placeholder-title" id="stream-placeholder-title">Waiting for stream</div>
+            <div class="stream-placeholder-copy" id="stream-placeholder-copy">The AI video proxy will appear here when the camera feed is available.</div>
+          </div>
+        </div>
+        <img id="video-stream" src="" alt="AI processed camera stream" />
+      </div>
+      <div class="camera-history-panel" id="camera-history-panel">
+        <div class="camera-history-item">
+          <strong id="history-total">0</strong>
+          <span>24h alerts</span>
+        </div>
+        <div class="camera-history-item">
+          <strong id="history-traffic">0</strong>
+          <span>Traffic</span>
+        </div>
+        <div class="camera-history-item">
+          <strong id="history-volume">--</strong>
+          <span>Avg vehicles</span>
+        </div>
+        <div class="camera-history-item">
+          <strong id="history-stability">Unchecked</strong>
+          <span>Camera health</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="./vendor/leaflet/leaflet.js"></script>
+  <script src="./vendor/leaflet-markercluster/leaflet.markercluster.js"></script>
   <script>
-    'use strict';
-    /* ═══════════════════════════════════════════════════
-       AUTH MANAGER
-    ═══════════════════════════════════════════════════ */
-    const Auth = {
-      token: () => localStorage.getItem('jwt'),
-      user: () => { try { return JSON.parse(localStorage.getItem('user') || 'null'); } catch { return null; } },
-      save(token, user) { localStorage.setItem('jwt', token); localStorage.setItem('user', JSON.stringify(user)); },
-      clear() { localStorage.removeItem('jwt'); localStorage.removeItem('user'); },
-      isAdmin() { const u = this.user(); return u && u.role === 'admin'; },
-      headers() {
-        const headers = { 'Content-Type': 'application/json' };
-        if (this.token()) headers.Authorization = 'Bearer ' + this.token();
-        return headers;
-      }
-    };
-
-    /* ═══════════════════════════════════════════════════
-       API CLIENT
-    ═══════════════════════════════════════════════════ */
-    const API = {
-      async req(method, path, body) {
-        const opts = { method, headers: Auth.headers() };
-        if (body) opts.body = JSON.stringify(body);
-        const r = await fetch(path, opts);
-        if (r.status === 401 && Auth.token()) { Auth.clear(); initApp(); }
-        return r;
-      },
-      get: (p) => API.req('GET', p),
-      post: (p, b) => API.req('POST', p, b),
-      patch: (p, b) => API.req('PATCH', p, b),
-      delete: (p) => API.req('DELETE', p),
-      json: async (p) => { const r = await API.get(p); return r.json(); },
-    };
-
-    /* ═══════════════════════════════════════════════════
-       TOAST
-    ═══════════════════════════════════════════════════ */
-    function showToast(type, title, detail) {
-      const icons = { fire: '🔥', flood: '🌊', traffic_jam: '🚗', traffic: '🚗' };
-      const wrap = document.getElementById('toast-wrap');
-      const el = document.createElement('div');
-      el.className = 'toast ' + type;
-      el.innerHTML = `<span class="toast-icon">${icons[type] || '⚠️'}</span><div><div class="toast-title">${title}</div><div class="toast-detail">${detail}</div></div>`;
-      wrap.appendChild(el);
-      setTimeout(() => el.remove(), 5000);
-      if ('Notification' in window && Notification.permission === 'granted')
-        new Notification(title, { body: detail });
-    }
-
-    /* ═══════════════════════════════════════════════════
-       MODAL HELPERS
-    ═══════════════════════════════════════════════════ */
-    function openModal(html) {
-      const overlay = document.createElement('div');
-      overlay.className = 'modal-overlay';
-      overlay.innerHTML = `<div class="modal">${html}</div>`;
-      overlay.addEventListener('click', e => { if (e.target === overlay) overlay.remove(); });
-      document.getElementById('modal-container').appendChild(overlay);
-      return overlay;
-    }
-    function closeModal() {
-      document.querySelectorAll('.modal-overlay').forEach(m => m.remove());
-    }
-
-    /* ═══════════════════════════════════════════════════
-       NAVIGATION
-    ═══════════════════════════════════════════════════ */
-    function switchView(name) {
-      document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
-      document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
-      document.getElementById('view-' + name)?.classList.add('active');
-      document.querySelector(`.nav-item[data-view="${name}"]`)?.classList.add('active');
-      if (name === 'stats') StatsView.load();
-      if (name === 'cameras') CamerasView.load();
-      if (name === 'history') HistoryView.load();
-      if (name === 'users') UsersView.load();
-    }
-    document.querySelectorAll('.nav-item').forEach(item => {
-      item.addEventListener('click', () => switchView(item.dataset.view));
-    });
-
-    /* ═══════════════════════════════════════════════════
-       LOGIN
-    ═══════════════════════════════════════════════════ */
-    function showLoginError(message) {
-      const errEl = document.getElementById('login-err');
-      errEl.textContent = message;
-      errEl.style.display = 'block';
-    }
-    function clearLoginError() {
-      document.getElementById('login-err').style.display = 'none';
-    }
-    function setAuthMode(mode) {
-      const isSignup = mode === 'signup';
-      document.getElementById('login-form').classList.toggle('active', !isSignup);
-      document.getElementById('signup-form').classList.toggle('active', isSignup);
-      document.getElementById('login-tab-btn').classList.toggle('active', !isSignup);
-      document.getElementById('signup-tab-btn').classList.toggle('active', isSignup);
-      clearLoginError();
-    }
-    function hideAuthScreen() {
-      document.getElementById('login-screen').style.display = 'none';
-      clearLoginError();
-    }
-    function showAuthScreen(mode = 'login') {
-      setAuthMode(mode);
-      document.getElementById('login-screen').style.display = 'flex';
-    }
-    document.getElementById('login-tab-btn').addEventListener('click', () => setAuthMode('login'));
-    document.getElementById('signup-tab-btn').addEventListener('click', () => setAuthMode('signup'));
-    document.getElementById('guest-login-btn').addEventListener('click', hideAuthScreen);
-    document.getElementById('guest-signup-btn').addEventListener('click', hideAuthScreen);
-
-    document.getElementById('login-btn').addEventListener('click', async () => {
-      const username = document.getElementById('l-user').value.trim();
-      const password = document.getElementById('l-pass').value;
-      clearLoginError();
-      if (!username || !password) { showLoginError('Vui lòng nhập đầy đủ thông tin.'); return; }
-      try {
-        const r = await fetch('/api/auth/login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ username, password }) });
-        const data = await r.json();
-        if (!r.ok) { showLoginError(data.error || 'Đăng nhập thất bại.'); return; }
-        Auth.save(data.token, data.user);
-        initApp();
-      } catch (e) { showLoginError('Không thể kết nối server.'); }
-    });
-    document.getElementById('l-pass').addEventListener('keydown', e => { if (e.key === 'Enter') document.getElementById('login-btn').click(); });
-
-    document.getElementById('signup-btn').addEventListener('click', async () => {
-      const body = {
-        username: document.getElementById('s-user').value.trim(),
-        email: document.getElementById('s-email').value.trim(),
-        full_name: document.getElementById('s-name').value.trim(),
-        password: document.getElementById('s-pass').value,
-      };
-      clearLoginError();
-      if (!body.username || !body.email || !body.password) { showLoginError('Vui lòng nhập username, email và mật khẩu.'); return; }
-      if (body.password.length < 8) { showLoginError('Mật khẩu phải có ít nhất 8 ký tự.'); return; }
-      try {
-        const r = await fetch('/api/auth/signup', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
-        const data = await r.json();
-        if (!r.ok) { showLoginError(data.error || 'Đăng kí thất bại.'); return; }
-        Auth.save(data.token, data.user);
-        initApp();
-      } catch (e) { showLoginError('Không thể kết nối server.'); }
-    });
-    ['s-user', 's-email', 's-name', 's-pass'].forEach(id => {
-      document.getElementById(id).addEventListener('keydown', e => { if (e.key === 'Enter') document.getElementById('signup-btn').click(); });
-    });
-
-    document.getElementById('logout-btn').addEventListener('click', () => {
-      if (Auth.token()) {
-        Auth.clear();
-        initApp();
-        return;
-      }
-      showAuthScreen('login');
-    });
-
-    /* ═══════════════════════════════════════════════════
-       INIT APP
-    ═══════════════════════════════════════════════════ */
-    function initApp() {
-      const user = Auth.user();
-      hideAuthScreen();
-      document.getElementById('app').style.display = 'flex';
-      document.querySelectorAll('.admin-only').forEach(el => el.style.display = 'none');
-      document.getElementById('hdr-name').textContent = user ? (user.full_name || user.username) : 'Khách';
-      document.getElementById('hdr-role').textContent = user ? user.role : 'guest';
-      document.getElementById('hdr-role').className = 'role-badge ' + (user ? user.role : 'guest');
-      document.getElementById('logout-btn').textContent = user ? 'Đăng xuất' : 'Đăng nhập / Đăng kí';
-      if (user && user.role === 'admin') {
-        document.querySelectorAll('.admin-only').forEach(el => el.style.display = '');
-      }
-      if ((!user || user.role !== 'admin') && document.getElementById('view-users')?.classList.contains('active')) switchView('map');
-      if ('Notification' in window && Notification.permission === 'default') Notification.requestPermission();
-      MapView.init();
-      initSocket();
-    }
-
-    /* ══════════════════════════════════════════════════
-       MAP VIEW
-    ══════════════════════════════════════════════════ */
-    const MapView = {
-      map: null, cluster: null, heatLayer: null,
-      heatActive: false, markers: {}, stats: { fire: 0, flood: 0, traffic: 0 },
-      icons: { fire: '🔥', flood: '🌊', traffic_jam: '🚗', traffic: '🚗' },
-
-      init() {
-        if (this.map) {
-          setTimeout(() => this.map.invalidateSize(), 0);
-          return;
-        }
-        this.map = L.map('map', { zoomControl: false, attributionControl: false }).setView([11.9444, 108.4441], 13);
-        L.control.zoom({ position: 'topright' }).addTo(this.map);
-        L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', { maxZoom: 19, subdomains: 'abcd' }).addTo(this.map);
-        this.cluster = L.markerClusterGroup({ maxClusterRadius: 50, showCoverageOnHover: false });
-        this.map.addLayer(this.cluster);
-        if ('geolocation' in navigator) {
-          navigator.geolocation.getCurrentPosition(pos => {
-            const { latitude: lat, longitude: lng } = pos.coords;
-            this.map.setView([lat, lng], 14);
-            L.marker([lat, lng], { icon: L.divIcon({ html: '<span style="font-size:28px">📍</span>', className: '', iconSize: [28, 28], iconAnchor: [14, 14] }) })
-              .addTo(this.map).bindPopup('<b>📍 Vị trí hiện tại</b>');
-            if (window._socket) window._socket.emit('update-location', { camera_id: 'USB_CAM_001', lat, lng });
-          }, () => { }, { enableHighAccuracy: true });
-        }
-        this.loadExisting();
-        document.getElementById('clear-btn').addEventListener('click', () => this.clearAll());
-        document.getElementById('heatmap-btn').addEventListener('click', () => this.toggleHeatmap());
-      },
-
-      makeIcon(type) {
-        const em = this.icons[type] || '⚠️';
-        return L.divIcon({ html: `<span class="marker-emoji">${em}</span>`, className: '', iconSize: [28, 28], iconAnchor: [14, 14], popupAnchor: [0, -16] });
-      },
-
-      addEvent(evt) {
-        let type = evt.type || evt.event_type || 'traffic';
-        if (type === 'traffic_jam') type = 'traffic';
-        if (evt.lat && evt.lng) {
-          const m = L.marker([evt.lat, evt.lng], { icon: this.makeIcon(type) });
-          m.bindPopup(`<div class="popup-hdr">${this.icons[type] || '⚠️'} ${type.toUpperCase()}</div><div class="popup-row">📍 ${evt.location || evt.address || 'N/A'}</div><div class="popup-row">🕐 ${fmtTime(evt.timestamp || evt.createdAt)}</div>`, { maxWidth: 260 });
-          this.cluster.addLayer(m);
-          const id = evt._id || evt.id || Date.now();
-          this.markers[id] = m;
-        }
-        this.addToList(evt, type);
-        if (this.stats[type] !== undefined) { this.stats[type]++; document.getElementById('st-' + type).textContent = this.stats[type]; }
-      },
-
-      addToList(evt, type) {
-        const wrap = document.getElementById('event-list-wrap');
-        const placeholder = wrap.querySelector('.no-ev');
-        if (placeholder) placeholder.remove();
-        const div = document.createElement('div');
-        div.className = 'ev-item';
-        div.innerHTML = `<span class="ev-icon">${this.icons[type] || '⚠️'}</span><div class="ev-info"><div class="ev-type ${type}">${type}</div><div class="ev-loc">${evt.location || evt.address || evt.camera_id || 'Khu vực theo dõi'}</div><div class="ev-time">${fmtTime(evt.timestamp || evt.createdAt)}</div></div>`;
-        div.onclick = () => { if (evt.lat && evt.lng) { this.map.flyTo([evt.lat, evt.lng], 16); const id = evt._id || evt.id; if (id && this.markers[id]) this.markers[id].openPopup(); } };
-        div.style.cursor = evt.lat ? 'pointer' : 'default';
-        wrap.prepend(div);
-        while (wrap.children.length > 50) wrap.removeChild(wrap.lastChild);
-      },
-
-      async loadExisting() {
-        try {
-          const r = await API.json('/api/events?limit=100');
-          const evts = Array.isArray(r) ? r : (r.events || r.data || []);
-          evts.forEach(e => this.addEvent(e));
-        } catch { }
-      },
-
-      async clearAll() {
-        if (!Auth.isAdmin()) { showAuthScreen('login'); return; }
-        if (!confirm('Xóa toàn bộ lịch sử sự kiện?')) return;
-        try {
-          await API.delete('/api/events');
-          document.getElementById('event-list-wrap').innerHTML = '<div class="no-ev">Không có sự kiện nào.</div>';
-          this.cluster.clearLayers();
-          this.markers = {};
-          this.stats = { fire: 0, flood: 0, traffic: 0 };
-          ['fire', 'flood', 'traffic'].forEach(t => document.getElementById('st-' + t).textContent = '0');
-        } catch { }
-      },
-
-      async toggleHeatmap() {
-        const btn = document.getElementById('heatmap-btn');
-        if (this.heatActive) {
-          if (this.heatLayer) this.map.removeLayer(this.heatLayer);
-          this.heatActive = false;
-          btn.classList.remove('active');
-          return;
-        }
-        try {
-          const data = await API.json('/api/events/history?limit=500&page=1');
-          const evts = data.events || [];
-          const pts = evts.filter(e => e.location?.lat && e.location?.lng).map(e => [e.location.lat, e.location.lng, (e.level || 1) / 3]);
-          if (!window.L.heatLayer) {
-            const s = document.createElement('script');
-            s.src = 'https://unpkg.com/leaflet.heat@0.2.0/dist/leaflet-heat.js';
-            s.onload = () => { this.heatLayer = L.heatLayer(pts, { radius: 30, blur: 25, maxZoom: 17 }).addTo(this.map); this.heatActive = true; btn.classList.add('active'); };
-            document.head.appendChild(s);
-          } else {
-            this.heatLayer = L.heatLayer(pts, { radius: 30, blur: 25, maxZoom: 17 }).addTo(this.map);
-            this.heatActive = true; btn.classList.add('active');
-          }
-        } catch (e) { console.error(e); }
-      }
-    };
+    const socketBase = window.location.protocol === "file:" || ["4173", "5173"].includes(window.location.port)
+      ? "http://localhost:3000"
+      : "";
+    document.write('<script src="' + socketBase + '/socket.io/socket.io.js"><\/script>');
   </script>
-  <script>
-    /* ══════════════════════════════════════════════════
-       STATS VIEW
-    ══════════════════════════════════════════════════ */
-    const StatsView = {
-      charts: {},
-      async load() {
-        const days = document.getElementById('stats-days').value;
-        try {
-          const d = await API.json('/api/events/stats?days=' + days);
-          const s = d.summary || {};
-          document.getElementById('kpi-total').textContent = s.total || 0;
-          document.getElementById('kpi-critical').textContent = s.critical || 0;
-          document.getElementById('kpi-unresolved').textContent = s.unresolved || 0;
-          document.getElementById('kpi-today').textContent = s.today || 0;
-          this.renderDailyChart(d.by_day || [], d.period_days);
-          this.renderTypeChart(d.by_type || []);
-          this.renderLevelChart(d.by_level || []);
-          this.renderCamChart(d.top_cameras || []);
-        } catch (e) { console.error('[Stats]', e); }
-      },
-
-      destroyChart(id) { if (this.charts[id]) { this.charts[id].destroy(); delete this.charts[id]; } },
-
-      renderDailyChart(byDay, days) {
-        this.destroyChart('daily');
-        const allDays = [], fireData = [], floodData = [], trafficData = [];
-        const today = new Date();
-        for (let i = (days || 7) - 1; i >= 0; i--) {
-          const d = new Date(today); d.setDate(d.getDate() - i);
-          const key = d.toISOString().slice(0, 10);
-          allDays.push(key.slice(5));
-          const fDay = byDay.filter(r => r._id.day === key);
-          fireData.push(fDay.find(r => r._id.type === 'fire')?.count || 0);
-          floodData.push(fDay.find(r => r._id.type === 'flood')?.count || 0);
-          trafficData.push(fDay.find(r => r._id.type === 'traffic_jam')?.count || 0);
-        }
-        const ctx = document.getElementById('chart-daily').getContext('2d');
-        this.charts.daily = new Chart(ctx, {
-          type: 'bar', data: {
-            labels: allDays, datasets: [
-              { label: '🔥 Hỏa hoạn', data: fireData, backgroundColor: 'rgba(255,68,68,.7)', borderRadius: 4 },
-              { label: '🌊 Lũ lụt', data: floodData, backgroundColor: 'rgba(59,143,255,.7)', borderRadius: 4 },
-              { label: '🚗 Giao thông', data: trafficData, backgroundColor: 'rgba(255,176,59,.7)', borderRadius: 4 },
-            ]
-          }, options: { responsive: true, plugins: { legend: { labels: { color: '#e6edf3', boxWidth: 12 } } }, scales: { x: { ticks: { color: '#8b949e' }, grid: { color: '#21262d' } }, y: { ticks: { color: '#8b949e', stepSize: 1 }, grid: { color: '#21262d' } } } }
-        });
-      },
-
-      renderTypeChart(byType) {
-        this.destroyChart('type');
-        const labels = byType.map(r => ({ fire: '🔥 Hỏa hoạn', flood: '🌊 Lũ lụt', traffic_jam: '🚗 Giao thông' }[r._id] || r._id));
-        const data = byType.map(r => r.count);
-        const colors = byType.map(r => ({ fire: 'rgba(255,68,68,.8)', flood: 'rgba(59,143,255,.8)', traffic_jam: 'rgba(255,176,59,.8)' }[r._id] || '#666'));
-        const ctx = document.getElementById('chart-type').getContext('2d');
-        this.charts.type = new Chart(ctx, { type: 'doughnut', data: { labels, datasets: [{ data, backgroundColor: colors, borderWidth: 0 }] }, options: { responsive: true, plugins: { legend: { position: 'right', labels: { color: '#e6edf3', padding: 12 } } }, cutout: '65%' } });
-      },
-
-      renderLevelChart(byLevel) {
-        this.destroyChart('level');
-        const levels = [1, 2, 3];
-        const labels = ['Lv1 Thông tin', 'Lv2 Cảnh báo', 'Lv3 Khẩn cấp'];
-        const colors = ['rgba(255,176,59,.8)', 'rgba(59,143,255,.8)', 'rgba(255,68,68,.8)'];
-        const data = levels.map(l => byLevel.find(r => r._id === l)?.count || 0);
-        const ctx = document.getElementById('chart-level').getContext('2d');
-        this.charts.level = new Chart(ctx, { type: 'bar', data: { labels, datasets: [{ label: 'Số sự kiện', data, backgroundColor: colors, borderRadius: 6 }] }, options: { indexAxis: 'y', responsive: true, plugins: { legend: { display: false } }, scales: { x: { ticks: { color: '#8b949e', stepSize: 1 }, grid: { color: '#21262d' } }, y: { ticks: { color: '#e6edf3' }, grid: { color: '#21262d' } } } } });
-      },
-
-      renderCamChart(topCams) {
-        this.destroyChart('cam');
-        const ctx = document.getElementById('chart-cam').getContext('2d');
-        this.charts.cam = new Chart(ctx, { type: 'bar', data: { labels: topCams.map(c => c._id), datasets: [{ label: 'Sự kiện', data: topCams.map(c => c.count), backgroundColor: 'rgba(88,166,255,.7)', borderRadius: 6 }] }, options: { responsive: true, plugins: { legend: { display: false } }, scales: { x: { ticks: { color: '#8b949e' }, grid: { color: '#21262d' } }, y: { ticks: { color: '#8b949e', stepSize: 1 }, grid: { color: '#21262d' } } } } });
-      }
-    };
-    document.getElementById('stats-days').addEventListener('change', () => StatsView.load());
-    document.getElementById('refresh-stats-btn').addEventListener('click', () => StatsView.load());
-
-    /* ══════════════════════════════════════════════════
-       CAMERAS VIEW
-    ══════════════════════════════════════════════════ */
-    const CamerasView = {
-      data: [],
-      async load() {
-        try {
-          const d = await API.json('/api/cameras');
-          this.data = d.cameras || [];
-          this.render(this.data);
-        } catch (e) { console.error('[Cameras]', e); }
-      },
-      render(cams) {
-        const tbody = document.getElementById('cam-tbody');
-        if (!cams.length) { tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;padding:30px;color:var(--muted)">Không có camera nào.</td></tr>'; return; }
-        const isAdm = Auth.isAdmin();
-        tbody.innerHTML = cams.map(c => `
-      <tr>
-        <td style="font-family:monospace;font-size:12px">${c.camera_id}</td>
-        <td><b>${c.name}</b></td>
-        <td style="font-size:12px;color:var(--muted)">${c.location?.address || c.location?.lat?.toFixed(4) + ',' + c.location?.lng?.toFixed(4) || 'N/A'}</td>
-        <td><span class="status-dot ${c.status}"></span>${c.status}</td>
-        <td style="font-size:12px;color:var(--muted)">${c.last_seen ? fmtTime(c.last_seen) : 'Chưa kết nối'}</td>
-        <td>
-          ${isAdm ? `<button class="btn sm" onclick="CamerasView.editCam('${c.camera_id}')">✏️ Sửa</button>
-          <button class="btn sm danger" onclick="CamerasView.regenToken('${c.camera_id}')">🔑 Token</button>
-          <button class="btn sm danger" onclick="CamerasView.deleteCam('${c.camera_id}')">🗑️</button>` : '<span style="color:var(--muted);font-size:12px">Xem</span>'}
-        </td>
-      </tr>`).join('');
-      },
-      filter() {
-        const q = document.getElementById('cam-search').value.toLowerCase();
-        const st = document.getElementById('cam-filter-status').value;
-        this.render(this.data.filter(c =>
-          (!q || c.name.toLowerCase().includes(q) || c.camera_id.toLowerCase().includes(q)) &&
-          (!st || c.status === st)
-        ));
-      },
-      openAddModal() {
-        const overlay = openModal(`
-      <h2>➕ Thêm Camera Mới</h2>
-      <div class="form-group"><label>Camera ID *</label><input id="m-cid" placeholder="VD: CAM_001"/></div>
-      <div class="form-group"><label>Tên Camera *</label><input id="m-cname" placeholder="VD: Camera ngã tư A"/></div>
-      <div class="form-row">
-        <div class="form-group"><label>Vĩ độ (Lat) *</label><input id="m-lat" type="number" placeholder="11.9444"/></div>
-        <div class="form-group"><label>Kinh độ (Lng) *</label><input id="m-lng" type="number" placeholder="108.4441"/></div>
-      </div>
-      <div class="form-group"><label>Địa chỉ</label><input id="m-addr" placeholder="Số 1, đường ABC..."/></div>
-      <div class="modal-footer">
-        <button class="btn" onclick="closeModal()">Hủy</button>
-        <button class="btn primary" id="m-save-cam">Tạo Camera</button>
-      </div>`);
-        overlay.querySelector('#m-save-cam').onclick = async () => {
-          const body = {
-            camera_id: document.getElementById('m-cid').value.trim(), name: document.getElementById('m-cname').value.trim(),
-            location: { lat: parseFloat(document.getElementById('m-lat').value), lng: parseFloat(document.getElementById('m-lng').value), address: document.getElementById('m-addr').value.trim() }
-          };
-          if (!body.camera_id || !body.name || !body.location.lat || !body.location.lng) { alert('Vui lòng điền đầy đủ thông tin bắt buộc.'); return; }
-          const r = await API.post('/api/cameras', body); const d = await r.json();
-          if (!r.ok) { alert(d.error || 'Lỗi tạo camera'); return; }
-          closeModal();
-          openModal(`<h2>✅ Camera đã tạo thành công!</h2>
-        <p style="font-size:13px;color:var(--muted);margin-bottom:12px">Lưu API Token này ngay — sẽ không hiển thị lại!</p>
-        <div class="token-box">${d.api_token}</div>
-        <p class="warning-text">⚠️ Sao chép token này vào file .env của AI module: API_TOKEN=&lt;token&gt;</p>
-        <div class="modal-footer"><button class="btn primary" onclick="navigator.clipboard.writeText('${d.api_token}');alert('Đã copy!')">📋 Copy Token</button><button class="btn" onclick="closeModal();CamerasView.load()">Đóng</button></div>`);
-        };
-      },
-      async deleteCam(id) {
-        if (!confirm(`Xóa camera "${id}"?`)) return;
-        const r = await API.delete('/api/cameras/' + id); const d = await r.json();
-        if (r.ok) this.load(); else alert(d.error);
-      },
-      async regenToken(id) {
-        if (!confirm(`Tạo lại API token cho camera "${id}"? Token cũ sẽ hết hiệu lực ngay.`)) return;
-        const r = await API.post('/api/cameras/' + id + '/regenerate-token', {}); const d = await r.json();
-        if (!r.ok) { alert(d.error); return; }
-        openModal(`<h2>🔑 Token mới cho ${id}</h2>
-      <div class="token-box">${d.api_token}</div>
-      <p class="warning-text">⚠️ Cập nhật API_TOKEN trong .env của AI module!</p>
-      <div class="modal-footer"><button class="btn primary" onclick="navigator.clipboard.writeText('${d.api_token}');alert('Đã copy!')">📋 Copy</button><button class="btn" onclick="closeModal()">Đóng</button></div>`);
-      },
-      editCam(id) {
-        const cam = this.data.find(c => c.camera_id === id); if (!cam) return;
-        const overlay = openModal(`
-      <h2>✏️ Sửa Camera: ${id}</h2>
-      <div class="form-group"><label>Tên</label><input id="e-name" value="${cam.name}"/></div>
-      <div class="form-row">
-        <div class="form-group"><label>Lat</label><input id="e-lat" type="number" value="${cam.location?.lat || ''}"/></div>
-        <div class="form-group"><label>Lng</label><input id="e-lng" type="number" value="${cam.location?.lng || ''}"/></div>
-      </div>
-      <div class="form-group"><label>Địa chỉ</label><input id="e-addr" value="${cam.location?.address || ''}"/></div>
-      <div class="form-group"><label>Trạng thái</label>
-        <select id="e-status"><option ${cam.status === 'online' ? 'selected' : ''}>online</option><option ${cam.status === 'offline' ? 'selected' : ''}>offline</option><option ${cam.status === 'maintenance' ? 'selected' : ''}>maintenance</option></select>
-      </div>
-      <div class="form-group"><label>Active</label>
-        <select id="e-active"><option value="true" ${cam.active ? 'selected' : ''}>Kích hoạt</option><option value="false" ${!cam.active ? 'selected' : ''}>Vô hiệu</option></select>
-      </div>
-      <div class="modal-footer">
-        <button class="btn" onclick="closeModal()">Hủy</button>
-        <button class="btn primary" id="e-save">Lưu</button>
-      </div>`);
-        overlay.querySelector('#e-save').onclick = async () => {
-          const r = await API.patch('/api/cameras/' + id, {
-            name: document.getElementById('e-name').value, status: document.getElementById('e-status').value, active: document.getElementById('e-active').value === 'true',
-            location: { lat: parseFloat(document.getElementById('e-lat').value), lng: parseFloat(document.getElementById('e-lng').value), address: document.getElementById('e-addr').value }
-          });
-          const d = await r.json(); if (!r.ok) { alert(d.error); return; }
-          closeModal(); this.load();
-        };
-      }
-    };
-    document.getElementById('add-cam-btn')?.addEventListener('click', () => CamerasView.openAddModal());
-    document.getElementById('cam-search').addEventListener('input', () => CamerasView.filter());
-    document.getElementById('cam-filter-status').addEventListener('change', () => CamerasView.filter());
-  </script>
-  <script>
-    /* ══════════════════════════════════════════════════
-       HISTORY VIEW
-    ══════════════════════════════════════════════════ */
-    const HistoryView = {
-      currentPage: 1,
-
-      load(page) {
-        this.currentPage = page || 1;
-        const params = new URLSearchParams();
-        params.set('page', this.currentPage);
-        params.set('limit', 20);
-        const from = document.getElementById('h-from').value;
-        const to = document.getElementById('h-to').value;
-        const type = document.getElementById('h-type').value;
-        const level = document.getElementById('h-level').value;
-        const res = document.getElementById('h-resolved').value;
-        if (from) params.set('from', new Date(from).toISOString());
-        if (to) params.set('to', new Date(to).toISOString());
-        if (type) params.set('type', type);
-        if (level) params.set('level', level);
-        if (res) params.set('is_resolved', res);
-        API.json('/api/events/history?' + params.toString()).then(d => this.render(d)).catch(console.error);
-      },
-
-      render(d) {
-        const tbody = document.getElementById('hist-tbody');
-        const evts = d.events || [];
-        const lvLabels = { 1: 'Thông tin', 2: 'Cảnh báo', 3: 'Khẩn cấp' };
-        const typeIcons = { fire: '🔥', flood: '🌊', traffic_jam: '🚗' };
-        const canResolve = !!Auth.user();
-        if (!evts.length) { tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;padding:30px;color:var(--muted)">Không tìm thấy sự kiện nào.</td></tr>'; }
-        else {
-          tbody.innerHTML = evts.map(e => `
-        <tr>
-          <td style="font-size:12px;font-family:monospace;white-space:nowrap">${fmtTime(e.timestamp)}</td>
-          <td>${typeIcons[e.event_type] || '⚠️'} ${e.event_type}</td>
-          <td><span class="lv-badge l${e.level || 1}">Lv${e.level || 1} ${lvLabels[e.level] || ''}</span></td>
-          <td style="font-size:12px">${e.camera_id}</td>
-          <td style="font-size:12px;color:var(--muted)">${e.location?.address || (e.location?.lat ? e.location.lat.toFixed(4) + ',' + e.location.lng.toFixed(4) : 'N/A')}</td>
-          <td style="font-size:12px">${e.confidence ? (e.confidence * 100).toFixed(0) + '%' : '-'}</td>
-          <td>${e.is_resolved ? '<span style="color:var(--green)">✅ Xong</span>' : '<span style="color:var(--traffic)">⏳ Chờ</span>'}</td>
-          <td>${canResolve && !e.is_resolved ? `<button class="btn sm" onclick="HistoryView.resolve('${e._id}')">✅ Xử lý</button>` : ''}</td>
-        </tr>`).join('');
-        }
-        this.renderPagination(d.page, d.pages, d.total);
-      },
-
-      renderPagination(page, pages, total) {
-        const wrap = document.getElementById('hist-pagination');
-        if (!pages || pages <= 1) { wrap.innerHTML = `<span style="font-size:12px;color:var(--muted)">Tổng: ${total || 0} sự kiện</span>`; return; }
-        let html = `<span style="font-size:12px;color:var(--muted);margin-right:8px">Tổng: ${total} | Trang ${page}/${pages}</span>`;
-        html += `<button class="page-btn" onclick="HistoryView.load(1)" ${page <= 1 ? 'disabled' : ''}>«</button>`;
-        html += `<button class="page-btn" onclick="HistoryView.load(${page - 1})" ${page <= 1 ? 'disabled' : ''}>‹</button>`;
-        const start = Math.max(1, page - 2), end = Math.min(pages, page + 2);
-        for (let i = start; i <= end; i++) html += `<button class="page-btn ${i === page ? 'active' : ''}" onclick="HistoryView.load(${i})">${i}</button>`;
-        html += `<button class="page-btn" onclick="HistoryView.load(${page + 1})" ${page >= pages ? 'disabled' : ''}>›</button>`;
-        html += `<button class="page-btn" onclick="HistoryView.load(${pages})" ${page >= pages ? 'disabled' : ''}>»</button>`;
-        wrap.innerHTML = html;
-      },
-
-      async resolve(id) {
-        if (!Auth.user()) { showAuthScreen('login'); return; }
-        const r = await API.patch('/api/events/' + id + '/resolve', {});
-        if (r.ok) this.load(this.currentPage); else { const d = await r.json(); alert(d.error); }
-      },
-
-      exportCSV() {
-        const rows = [['Thời gian', 'Loại', 'Cấp', 'Camera ID', 'Địa điểm', 'Tin cậy', 'Đã xử lý']];
-        document.querySelectorAll('#hist-tbody tr').forEach(tr => {
-          const cells = [...tr.querySelectorAll('td')];
-          if (cells.length >= 7) rows.push(cells.slice(0, 7).map(td => '"' + td.innerText.replace(/"/g, '""') + '"'));
-        });
-        const blob = new Blob([rows.map(r => r.join(',')).join('\n')], { type: 'text/csv;charset=utf-8;' });
-        const a = document.createElement('a'); a.href = URL.createObjectURL(blob);
-        a.download = 'events_' + new Date().toISOString().slice(0, 10) + '.csv'; a.click();
-      }
-    };
-    document.getElementById('h-search-btn').addEventListener('click', () => HistoryView.load(1));
-    document.getElementById('export-btn').addEventListener('click', () => HistoryView.exportCSV());
-
-    /* ══════════════════════════════════════════════════
-       CHATBOT VIEW
-    ══════════════════════════════════════════════════ */
-    const ChatbotView = {
-      addMsg(role, text) {
-        const wrap = document.getElementById('chat-msgs');
-        const div = document.createElement('div');
-        div.className = 'chat-msg ' + role;
-        div.textContent = text;
-        wrap.appendChild(div);
-        wrap.scrollTop = wrap.scrollHeight;
-        return div;
-      },
-      async send() {
-        if (!Auth.user()) {
-          this.addMsg('bot', 'Vui lòng đăng nhập hoặc đăng kí để dùng chatbot AI.');
-          showAuthScreen('login');
-          return;
-        }
-        const inp = document.getElementById('chat-input');
-        const msg = inp.value.trim(); if (!msg) return;
-        inp.value = '';
-        this.addMsg('user', msg);
-        const loading = this.addMsg('bot', '⏳ Đang xử lý...');
-        loading.classList.add('loading');
-        try {
-          const r = await API.post('/api/chatbot/ask', { message: msg });
-          const d = await r.json();
-          loading.remove();
-          this.addMsg('bot', d.reply || d.error || 'Không có phản hồi.');
-        } catch (e) { loading.remove(); this.addMsg('bot', '❌ Lỗi kết nối: ' + e.message); }
-      }
-    };
-    document.getElementById('chat-send').addEventListener('click', () => ChatbotView.send());
-    document.getElementById('chat-input').addEventListener('keydown', e => { if (e.key === 'Enter') ChatbotView.send(); });
-
-    /* ══════════════════════════════════════════════════
-       USERS VIEW (admin only)
-    ══════════════════════════════════════════════════ */
-    const UsersView = {
-      async load() {
-        try {
-          const d = await API.json('/api/auth/users');
-          this.render(d.users || []);
-        } catch (e) { console.error('[Users]', e); }
-      },
-      render(users) {
-        const tbody = document.getElementById('users-tbody');
-        tbody.innerHTML = users.map(u => `
-      <tr>
-        <td><b>${u.username}</b></td>
-        <td style="font-size:12px">${u.email}</td>
-        <td style="font-size:12px">${u.full_name || '-'}</td>
-        <td><span class="role-badge ${u.role}">${u.role}</span></td>
-        <td>${u.is_active ? '<span style="color:var(--green)">✅ Active</span>' : '<span style="color:var(--muted)">⛔ Disabled</span>'}</td>
-        <td style="font-size:12px;color:var(--muted)">${u.last_login ? fmtTime(u.last_login) : 'Chưa đăng nhập'}</td>
-        <td>
-          <button class="btn sm" onclick="UsersView.toggleActive('${u._id}',${u.is_active})">${u.is_active ? '⛔ Vô hiệu' : '✅ Kích hoạt'}</button>
-          <select class="user-role-select" onchange="UsersView.changeRole('${u._id}',this.value)">
-            <option ${u.role === 'operator' ? 'selected' : ''} value="operator">Operator</option>
-            <option ${u.role === 'admin' ? 'selected' : ''} value="admin">Admin</option>
-          </select>
-        </td>
-      </tr>`).join('');
-      },
-      async toggleActive(id, current) {
-        const r = await API.patch('/api/auth/users/' + id, { is_active: !current });
-        if (r.ok) this.load();
-      },
-      async changeRole(id, role) {
-        if (!confirm(`Đổi quyền thành "${role}"?`)) return;
-        const r = await API.patch('/api/auth/users/' + id, { role });
-        if (!r.ok) { const d = await r.json(); alert(d.error); } else this.load();
-      },
-      openCreateModal() {
-        const overlay = openModal(`
-      <h2>➕ Tạo Tài Khoản Mới</h2>
-      <div class="form-row">
-        <div class="form-group"><label>Username *</label><input id="nu-user" placeholder="nguyen.van.a"/></div>
-        <div class="form-group"><label>Email *</label><input id="nu-email" type="email" placeholder="a@example.com"/></div>
-      </div>
-      <div class="form-group"><label>Họ và tên</label><input id="nu-name" placeholder="Nguyễn Văn A"/></div>
-      <div class="form-row">
-        <div class="form-group"><label>Mật khẩu *</label><input id="nu-pass" type="password" placeholder="Tối thiểu 8 ký tự"/></div>
-        <div class="form-group"><label>Quyền</label><select id="nu-role"><option value="operator">Operator</option><option value="admin">Admin</option></select></div>
-      </div>
-      <div class="modal-footer">
-        <button class="btn" onclick="closeModal()">Hủy</button>
-        <button class="btn primary" id="nu-save">Tạo tài khoản</button>
-      </div>`);
-        overlay.querySelector('#nu-save').onclick = async () => {
-          const body = {
-            username: document.getElementById('nu-user').value.trim(), email: document.getElementById('nu-email').value.trim(),
-            password: document.getElementById('nu-pass').value, full_name: document.getElementById('nu-name').value.trim(), role: document.getElementById('nu-role').value
-          };
-          if (!body.username || !body.email || !body.password) { alert('Vui lòng điền đầy đủ thông tin bắt buộc.'); return; }
-          const r = await API.post('/api/auth/register', body); const d = await r.json();
-          if (!r.ok) { alert(d.error); return; }
-          closeModal(); this.load();
-          showToast('flood', 'Tạo tài khoản thành công', `@${body.username} (${body.role})`);
-        };
-      }
-    };
-    document.getElementById('add-user-btn')?.addEventListener('click', () => UsersView.openCreateModal());
-
-    /* ══════════════════════════════════════════════════
-       SOCKET.IO (real-time)
-    ══════════════════════════════════════════════════ */
-    function initSocket() {
-      if (typeof io === 'undefined') return;
-      if (window._socket) return;
-      try {
-        const socket = io({ transports: ['websocket', 'polling'] });
-        window._socket = socket;
-        const dot = document.getElementById('conn-dot');
-        socket.on('connect', () => { dot.classList.add('online'); dot.title = 'WebSocket: Connected'; });
-        socket.on('disconnect', () => { dot.classList.remove('online'); dot.title = 'WebSocket: Disconnected'; });
-        socket.on('alert', data => handleRealtime(data));
-        socket.on('new-event', data => handleRealtime(data));
-      } catch (e) { console.warn('[Socket]', e); }
-    }
-
-    function handleRealtime(data) {
-      MapView.addEvent(data);
-      let type = data.type || data.event_type || 'traffic';
-      if (type === 'traffic_jam') type = 'traffic';
-      const titles = { fire: '🔥 PHÁT HIỆN HỎA HOẠN!', flood: '🌊 CẢNH BÁO LŨ LỤT!', traffic: '🚗 ÙN TẮC GIAO THÔNG' };
-      showToast(data.type || data.event_type || 'traffic', titles[type] || '⚠️ CẢNH BÁO', '📍 ' + (data.location || data.address || data.camera_id || 'Khu vực theo dõi'));
-      if (data.level === 3) {
-        try { new Audio('data:audio/wav;base64,UklGRnoGAABXQVZFZm10IBAAAA').play().catch(() => { }); } catch { }
-      }
-    }
-
-    /* ══════════════════════════════════════════════════
-       UTILS
-    ══════════════════════════════════════════════════ */
-    function fmtTime(str) {
-      try {
-        const d = new Date(str);
-        return d.toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit', second: '2-digit' }) + ' ' + d.toLocaleDateString('vi-VN');
-      } catch { return str || ''; }
-    }
-
-    /* ══════════════════════════════════════════════════
-       BOOT
-    ══════════════════════════════════════════════════ */
-    initApp();
-  </script>
+  <script src="./js/app.js?v=20260603-3"></script>
 </body>
-
 </html>

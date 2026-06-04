@@ -1,0 +1,122 @@
+name: Deploy to VPS
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+concurrency:
+  group: production-vps
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v5
+
+      - name: Deploy on VPS
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USERNAME }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          script_stop: true
+          command_timeout: 45m
+          script: |
+            set -Eeuo pipefail
+            set -x # Enable debugging to see which command fails
+
+            wait_for_url() {
+              local name="$1"
+              local url="$2"
+              local attempts="${3:-30}"
+              local delay="${4:-2}"
+              for i in $(seq 1 "$attempts"); do
+                if curl --fail --silent --show-error "$url" >/dev/null; then
+                  echo "$name is healthy."
+                  return 0
+                fi
+                echo "Waiting for $name ($i/$attempts)..."
+                sleep "$delay"
+              done
+              echo "$name did not become healthy: $url" >&2
+              return 1
+            }
+
+            APP_DIR="${{ secrets.VPS_APP_DIR }}"
+            if [ -z "$APP_DIR" ]; then
+              APP_DIR="$HOME/webcanhbaoo"
+            fi
+            cd "$APP_DIR"
+            mkdir -p .deploy
+
+            echo "Fetching latest main..."
+            OLD_REV="$(git rev-parse HEAD 2>/dev/null || true)"
+            git fetch origin main 2>&1
+            git reset --hard origin/main 2>&1
+            NEW_REV="$(git rev-parse HEAD)"
+
+            echo "Installing backend dependencies..."
+            cd "$APP_DIR/backend"
+            NEED_NPM_INSTALL=false
+            if [ ! -d node_modules ]; then
+              NEED_NPM_INSTALL=true
+            elif [ -z "$OLD_REV" ]; then
+              NEED_NPM_INSTALL=true
+            elif ! git diff --quiet "$OLD_REV" "$NEW_REV" -- package-lock.json; then
+              NEED_NPM_INSTALL=true
+            fi
+
+            if [ "$NEED_NPM_INSTALL" = "true" ]; then
+              echo "Running npm install..."
+              npm ci || { echo "npm ci failed, falling back to npm install"; npm install; }
+            else
+              echo "Backend dependencies unchanged; skipping npm ci."
+            fi
+
+            echo "Preparing Hanoi proxy Python environment..."
+            cd "$APP_DIR/ai_module"
+            if [ ! -x venv/bin/python ]; then
+              python3 -m venv venv
+            fi
+            REQ_HASH="$(sha256sum requirements.txt | awk '{print $1}')"
+            OLD_REQ_HASH="$(cat "$APP_DIR/.deploy/ai_requirements.sha256" 2>/dev/null || true)"
+            if [ "$REQ_HASH" != "$OLD_REQ_HASH" ] || ! ./venv/bin/python -c "import flask, imageio_ffmpeg, websockets, cv2, numpy, ultralytics" >/dev/null 2>&1; then
+              ./venv/bin/python -m pip install --disable-pip-version-check --upgrade pip
+              ./venv/bin/pip install --disable-pip-version-check -r requirements.txt
+              echo "$REQ_HASH" > "$APP_DIR/.deploy/ai_requirements.sha256"
+            else
+              echo "AI Python dependencies unchanged; skipping pip install."
+            fi
+
+            echo "Reloading PM2 services..."
+            cd "$APP_DIR/backend"
+            mkdir -p logs
+            AI_MODULE_PYTHON="$APP_DIR/ai_module/venv/bin/python" \
+              pm2 startOrReload ecosystem.config.js --env production --update-env
+            pm2 save
+
+            echo "Cleaning old Event documents..."
+            EVENT_RETENTION_DAYS="${EVENT_RETENTION_DAYS:-7}" \
+              node scripts/db_maintenance.js --delete-events-older-than-days="${EVENT_RETENTION_DAYS:-7}" --execute \
+              || echo "Event cleanup skipped."
+
+            echo "Checking backend health..."
+            wait_for_url "backend" "http://127.0.0.1:3000/api/health" 30 2
+
+            echo "Checking Hanoi proxy health..."
+            wait_for_url "Hanoi proxy" "http://127.0.0.1:5001/health" 30 2
+
+            echo "Checking AI detector health..."
+            if ! wait_for_url "AI detector" "http://127.0.0.1:5055/health" 20 3; then
+              echo "AI detector is not healthy yet. Recent PM2 logs:"
+              pm2 logs ai-detector-api --lines 80 --nostream || true
+              echo "AI detector health warning only; PM2 will keep restarting it."
+            fi
+
+            echo "Deployment completed."
