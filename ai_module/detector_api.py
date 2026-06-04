@@ -75,6 +75,8 @@ AI_FIRE_MIN_CONFIDENCE = float(os.getenv("DETECTOR_AI_FIRE_MIN_CONFIDENCE", "0.5
 AI_FLOOD_MIN_CONFIDENCE = float(os.getenv("DETECTOR_AI_FLOOD_MIN_CONFIDENCE", "0.60"))
 OPENCV_INCIDENT_FALLBACK = os.getenv("DETECTOR_OPENCV_INCIDENT_FALLBACK", "false").lower() == "true"
 OPENCV_FIRE_SAFETY_NET = os.getenv("DETECTOR_OPENCV_FIRE_SAFETY_NET", "true").lower() == "true"
+FIRE_REQUIRE_AI_VERIFICATION = os.getenv("DETECTOR_FIRE_REQUIRE_AI_VERIFICATION", "true").lower() == "true"
+FIRE_ALLOW_LOCAL_FALLBACK = os.getenv("DETECTOR_FIRE_ALLOW_LOCAL_FALLBACK", "false").lower() == "true"
 
 # ── Fire thresholds ──────────────────────────────────────────────────────────
 MIN_FIRE_RATIO = float(os.getenv("DETECTOR_FIRE_RATIO", "0.025"))
@@ -126,6 +128,8 @@ FIRE_YOLO_CONF = float(os.getenv("DETECTOR_FIRE_YOLO_CONF", "0.35"))
 FIRE_YOLO_IOU = float(os.getenv("DETECTOR_FIRE_YOLO_IOU", "0.45"))
 FIRE_YOLO_IMG_SIZE = int(os.getenv("DETECTOR_FIRE_YOLO_IMG_SIZE", "640"))
 FIRE_YOLO_CLASSES = {"fire", "smoke"}
+FIRE_YOLO_MIN_BOX_AREA_RATIO = float(os.getenv("DETECTOR_FIRE_YOLO_MIN_BOX_AREA_RATIO", "0.0025"))
+FIRE_YOLO_IGNORE_TOP_RATIO = float(os.getenv("DETECTOR_FIRE_YOLO_IGNORE_TOP_RATIO", "0.10"))
 
 logging.basicConfig(
     level=logging.INFO,
@@ -493,6 +497,9 @@ def detect_fire_yolo(frame: np.ndarray, camera_id: str = "unknown") -> Dict[str,
     detections: List[Dict[str, Any]] = []
     class_counts: Dict[str, int] = defaultdict(int)
     confidences: List[float] = []
+    frame_h, frame_w = frame.shape[:2]
+    frame_area = float(max(1, frame_h * frame_w))
+    ignored_detections = 0
     for result in results:
         names = getattr(result, "names", getattr(yolo, "names", {}))
         for box in result.boxes:
@@ -502,15 +509,22 @@ def detect_fire_yolo(frame: np.ndarray, camera_id: str = "unknown") -> Dict[str,
                 continue
             conf = float(box.conf[0])
             x1, y1, x2, y2 = [round(float(v), 2) for v in box.xyxy[0].tolist()]
+            area_ratio = max(0.0, (x2 - x1) * (y2 - y1)) / frame_area
+            if area_ratio < FIRE_YOLO_MIN_BOX_AREA_RATIO or y2 < frame_h * FIRE_YOLO_IGNORE_TOP_RATIO:
+                ignored_detections += 1
+                continue
             detections.append({
                 "label": label,
                 "confidence": round(conf, 3),
                 "box": [x1, y1, x2, y2],
+                "area_ratio": round(area_ratio, 5),
             })
             class_counts[label] += 1
             confidences.append(conf)
 
     if not detections:
+        if ignored_detections:
+            log.info("Fire YOLO ignored %d tiny/overlay candidates at %s", ignored_detections, camera_id)
         return None
 
     max_conf = max(confidences)
@@ -531,6 +545,9 @@ def detect_fire_yolo(frame: np.ndarray, camera_id: str = "unknown") -> Dict[str,
             "fire_yolo_conf": FIRE_YOLO_CONF,
             "fire_yolo_iou": FIRE_YOLO_IOU,
             "fire_yolo_imgsz": FIRE_YOLO_IMG_SIZE,
+            "fire_yolo_min_box_area_ratio": FIRE_YOLO_MIN_BOX_AREA_RATIO,
+            "fire_yolo_ignore_top_ratio": FIRE_YOLO_IGNORE_TOP_RATIO,
+            "ignored_detections": ignored_detections,
             "primary_label": primary_label,
             "class_counts": dict(class_counts),
             "detections": detections[:20],
@@ -1130,10 +1147,11 @@ def ai_local_context(incident_type: str, local_result: Dict[str, Any]) -> str:
 
 
 def verify_incident_with_ai(frame: np.ndarray, incident_type: str, local_result: Dict[str, Any]) -> Dict[str, Any]:
+    default_verified = incident_type != "fire"
     default_result = {
-        "is_verified": True,
+        "is_verified": default_verified,
         "confidence": local_result.get("confidence", 0.8),
-        "reason": "ai_unavailable_default_yes",
+        "reason": "ai_unavailable_default_no_for_fire" if incident_type == "fire" else "ai_unavailable_default_yes",
         "status": "unavailable",
     }
 
@@ -1481,15 +1499,16 @@ def detect(
                 ai_conf = ai_verify.get("confidence", 0.8)
                 fire_result["confidence"] = round(max(local_conf * 0.6 + ai_conf * 0.4, 0.65), 3)
                 detections.append(fire_result)
-            elif strong_local_fire:
+            elif strong_local_fire and FIRE_ALLOW_LOCAL_FALLBACK and not FIRE_REQUIRE_AI_VERIFICATION:
                 fire_result["metadata"]["fallback_reason"] = "ai_unavailable"
                 fire_result["metadata"]["local_fallback"] = True
                 detections.append(fire_result)
             else:
                 log.info(
-                    "Skipping weak fire candidate because AI is unavailable (camera=%s, conf=%.2f).",
+                    "Skipping fire candidate because AI is unavailable or required (camera=%s, conf=%.2f, status=%s).",
                     camera_id,
                     fire_result.get("confidence", 0.0),
+                    ai_status,
                 )
         else:
             log.info("AI provider rejected the fire (reason: %s).", ai_verify["reason"])
@@ -1633,6 +1652,9 @@ class DetectorHandler(BaseHTTPRequestHandler):
                 "fire_yolo_conf": FIRE_YOLO_CONF,
                 "fire_yolo_iou": FIRE_YOLO_IOU,
                 "fire_yolo_imgsz": FIRE_YOLO_IMG_SIZE,
+                "fire_yolo_min_box_area_ratio": FIRE_YOLO_MIN_BOX_AREA_RATIO,
+                "fire_require_ai_verification": FIRE_REQUIRE_AI_VERIFICATION,
+                "fire_allow_local_fallback": FIRE_ALLOW_LOCAL_FALLBACK,
                 "fire_yolo_classes": sorted(FIRE_YOLO_CLASSES),
                 "ai_provider": AI_PROVIDER,
                 "ai_endpoint": AI_ENDPOINT,
