@@ -102,10 +102,15 @@ jobs:
             echo "Reloading PM2 services..."
             cd "$APP_DIR/backend"
             mkdir -p logs
-            pm2 delete node-backend ai-detector >/dev/null 2>&1 || true
+            # Delete ALL managed processes so PM2 picks up structural config
+            # changes (instances, exec_mode) that startOrReload ignores.
+            pm2 delete all >/dev/null 2>&1 || true
+            # Truncate logs so health-check diagnostics show only this deploy
+            : > logs/error.log
+            : > logs/out.log
             GROQ_API_KEY="$GROQ_API_KEY" \
               AI_MODULE_PYTHON="$APP_DIR/ai_module/venv/bin/python" \
-              pm2 startOrReload ecosystem.config.js --env production --update-env
+              pm2 start ecosystem.config.js --env production
             pm2 save
 
             echo "Cleaning old Event documents..."
