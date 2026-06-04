@@ -1006,6 +1006,11 @@ def detect_traffic(frame: np.ndarray, camera_id: str = "unknown") -> Dict[str, A
         jam_counter, TRAFFIC_JAM_CONFIRM_FRAMES, matched_count, is_jammed,
     )
 
+    # ─── Bypass temporal tracking for static demo images ───
+    if camera_id == "uploaded_image_demo" and vehicle_count >= TRAFFIC_MIN_VEHICLES and vehicle_density >= TRAFFIC_MIN_DENSITY:
+        is_jammed = True
+        speed_class = "stopped"
+
     # ─── Quyết định severity dựa trên temporal state ───
     if is_jammed:
         # Đã confirmed jam qua temporal analysis

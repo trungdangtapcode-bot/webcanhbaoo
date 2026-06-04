@@ -243,7 +243,7 @@
   }
 
   function shouldShowDetection(item) {
-    return item.event_type !== "traffic_volume";
+    return true; // Always show detections in demo, including traffic_volume
   }
 
   function detectionClass(type) {
