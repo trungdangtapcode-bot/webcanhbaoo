@@ -1,13 +1,19 @@
 const express = require('express');
 const router = express.Router();
 const Camera = require('../models/Camera');
+const { isDatabaseConnected } = require('../config/database');
 const { authMiddleware, roleMiddleware } = require('../middleware/auth');
+const { DEMO_CAMERAS } = require('../controllers/cameraController');
 
 // ─────────────────────────────────────────────────────────────────────────────
 // GET /api/cameras — Lấy danh sách camera
 // ─────────────────────────────────────────────────────────────────────────────
 router.get('/', async (req, res) => {
   try {
+    if (!isDatabaseConnected()) {
+      return res.json({ total: DEMO_CAMERAS.length, cameras: DEMO_CAMERAS, demo: true });
+    }
+
     const { status, active } = req.query;
     const filter = {};
     if (status) filter.status = status;
@@ -28,6 +34,12 @@ router.get('/', async (req, res) => {
 // ─────────────────────────────────────────────────────────────────────────────
 router.get('/:id', async (req, res) => {
   try {
+    if (!isDatabaseConnected()) {
+      const camera = DEMO_CAMERAS.find((item) => item.camera_id === req.params.id);
+      if (!camera) return res.status(404).json({ error: 'Camera not found' });
+      return res.json(camera);
+    }
+
     const camera = await Camera.findOne({ camera_id: req.params.id })
       .populate('created_by', 'username full_name');
     if (!camera) return res.status(404).json({ error: 'Camera not found' });
@@ -43,6 +55,10 @@ router.get('/:id', async (req, res) => {
 // ─────────────────────────────────────────────────────────────────────────────
 router.post('/', authMiddleware, roleMiddleware('admin'), async (req, res) => {
   try {
+    if (!isDatabaseConnected()) {
+      return res.status(503).json({ error: 'Database not connected. Running in demo mode.' });
+    }
+
     const { camera_id, name, location, max_red_light_time } = req.body;
 
     if (!camera_id || !name || !location?.lat || !location?.lng) {
@@ -82,6 +98,10 @@ router.post('/', authMiddleware, roleMiddleware('admin'), async (req, res) => {
 // ─────────────────────────────────────────────────────────────────────────────
 router.patch('/:id', authMiddleware, roleMiddleware('admin'), async (req, res) => {
   try {
+    if (!isDatabaseConnected()) {
+      return res.status(503).json({ error: 'Database not connected. Running in demo mode.' });
+    }
+
     const { name, location, status, active, max_red_light_time } = req.body;
     const updates = {};
     if (name !== undefined) updates.name = name;
@@ -108,6 +128,10 @@ router.patch('/:id', authMiddleware, roleMiddleware('admin'), async (req, res) =
 // ─────────────────────────────────────────────────────────────────────────────
 router.post('/:id/regenerate-token', authMiddleware, roleMiddleware('admin'), async (req, res) => {
   try {
+    if (!isDatabaseConnected()) {
+      return res.status(503).json({ error: 'Database not connected. Running in demo mode.' });
+    }
+
     const { plainToken, hash } = Camera.generateApiToken();
     const camera = await Camera.findOneAndUpdate(
       { camera_id: req.params.id },
@@ -131,6 +155,10 @@ router.post('/:id/regenerate-token', authMiddleware, roleMiddleware('admin'), as
 // ─────────────────────────────────────────────────────────────────────────────
 router.delete('/:id', authMiddleware, roleMiddleware('admin'), async (req, res) => {
   try {
+    if (!isDatabaseConnected()) {
+      return res.status(503).json({ error: 'Database not connected. Running in demo mode.' });
+    }
+
     const camera = await Camera.findOneAndDelete({ camera_id: req.params.id });
     if (!camera) return res.status(404).json({ error: 'Camera not found' });
     res.json({ message: `Camera '${req.params.id}' deleted successfully` });

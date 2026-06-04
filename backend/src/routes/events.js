@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const Event = require('../models/Event');
 const { authMiddleware, roleMiddleware, cameraTokenMiddleware } = require('../middleware/auth');
+const { isDatabaseConnected } = require('../config/database');
 const alertService = require('../services/alertService');
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -10,6 +11,10 @@ const alertService = require('../services/alertService');
 // ─────────────────────────────────────────────────────────────────────────────
 router.post('/', cameraTokenMiddleware, async (req, res) => {
   try {
+    if (!isDatabaseConnected()) {
+      return res.status(503).json({ error: 'Database not connected. Running in demo mode.' });
+    }
+
     const {
       camera_id, event_type, confidence, lat, lng, address,
       image_base64, // Nhận base64 từ AI nhưng sẽ xử lý riêng (lưu file rồi gán URL)
@@ -83,6 +88,10 @@ router.post('/', cameraTokenMiddleware, async (req, res) => {
 // ─────────────────────────────────────────────────────────────────────────────
 router.get('/', async (req, res) => {
   try {
+    if (!isDatabaseConnected()) {
+      return res.json([]);
+    }
+
     const limit = Math.min(parseInt(req.query.limit) || 100, 500);
     const events = await Event.find({})
       .sort({ timestamp: -1 })
@@ -110,6 +119,17 @@ router.get('/', async (req, res) => {
 // ─────────────────────────────────────────────────────────────────────────────
 router.get('/stats', async (req, res) => {
   try {
+    if (!isDatabaseConnected()) {
+      return res.json({
+        period_days: Math.min(90, Math.max(1, parseInt(req.query.days) || 7)),
+        summary: { total: 0, unresolved: 0, today: 0, critical: 0 },
+        by_type: [],
+        by_day: [],
+        by_level: [],
+        top_cameras: [],
+      });
+    }
+
     const days = Math.min(90, Math.max(1, parseInt(req.query.days) || 7));
     const from = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
     const todayStart = new Date(); todayStart.setHours(0, 0, 0, 0);
@@ -186,6 +206,18 @@ router.get('/stats', async (req, res) => {
 // ─────────────────────────────────────────────────────────────────────────────
 router.get('/history', async (req, res) => {
   try {
+    if (!isDatabaseConnected()) {
+      const pageNum = Math.max(1, parseInt(req.query.page) || 1);
+      const limitNum = Math.min(200, Math.max(1, parseInt(req.query.limit) || 50));
+      return res.json({
+        total: 0,
+        page: pageNum,
+        limit: limitNum,
+        pages: 0,
+        events: [],
+      });
+    }
+
     const {
       from, to,
       type, level,
@@ -257,6 +289,10 @@ router.get('/history', async (req, res) => {
 // ─────────────────────────────────────────────────────────────────────────────
 router.patch('/:id/resolve', authMiddleware, roleMiddleware('admin', 'operator'), async (req, res) => {
   try {
+    if (!isDatabaseConnected()) {
+      return res.status(503).json({ error: 'Database not connected. Running in demo mode.' });
+    }
+
     const event = await Event.findByIdAndUpdate(
       req.params.id,
       {

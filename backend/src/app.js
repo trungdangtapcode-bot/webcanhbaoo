@@ -40,6 +40,54 @@ app.get('/api/health', (req, res) => {
   });
 });
 
+// --- Architectural Map Redirect ---
+/**
+ * @route   GET /codegraph
+ * @desc    Redirect to the interactive architectural map (Understand Anything Dashboard)
+ * @access  Public (for review purposes)
+ */
+app.get('/codegraph', (req, res) => {
+  const DASHBOARD_URL = process.env.CODEGRAPH_URL || 'http://127.0.0.1:5173/?token=313602a1ec781183821e4a3e9a39508c';
+  
+  console.log(`[App] Redirecting to CodeGraph: ${DASHBOARD_URL}`);
+  
+  // Trả về một trang HTML trung gian nhỏ để trông chuyên nghiệp hơn hoặc chuyển hướng thẳng
+  res.send(`
+    <html>
+      <head>
+        <meta charset="UTF-8">
+        <title>Redirecting to CodeGraph</title>
+        <meta http-equiv="refresh" content="2;url=${DASHBOARD_URL}">
+        <style>
+          body { 
+            background: #0d1117; 
+            color: #e6edf3; 
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif, "Apple Color Emoji", "Segoe UI Emoji";
+            display: flex; 
+            align-items: center; 
+            justify-content: center; 
+            height: 100vh; 
+            margin: 0; 
+          }
+          .card { border: 1px solid #30363d; padding: 24px; border-radius: 8px; text-align: center; max-width: 400px; }
+          .spinner { border: 3px solid rgba(255,255,255,.1); border-top: 3px solid #58a6ff; border-radius: 50%; width: 24px; height: 24px; animation: spin 1s linear infinite; margin: 20px auto; }
+          @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+          h3 { margin: 0 0 10px 0; color: #58a6ff; }
+          p { margin: 5px 0; line-height: 1.5; }
+        </style>
+      </head>
+      <body>
+        <div class="card">
+          <h3>Đang mở Bản đồ Kiến trúc</h3>
+          <p style="color: #8b949e; font-size: 14px;">Hệ thống đang chuyển hướng bạn đến trang phân tích mã nguồn trực quan.</p>
+          <div class="spinner"></div>
+          <p><a href="${DASHBOARD_URL}" style="color: #58a6ff; text-decoration: none; font-size: 13px; font-weight: 500;">Bấm vào đây nếu trình duyệt không tự chuyển hướng</a></p>
+        </div>
+      </body>
+    </html>
+  `);
+});
+
 // --- 404 fallback ---
 app.use((req, res) => {
   res.status(404).json({ error: 'Not found' });

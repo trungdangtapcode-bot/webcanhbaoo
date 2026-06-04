@@ -25,6 +25,7 @@ load_dotenv()
 # ═══════════════════════════════════════════════════════════════
 CAMERA_ID = os.getenv("CAMERA_ID", "USB_CAM_001")
 CAMERA_INDEX = int(os.getenv("USB_CAMERA_INDEX", "1"))  # 0 = laptop webcam, 1 = USB camera
+USB_CAMERA_BACKEND = os.getenv("USB_CAMERA_BACKEND", "auto").strip().lower()
 BACKEND_URL = os.getenv("BACKEND_URL", "http://localhost:3000/api/events")
 API_TOKEN = os.getenv("API_TOKEN", "")
 
@@ -83,6 +84,14 @@ logging.basicConfig(
     datefmt="%Y-%m-%d %H:%M:%S",
 )
 log = logging.getLogger(__name__)
+
+BACKEND_FLAGS = {
+    "any": cv2.CAP_ANY,
+    "default": cv2.CAP_ANY,
+    "dshow": getattr(cv2, "CAP_DSHOW", cv2.CAP_ANY),
+    "directshow": getattr(cv2, "CAP_DSHOW", cv2.CAP_ANY),
+    "msmf": getattr(cv2, "CAP_MSMF", cv2.CAP_ANY),
+}
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -152,6 +161,58 @@ def get_current_location() -> tuple[float, float]:
             pass
     return None, None
 
+
+def camera_backend_sequence() -> list[tuple[str, int]]:
+    """Return preferred OpenCV camera backends for this platform."""
+    if USB_CAMERA_BACKEND in BACKEND_FLAGS and USB_CAMERA_BACKEND != "auto":
+        return [(USB_CAMERA_BACKEND.upper(), BACKEND_FLAGS[USB_CAMERA_BACKEND])]
+
+    if sys.platform.startswith("win"):
+        # DirectShow is usually more stable for USB cameras than MSMF on Windows.
+        return [
+            ("DSHOW", BACKEND_FLAGS["dshow"]),
+            ("MSMF", BACKEND_FLAGS["msmf"]),
+            ("ANY", BACKEND_FLAGS["any"]),
+        ]
+
+    return [("ANY", BACKEND_FLAGS["any"])]
+
+
+def apply_camera_settings(cap: cv2.VideoCapture) -> None:
+    """Apply camera settings best-effort after each open/reopen."""
+    cap.set(cv2.CAP_PROP_FRAME_WIDTH, CAM_WIDTH)
+    cap.set(cv2.CAP_PROP_FRAME_HEIGHT, CAM_HEIGHT)
+    cap.set(cv2.CAP_PROP_FPS, TARGET_FPS)
+    cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
+
+
+def open_camera(index: int, backends: list[tuple[str, int]], start_at: int = 0):
+    """Open a camera and verify that at least one frame can be read."""
+    for offset in range(len(backends)):
+        backend_idx = (start_at + offset) % len(backends)
+        backend_name, backend_flag = backends[backend_idx]
+        log.info(f"Opening camera index={index} with backend={backend_name} ({backend_flag})")
+
+        cap = cv2.VideoCapture(index, backend_flag)
+        if not cap.isOpened():
+            cap.release()
+            log.warning(f"Backend {backend_name} opened no camera.")
+            continue
+
+        apply_camera_settings(cap)
+        time.sleep(0.3)
+
+        for _ in range(5):
+            ret, frame = cap.read()
+            if ret and frame is not None:
+                return cap, backend_idx, backend_name
+            time.sleep(0.1)
+
+        cap.release()
+        log.warning(f"Backend {backend_name} opened camera but could not read frames.")
+
+    return None, None, None
+
 # Global coordinates
 CURRENT_LAT, CURRENT_LON = None, None
 
@@ -166,6 +227,7 @@ def main():
     log.info(f"Camera ID    : {CAMERA_ID}")
     log.info(f"Camera Index : {CAMERA_INDEX}")
     log.info(f"Backend      : {BACKEND_URL}")
+    log.info(f"Camera Backend: {USB_CAMERA_BACKEND}")
     log.info(f"Detect Fire  : {DETECT_FIRE}")
     log.info(f"Detect Flood : {DETECT_FLOOD}")
     log.info(f"Detect Traffic: {DETECT_TRAFFIC}")
@@ -206,19 +268,16 @@ def main():
         traffic_model = YOLO(traffic_weights)
         log.info(f"🚗 Traffic model loaded: {traffic_weights}")
 
-    # ─── Open USB Camera ───
+    # ─── Open USB Camera (resilient) ───
     log.info(f"Opening USB camera (index={CAMERA_INDEX})...")
-    cap = cv2.VideoCapture(CAMERA_INDEX, cv2.CAP_MSMF)  # MSMF for Windows (detects USB cameras)
 
-    if not cap.isOpened():
+    camera_backends = camera_backend_sequence()
+    cap, active_backend_idx, active_backend_name = open_camera(CAMERA_INDEX, camera_backends)
+
+    if cap is None:
         log.error(f"Cannot open USB camera at index {CAMERA_INDEX}")
-        log.error("Tips: Try changing USB_CAMERA_INDEX=1 or check device in Device Manager")
+        log.error("Tips: try USB_CAMERA_INDEX=0, close Windows Camera/Zoom/Teams, or set USB_CAMERA_BACKEND=dshow")
         sys.exit(1)
-
-    # Set camera properties
-    cap.set(cv2.CAP_PROP_FRAME_WIDTH, CAM_WIDTH)
-    cap.set(cv2.CAP_PROP_FRAME_HEIGHT, CAM_HEIGHT)
-    cap.set(cv2.CAP_PROP_FPS, TARGET_FPS)
 
     actual_w = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
     actual_h = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
@@ -256,15 +315,50 @@ def main():
     log.info("🎬 Starting detection loop... Press 'q' to quit.")
     log.info("")
 
+    # Reconnect logic: if consecutive frame reads fail, attempt to re-open the device with backoff
+    read_failures = 0
+    max_read_failures_before_reopen = 6
+    reconnect_backoff = 1.0
+
     try:
         while True:
             t_start = time.time()
 
             ret, frame = cap.read()
             if not ret:
-                log.warning("Frame read failed — retrying...")
-                time.sleep(0.5)
+                read_failures += 1
+                log.warning(f"Frame read failed (#{read_failures}) — retrying...")
+                time.sleep(0.2)
+
+                # If several consecutive reads fail, try to reopen the capture device
+                if read_failures >= max_read_failures_before_reopen:
+                    log.warning(f"{read_failures} consecutive frame failures — attempting to reopen camera...")
+                    try:
+                        cap.release()
+                    except Exception:
+                        pass
+
+                    next_backend_idx = (active_backend_idx + 1) % len(camera_backends)
+                    next_backend_name, _ = camera_backends[next_backend_idx]
+                    log.info(f"Reopening camera with backend={next_backend_name} (backoff={reconnect_backoff}s)")
+                    time.sleep(reconnect_backoff)
+                    new_cap, new_backend_idx, new_backend_name = open_camera(CAMERA_INDEX, camera_backends, next_backend_idx)
+                    if new_cap is not None:
+                        cap = new_cap
+                        active_backend_idx = new_backend_idx
+                        active_backend_name = new_backend_name
+                        log.info(f"Camera reopened via {active_backend_name}")
+                    else:
+                        log.error("Could not reopen camera with any backend. Will retry.")
+                    reconnect_backoff = min(reconnect_backoff * 2, 8.0)
+                    read_failures = 0
+                    continue
+
                 continue
+            else:
+                # successful read — reset failure counter and backoff
+                read_failures = 0
+                reconnect_backoff = 1.0
 
             frame_count += 1
             now = time.time()

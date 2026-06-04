@@ -55,6 +55,19 @@ smart-alert-system/
 
 ---
 
+## 🔍 Hướng dẫn Đánh giá Mã nguồn (Code Review)
+
+Để hỗ trợ giáo viên và các nhà phát triển hiểu nhanh kiến trúc hệ thống, dự án tích hợp một **Bản đồ kiến trúc tương tác (Interactive Code Map)**.
+
+1.  **Truy cập nhanh**: Sau khi khởi chạy Backend, truy cập: [http://localhost:3000/codegraph](http://localhost:3000/codegraph)
+2.  **Tính năng**:
+    *   Xem sơ đồ kết nối giữa các thành phần (Backend, AI, Frontend).
+    *   Phân tích các tầng kiến trúc (Layers).
+    *   Guided Tour: Chuyến tham quan mã nguồn theo từng bước quan trọng.
+3.  **Công nghệ**: Bản đồ được tạo tự động bằng công cụ `Understand Anything`, giúp trực quan hóa cấu trúc thư mục và các mối quan hệ `imports`/`calls` trong dự án.
+
+---
+
 ## Installation (Ubuntu 22.04+)
 
 ### 1. Install System Dependencies

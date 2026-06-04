@@ -1,5 +1,6 @@
 const jwt = require('jsonwebtoken');
 const User = require('../models/User');
+const { isDatabaseConnected } = require('../config/database');
 
 // ─────────────────────────────────────────────────────────────────────────────
 // authMiddleware — Xác thực JWT (dùng cho User login)
@@ -15,6 +16,10 @@ async function authMiddleware(req, res, next) {
   const token = authHeader.split(' ')[1];
 
   try {
+    if (!isDatabaseConnected()) {
+      return res.status(503).json({ error: 'Database not connected. Running in demo mode.' });
+    }
+
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
     // Gắn thông tin user (không có password) vào request
     const user = await User.findById(decoded.id).select('-password');
@@ -70,6 +75,10 @@ async function cameraTokenMiddleware(req, res, next) {
   }
 
   try {
+    if (!isDatabaseConnected()) {
+      return res.status(503).json({ error: 'Database not connected. Running in demo mode.' });
+    }
+
     const camera = await Camera.findOne({ camera_id: cameraId, active: true }).select('+api_token_hash');
     if (!camera) {
       return res.status(404).json({ error: `Camera '${cameraId}' not found or inactive` });

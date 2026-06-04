@@ -1,0 +1,1510 @@
+{
+  "version": "1.0.0",
+  "project": {
+    "name": "Smart Alert System",
+    "languages": [
+      "JavaScript",
+      "Python",
+      "HTML"
+    ],
+    "frameworks": [
+      "Express",
+      "Socket.io",
+      "Mongoose",
+      "OpenCV",
+      "YOLOv8"
+    ],
+    "description": "Real-time dashboard for detecting traffic jams, flooding, and fire from IP cameras.",
+    "analyzedAt": "2026-06-04T00:06:58.298Z",
+    "gitCommitHash": "24cbffd8d8c651708101d8ab846a5fd1a85ece7d"
+  },
+  "nodes": [
+    {
+      "id": "file:backend/scripts/create_device_token.js",
+      "type": "file",
+      "language": "javascript",
+      "summary": "Script tạo token thiết bị và đăng ký camera vào cơ sở dữ liệu.",
+      "tags": [
+        "script",
+        "setup",
+        "auth"
+      ],
+      "complexity": "moderate",
+      "name": "backend/scripts/create_device_token.js",
+      "filePath": "backend/scripts/create_device_token.js"
+    },
+    {
+      "id": "function:backend/scripts/create_device_token.js:main",
+      "type": "function",
+      "name": "main",
+      "summary": "Hàm main trong backend/scripts/create_device_token.js",
+      "complexity": "moderate",
+      "tags": []
+    },
+    {
+      "id": "file:backend/src/controllers/cameraController.js",
+      "type": "file",
+      "language": "javascript",
+      "summary": "Controller xử lý các yêu cầu liên quan đến camera như lấy danh sách và cập nhật thông tin.",
+      "tags": [
+        "controller",
+        "camera"
+      ],
+      "complexity": "moderate",
+      "name": "backend/src/controllers/cameraController.js",
+      "filePath": "backend/src/controllers/cameraController.js"
+    },
+    {
+      "id": "function:backend/src/controllers/cameraController.js:getCameras",
+      "type": "function",
+      "name": "getCameras",
+      "summary": "Hàm getCameras trong backend/src/controllers/cameraController.js",
+      "complexity": "moderate",
+      "tags": []
+    },
+    {
+      "id": "function:backend/src/controllers/cameraController.js:upsertCamera",
+      "type": "function",
+      "name": "upsertCamera",
+      "summary": "Hàm upsertCamera trong backend/src/controllers/cameraController.js",
+      "complexity": "moderate",
+      "tags": []
+    },
+    {
+      "id": "file:backend/src/controllers/eventController.js",
+      "type": "file",
+      "language": "javascript",
+      "summary": "Controller trung tâm xử lý các sự kiện từ camera, đánh giá tình trạng giao thông/ngập lụt và phát cảnh báo.",
+      "tags": [
+        "controller",
+        "event",
+        "logic"
+      ],
+      "complexity": "moderate",
+      "name": "backend/src/controllers/eventController.js",
+      "filePath": "backend/src/controllers/eventController.js"
+    },
+    {
+      "id": "function:backend/src/controllers/eventController.js:createEvent",
+      "type": "function",
+      "name": "createEvent",
+      "summary": "Hàm createEvent trong backend/src/controllers/eventController.js",
+      "complexity": "moderate",
+      "tags": []
+    },
+    {
+      "id": "function:backend/src/controllers/eventController.js:getEvents",
+      "type": "function",
+      "name": "getEvents",
+      "summary": "Hàm getEvents trong backend/src/controllers/eventController.js",
+      "complexity": "moderate",
+      "tags": []
+    },
+    {
+      "id": "file:backend/src/models/Camera.js",
+      "type": "file",
+      "language": "javascript",
+      "summary": "Model Mongoose định nghĩa cấu trúc dữ liệu cho Camera.",
+      "tags": [
+        "model",
+        "database",
+        "camera"
+      ],
+      "complexity": "moderate",
+      "name": "backend/src/models/Camera.js",
+      "filePath": "backend/src/models/Camera.js"
+    },
+    {
+      "id": "file:backend/src/routes/cameras.js",
+      "type": "file",
+      "language": "javascript",
+      "summary": "Định nghĩa các API endpoint cho các thao tác với camera.",
+      "tags": [
+        "routes",
+        "api",
+        "camera"
+      ],
+      "complexity": "moderate",
+      "name": "backend/src/routes/cameras.js",
+      "filePath": "backend/src/routes/cameras.js"
+    },
+    {
+      "id": "file:backend/src/services/floodService.js",
+      "type": "file",
+      "language": "javascript",
+      "summary": "Dịch vụ đánh giá tình trạng ngập lụt dựa trên tỷ lệ diện tích mặt nước.",
+      "tags": [
+        "service",
+        "flood",
+        "logic"
+      ],
+      "complexity": "moderate",
+      "name": "backend/src/services/floodService.js",
+      "filePath": "backend/src/services/floodService.js"
+    },
+    {
+      "id": "function:backend/src/services/floodService.js:evaluate",
+      "type": "function",
+      "name": "evaluate",
+      "summary": "Hàm evaluate trong backend/src/services/floodService.js",
+      "complexity": "moderate",
+      "tags": []
+    },
+    {
+      "id": "function:backend/src/services/floodService.js:getState",
+      "type": "function",
+      "name": "getState",
+      "summary": "Hàm getState trong backend/src/services/floodService.js",
+      "complexity": "moderate",
+      "tags": []
+    },
+    {
+      "id": "function:backend/src/services/floodService.js:resetState",
+      "type": "function",
+      "name": "resetState",
+      "summary": "Hàm resetState trong backend/src/services/floodService.js",
+      "complexity": "moderate",
+      "tags": []
+    },
+    {
+      "id": "file:backend/src/services/trafficService.js",
+      "type": "file",
+      "language": "javascript",
+      "summary": "Dịch vụ phân tích mật độ giao thông dựa trên số lượng và tốc độ xe.",
+      "tags": [
+        "service",
+        "traffic",
+        "logic"
+      ],
+      "complexity": "moderate",
+      "name": "backend/src/services/trafficService.js",
+      "filePath": "backend/src/services/trafficService.js"
+    },
+    {
+      "id": "function:backend/src/services/trafficService.js:evaluate",
+      "type": "function",
+      "name": "evaluate",
+      "summary": "Hàm evaluate trong backend/src/services/trafficService.js",
+      "complexity": "moderate",
+      "tags": []
+    },
+    {
+      "id": "function:backend/src/services/trafficService.js:clearWindow",
+      "type": "function",
+      "name": "clearWindow",
+      "summary": "Hàm clearWindow trong backend/src/services/trafficService.js",
+      "complexity": "moderate",
+      "tags": []
+    },
+    {
+      "id": "file:backend/src/app.js",
+      "type": "file",
+      "language": "javascript",
+      "summary": "Cấu hình ứng dụng Express chính, bao gồm middleware và định tuyến.",
+      "tags": [
+        "app",
+        "express",
+        "config"
+      ],
+      "complexity": "moderate",
+      "name": "backend/src/app.js",
+      "filePath": "backend/src/app.js"
+    },
+    {
+      "id": "file:backend/src/config/redis.js",
+      "type": "file",
+      "language": "javascript",
+      "summary": "Cấu hình Redis client để hỗ trợ tính năng Pub/Sub và lưu trữ đệm.",
+      "tags": [
+        "config",
+        "redis",
+        "database"
+      ],
+      "complexity": "moderate",
+      "name": "backend/src/config/redis.js",
+      "filePath": "backend/src/config/redis.js"
+    },
+    {
+      "id": "function:backend/src/config/redis.js:createRedisClients",
+      "type": "function",
+      "name": "createRedisClients",
+      "summary": "Hàm createRedisClients trong backend/src/config/redis.js",
+      "complexity": "moderate",
+      "tags": []
+    },
+    {
+      "id": "function:backend/src/config/redis.js:getPubClient",
+      "type": "function",
+      "name": "getPubClient",
+      "summary": "Hàm getPubClient trong backend/src/config/redis.js",
+      "complexity": "moderate",
+      "tags": []
+    },
+    {
+      "id": "file:backend/src/routes/chatbot.js",
+      "type": "file",
+      "language": "javascript",
+      "summary": "Định nghĩa các API endpoint cho chatbot, bao gồm logic xử lý ngôn ngữ tự nhiên cơ bản và phản hồi sự cố.",
+      "tags": [
+        "routes",
+        "chatbot",
+        "api"
+      ],
+      "complexity": "moderate",
+      "name": "backend/src/routes/chatbot.js",
+      "filePath": "backend/src/routes/chatbot.js"
+    },
+    {
+      "id": "function:backend/src/routes/chatbot.js:fetchJson",
+      "type": "function",
+      "name": "fetchJson",
+      "summary": "Hàm fetchJson trong backend/src/routes/chatbot.js",
+      "complexity": "moderate",
+      "tags": []
+    },
+    {
+      "id": "function:backend/src/routes/chatbot.js:generateFallbackResponse",
+      "type": "function",
+      "name": "generateFallbackResponse",
+      "summary": "Hàm generateFallbackResponse trong backend/src/routes/chatbot.js",
+      "complexity": "moderate",
+      "tags": []
+    },
+    {
+      "id": "file:backend/src/routes/events.js",
+      "type": "file",
+      "language": "javascript",
+      "summary": "Định nghĩa các API endpoint liên quan đến quản lý và truy vấn sự kiện.",
+      "tags": [
+        "routes",
+        "event",
+        "api"
+      ],
+      "complexity": "moderate",
+      "name": "backend/src/routes/events.js",
+      "filePath": "backend/src/routes/events.js"
+    },
+    {
+      "id": "file:backend/src/server.js",
+      "type": "file",
+      "language": "javascript",
+      "summary": "Điểm khởi đầu của máy chủ backend, khởi tạo HTTP server và các kết nối cơ sở dữ liệu.",
+      "tags": [
+        "entrypoint",
+        "server"
+      ],
+      "complexity": "moderate",
+      "name": "backend/src/server.js",
+      "filePath": "backend/src/server.js"
+    },
+    {
+      "id": "function:backend/src/server.js:bootstrap",
+      "type": "function",
+      "name": "bootstrap",
+      "summary": "Hàm bootstrap trong backend/src/server.js",
+      "complexity": "moderate",
+      "tags": []
+    },
+    {
+      "id": "file:backend/src/services/alertService.js",
+      "type": "file",
+      "language": "javascript",
+      "summary": "Dịch vụ quản lý và phát thông báo cảnh báo thông qua Socket.io.",
+      "tags": [
+        "service",
+        "alert",
+        "websocket"
+      ],
+      "complexity": "moderate",
+      "name": "backend/src/services/alertService.js",
+      "filePath": "backend/src/services/alertService.js"
+    },
+    {
+      "id": "function:backend/src/services/alertService.js:init",
+      "type": "function",
+      "name": "init",
+      "summary": "Hàm init trong backend/src/services/alertService.js",
+      "complexity": "moderate",
+      "tags": []
+    },
+    {
+      "id": "function:backend/src/services/alertService.js:emitAlert",
+      "type": "function",
+      "name": "emitAlert",
+      "summary": "Hàm emitAlert trong backend/src/services/alertService.js",
+      "complexity": "moderate",
+      "tags": []
+    },
+    {
+      "id": "file:backend/scripts/seed.js",
+      "type": "file",
+      "language": "javascript",
+      "summary": "Script tạo dữ liệu mẫu ban đầu (admin user) cho cơ sở dữ liệu.",
+      "tags": [
+        "script",
+        "seed",
+        "database"
+      ],
+      "complexity": "moderate",
+      "name": "backend/scripts/seed.js",
+      "filePath": "backend/scripts/seed.js"
+    },
+    {
+      "id": "function:backend/scripts/seed.js:seed",
+      "type": "function",
+      "name": "seed",
+      "summary": "Hàm seed trong backend/scripts/seed.js",
+      "complexity": "moderate",
+      "tags": []
+    },
+    {
+      "id": "file:backend/src/config/database.js",
+      "type": "file",
+      "language": "javascript",
+      "summary": "Cấu hình kết nối tới MongoDB sử dụng Mongoose.",
+      "tags": [
+        "config",
+        "database",
+        "mongodb"
+      ],
+      "complexity": "moderate",
+      "name": "backend/src/config/database.js",
+      "filePath": "backend/src/config/database.js"
+    },
+    {
+      "id": "function:backend/src/config/database.js:connectDatabase",
+      "type": "function",
+      "name": "connectDatabase",
+      "summary": "Hàm connectDatabase trong backend/src/config/database.js",
+      "complexity": "moderate",
+      "tags": []
+    },
+    {
+      "id": "function:backend/src/config/database.js:isDatabaseConnected",
+      "type": "function",
+      "name": "isDatabaseConnected",
+      "summary": "Hàm isDatabaseConnected trong backend/src/config/database.js",
+      "complexity": "moderate",
+      "tags": []
+    },
+    {
+      "id": "file:backend/src/middleware/auth.js",
+      "type": "file",
+      "language": "javascript",
+      "summary": "Middleware xử lý xác thực và phân quyền người dùng/thiết bị.",
+      "tags": [
+        "middleware",
+        "auth",
+        "security"
+      ],
+      "complexity": "moderate",
+      "name": "backend/src/middleware/auth.js",
+      "filePath": "backend/src/middleware/auth.js"
+    },
+    {
+      "id": "function:backend/src/middleware/auth.js:authMiddleware",
+      "type": "function",
+      "name": "authMiddleware",
+      "summary": "Hàm authMiddleware trong backend/src/middleware/auth.js",
+      "complexity": "moderate",
+      "tags": []
+    },
+    {
+      "id": "function:backend/src/middleware/auth.js:roleMiddleware",
+      "type": "function",
+      "name": "roleMiddleware",
+      "summary": "Hàm roleMiddleware trong backend/src/middleware/auth.js",
+      "complexity": "moderate",
+      "tags": []
+    },
+    {
+      "id": "function:backend/src/middleware/auth.js:cameraTokenMiddleware",
+      "type": "function",
+      "name": "cameraTokenMiddleware",
+      "summary": "Hàm cameraTokenMiddleware trong backend/src/middleware/auth.js",
+      "complexity": "moderate",
+      "tags": []
+    },
+    {
+      "id": "file:backend/src/models/User.js",
+      "type": "file",
+      "language": "javascript",
+      "summary": "Model Mongoose định nghĩa cấu trúc dữ liệu cho Người dùng.",
+      "tags": [
+        "model",
+        "database",
+        "user"
+      ],
+      "complexity": "moderate",
+      "name": "backend/src/models/User.js",
+      "filePath": "backend/src/models/User.js"
+    },
+    {
+      "id": "file:backend/src/routes/auth.js",
+      "type": "file",
+      "language": "javascript",
+      "summary": "Định nghĩa các API endpoint cho đăng nhập và quản lý tài khoản người dùng.",
+      "tags": [
+        "routes",
+        "auth",
+        "api"
+      ],
+      "complexity": "moderate",
+      "name": "backend/src/routes/auth.js",
+      "filePath": "backend/src/routes/auth.js"
+    },
+    {
+      "id": "function:backend/src/routes/auth.js:signUserToken",
+      "type": "function",
+      "name": "signUserToken",
+      "summary": "Hàm signUserToken trong backend/src/routes/auth.js",
+      "complexity": "moderate",
+      "tags": []
+    },
+    {
+      "id": "file:ai_module/fire_module.py",
+      "type": "file",
+      "complexity": "moderate",
+      "name": "fire_module.py",
+      "summary": "Module phát hiện hỏa hoạn thời gian thực sử dụng mô hình YOLOv8.",
+      "tags": [],
+      "filePath": "ai_module/fire_module.py",
+      "language": "python",
+      "fileCategory": "code"
+    },
+    {
+      "id": "function:ai_module/fire_module.py:encode_frame",
+      "type": "function",
+      "complexity": "moderate",
+      "name": "encode_frame",
+      "summary": "Mã hóa khung hình ảnh sang định dạng base64 để gửi qua API.",
+      "tags": [],
+      "params": [
+        "frame"
+      ]
+    },
+    {
+      "id": "function:ai_module/fire_module.py:has_significant_motion",
+      "type": "function",
+      "complexity": "moderate",
+      "name": "has_significant_motion",
+      "summary": "Kiểm tra xem có chuyển động đáng kể trong khung hình hay không.",
+      "tags": [],
+      "params": [
+        "prev_gray",
+        "curr_gray",
+        "threshold"
+      ]
+    },
+    {
+      "id": "function:ai_module/fire_module.py:send_event",
+      "type": "function",
+      "complexity": "moderate",
+      "name": "send_event",
+      "summary": "Gửi dữ liệu sự kiện phát hiện hỏa hoạn tới backend.",
+      "tags": [],
+      "params": [
+        "data"
+      ]
+    },
+    {
+      "id": "function:ai_module/fire_module.py:main",
+      "type": "function",
+      "complexity": "moderate",
+      "name": "main",
+      "summary": "Luồng xử lý chính: đọc camera, chạy mô hình YOLO và xử lý kết quả.",
+      "tags": [],
+      "params": []
+    },
+    {
+      "id": "file:ai_module/flood_module.py",
+      "type": "file",
+      "complexity": "moderate",
+      "name": "flood_module.py",
+      "summary": "Module phát hiện ngập lụt dựa trên phân tích màu sắc và tỷ lệ diện tích mặt nước.",
+      "tags": [],
+      "filePath": "ai_module/flood_module.py",
+      "language": "python",
+      "fileCategory": "code"
+    },
+    {
+      "id": "function:ai_module/flood_module.py:compute_water_ratio",
+      "type": "function",
+      "complexity": "moderate",
+      "name": "compute_water_ratio",
+      "summary": "Tính toán tỷ lệ diện tích mặt nước trong khung hình bằng OpenCV.",
+      "tags": [],
+      "params": [
+        "frame"
+      ]
+    },
+    {
+      "id": "function:ai_module/flood_module.py:resolve_stream_url",
+      "type": "function",
+      "complexity": "moderate",
+      "name": "resolve_stream_url",
+      "summary": "Phân giải URL luồng video, hỗ trợ cả liên kết YouTube.",
+      "tags": [],
+      "params": [
+        "url"
+      ]
+    },
+    {
+      "id": "function:ai_module/flood_module.py:main",
+      "type": "function",
+      "complexity": "moderate",
+      "name": "main",
+      "summary": "Vòng lặp chính giám sát tình trạng ngập lụt từ camera.",
+      "tags": [],
+      "params": []
+    },
+    {
+      "id": "file:ai_module/traffic_module.py",
+      "type": "file",
+      "complexity": "moderate",
+      "name": "traffic_module.py",
+      "summary": "Module giám sát giao thông, đếm phương tiện và ước tính tốc độ.",
+      "tags": [],
+      "filePath": "ai_module/traffic_module.py",
+      "language": "python",
+      "fileCategory": "code"
+    },
+    {
+      "id": "function:ai_module/traffic_module.py:main",
+      "type": "function",
+      "complexity": "moderate",
+      "name": "main",
+      "summary": "Xử lý luồng giao thông và theo dõi đối tượng (tracking).",
+      "tags": [],
+      "params": []
+    },
+    {
+      "id": "file:ai_module/usb_camera_module.py",
+      "type": "file",
+      "complexity": "moderate",
+      "name": "usb_camera_module.py",
+      "summary": "Module tích hợp tất cả các tính năng (lửa, lụt, giao thông) dành cho camera USB trực tiếp.",
+      "tags": [],
+      "filePath": "ai_module/usb_camera_module.py",
+      "language": "python",
+      "fileCategory": "code"
+    },
+    {
+      "id": "function:ai_module/usb_camera_module.py:get_current_location",
+      "type": "function",
+      "complexity": "moderate",
+      "name": "get_current_location",
+      "summary": "Lấy tọa độ GPS hiện tại từ biến môi trường.",
+      "tags": [],
+      "params": []
+    },
+    {
+      "id": "function:ai_module/usb_camera_module.py:open_camera",
+      "type": "function",
+      "complexity": "moderate",
+      "name": "open_camera",
+      "summary": "Mở kết nối camera USB với các thiết lập cấu hình.",
+      "tags": [],
+      "params": [
+        "index",
+        "backends",
+        "start_at"
+      ]
+    },
+    {
+      "id": "function:ai_module/usb_camera_module.py:main",
+      "type": "function",
+      "complexity": "moderate",
+      "name": "main",
+      "summary": "Luồng xử lý đa nhiệm cho camera USB, kết hợp nhiều mô hình AI.",
+      "tags": [],
+      "params": []
+    },
+    {
+      "id": "file:ai_module/yolov8n.pt",
+      "type": "file",
+      "complexity": "moderate",
+      "name": "yolov8n.pt",
+      "summary": "Mô hình YOLOv8 Nano mặc định cho các đối tượng chung.",
+      "tags": [],
+      "filePath": "ai_module/yolov8n.pt",
+      "language": "pt",
+      "fileCategory": "code"
+    },
+    {
+      "id": "file:ai_module/yolov8n_fire.pt",
+      "type": "file",
+      "complexity": "moderate",
+      "name": "yolov8n_fire.pt",
+      "summary": "Mô hình YOLOv8 đã được huấn luyện chuyên biệt để phát hiện lửa.",
+      "tags": [],
+      "filePath": "ai_module/yolov8n_fire.pt",
+      "language": "pt",
+      "fileCategory": "code"
+    },
+    {
+      "id": "file:ai_module/yolov8m.pt",
+      "type": "file",
+      "complexity": "moderate",
+      "name": "yolov8m.pt",
+      "summary": "Mô hình YOLOv8 Medium cho độ chính xác cao hơn trong phát hiện phương tiện.",
+      "tags": [],
+      "filePath": "ai_module/yolov8m.pt",
+      "language": "pt",
+      "fileCategory": "code"
+    },
+    {
+      "id": "config:ai_module/.env.example",
+      "type": "config",
+      "complexity": "moderate",
+      "name": ".env.example",
+      "summary": "Cấu hình mẫu cho các biến môi trường của module AI.",
+      "tags": [],
+      "filePath": "ai_module/.env.example",
+      "language": "config",
+      "fileCategory": "config"
+    },
+    {
+      "id": "document:ai_module/requirements.txt",
+      "type": "document",
+      "complexity": "moderate",
+      "name": "requirements.txt",
+      "summary": "Danh sách các thư viện Python cần thiết (OpenCV, Ultralytics, v.v.).",
+      "tags": [],
+      "filePath": "ai_module/requirements.txt",
+      "language": "txt",
+      "fileCategory": "docs"
+    },
+    {
+      "id": "file:ai_module/_get_location.py",
+      "type": "file",
+      "complexity": "moderate",
+      "name": "_get_location.py",
+      "summary": "Tiện ích nhỏ để lấy tọa độ vị trí.",
+      "tags": [],
+      "filePath": "ai_module/_get_location.py",
+      "language": "python",
+      "fileCategory": "code"
+    },
+    {
+      "id": "file:ai_module/list_cameras.py",
+      "type": "file",
+      "complexity": "moderate",
+      "name": "list_cameras.py",
+      "summary": "Công cụ liệt kê các thiết bị camera khả dụng trên hệ thống.",
+      "tags": [],
+      "filePath": "ai_module/list_cameras.py",
+      "language": "python",
+      "fileCategory": "code"
+    },
+    {
+      "id": "file:ai_module/test_detect.py",
+      "type": "file",
+      "complexity": "moderate",
+      "name": "test_detect.py",
+      "summary": "Kịch bản kiểm thử phát hiện đối tượng tổng quát từ luồng video hoặc hình ảnh.",
+      "tags": [],
+      "filePath": "ai_module/test_detect.py",
+      "language": "python",
+      "fileCategory": "code"
+    },
+    {
+      "id": "file:ai_module/test_fire.py",
+      "type": "file",
+      "complexity": "moderate",
+      "name": "test_fire.py",
+      "summary": "Kịch bản kiểm thử chuyên biệt cho chức năng phát hiện hỏa hoạn.",
+      "tags": [],
+      "filePath": "ai_module/test_fire.py",
+      "language": "python",
+      "fileCategory": "code"
+    },
+    {
+      "id": "file:ai_module/test_flood.py",
+      "type": "file",
+      "complexity": "moderate",
+      "name": "test_flood.py",
+      "summary": "Kịch bản kiểm thử chuyên biệt cho chức năng phát hiện ngập lụt.",
+      "tags": [],
+      "filePath": "ai_module/test_flood.py",
+      "language": "python",
+      "fileCategory": "code"
+    },
+    {
+      "id": "file:ai_module/test_send_alert.py",
+      "type": "file",
+      "complexity": "moderate",
+      "name": "test_send_alert.py",
+      "summary": "Kiểm thử khả năng kết nối và gửi cảnh báo từ module AI tới backend.",
+      "tags": [],
+      "filePath": "ai_module/test_send_alert.py",
+      "language": "python",
+      "fileCategory": "code"
+    },
+    {
+      "id": "config:backend/.env.example",
+      "type": "config",
+      "complexity": "moderate",
+      "name": ".env.example",
+      "summary": "Cấu hình mẫu cho backend bao gồm kết nối MongoDB, Redis và các khóa bảo mật.",
+      "tags": [],
+      "filePath": "backend/.env.example",
+      "language": "config",
+      "fileCategory": "config"
+    },
+    {
+      "id": "file:backend/ecosystem.config.js",
+      "type": "file",
+      "complexity": "moderate",
+      "name": "ecosystem.config.js",
+      "summary": "Cấu hình vận hành ứng dụng backend sử dụng trình quản lý PM2.",
+      "tags": [],
+      "filePath": "backend/ecosystem.config.js",
+      "language": "javascript",
+      "fileCategory": "code"
+    },
+    {
+      "id": "config:backend/package.json",
+      "type": "config",
+      "complexity": "moderate",
+      "name": "package.json",
+      "summary": "Tệp quản lý các thư viện phụ thuộc và kịch bản thực thi của dự án Node.js backend.",
+      "tags": [],
+      "filePath": "backend/package.json",
+      "language": "json",
+      "fileCategory": "config"
+    },
+    {
+      "id": "file:backend/scripts/test_alerts.js",
+      "type": "file",
+      "complexity": "moderate",
+      "name": "test_alerts.js",
+      "summary": "Kịch bản Node.js để kiểm thử luồng gửi và nhận cảnh báo.",
+      "tags": [],
+      "filePath": "backend/scripts/test_alerts.js",
+      "language": "javascript",
+      "fileCategory": "code"
+    },
+    {
+      "id": "function:backend/scripts/test_alerts.js:sendEvent",
+      "type": "function",
+      "complexity": "moderate",
+      "name": "sendEvent",
+      "summary": "Gửi dữ liệu sự kiện giả lập tới API backend.",
+      "tags": [],
+      "params": [
+        "event"
+      ]
+    },
+    {
+      "id": "file:backend/src/routes/hanoiCameras.js",
+      "type": "file",
+      "complexity": "moderate",
+      "name": "hanoiCameras.js",
+      "summary": "Định nghĩa các điểm cuối API cho dữ liệu camera công cộng tại Hà Nội.",
+      "tags": [],
+      "filePath": "backend/src/routes/hanoiCameras.js",
+      "language": "javascript",
+      "fileCategory": "code"
+    },
+    {
+      "id": "file:backend/src/routes/streamProxy.js",
+      "type": "file",
+      "complexity": "moderate",
+      "name": "streamProxy.js",
+      "summary": "Proxy xử lý luồng video để vượt qua giới hạn CORS và bảo mật.",
+      "tags": [],
+      "filePath": "backend/src/routes/streamProxy.js",
+      "language": "javascript",
+      "fileCategory": "code"
+    },
+    {
+      "id": "file:backend/test_wss.js",
+      "type": "file",
+      "complexity": "moderate",
+      "name": "test_wss.js",
+      "summary": "Kiểm thử kết nối WebSocket tới các camera IP.",
+      "tags": [],
+      "filePath": "backend/test_wss.js",
+      "language": "javascript",
+      "fileCategory": "code"
+    },
+    {
+      "id": "function:backend/test_wss.js:test",
+      "type": "function",
+      "complexity": "moderate",
+      "name": "test",
+      "summary": "Thực hiện kết nối và kiểm tra nhận gói tin video qua WebSocket.",
+      "tags": [],
+      "params": []
+    },
+    {
+      "id": "file:frontend/index.html",
+      "type": "file",
+      "complexity": "moderate",
+      "name": "index.html",
+      "summary": "Trang giao diện chính hiển thị bản đồ và các cảnh báo thời gian thực.",
+      "tags": [],
+      "filePath": "frontend/index.html",
+      "language": "html",
+      "fileCategory": "markup"
+    },
+    {
+      "id": "file:.understand-anything/.understandignore",
+      "type": "file",
+      "complexity": "moderate",
+      "name": ".understandignore",
+      "summary": "Danh sách các tệp và thư mục bị bỏ qua trong quá trình phân tích mã nguồn.",
+      "tags": [],
+      "filePath": ".understand-anything/.understandignore",
+      "language": "unknown",
+      "fileCategory": "code"
+    },
+    {
+      "id": "config:.understand-anything/config.json",
+      "type": "config",
+      "complexity": "moderate",
+      "name": "config.json",
+      "summary": "Cấu hình chung cho công cụ phân tích Understand Anything.",
+      "tags": [],
+      "filePath": ".understand-anything/config.json",
+      "language": "json",
+      "fileCategory": "config"
+    }
+  ],
+  "edges": [
+    {
+      "source": "file:ai_module/fire_module.py",
+      "target": "function:ai_module/fire_module.py:encode_frame",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 0.5
+    },
+    {
+      "source": "file:ai_module/fire_module.py",
+      "target": "function:ai_module/fire_module.py:has_significant_motion",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 0.5
+    },
+    {
+      "source": "file:ai_module/fire_module.py",
+      "target": "function:ai_module/fire_module.py:send_event",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 0.5
+    },
+    {
+      "source": "file:ai_module/fire_module.py",
+      "target": "function:ai_module/fire_module.py:main",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 0.5
+    },
+    {
+      "source": "function:ai_module/fire_module.py:main",
+      "target": "function:ai_module/fire_module.py:encode_frame",
+      "type": "calls",
+      "direction": "forward",
+      "weight": 0.5
+    },
+    {
+      "source": "function:ai_module/fire_module.py:main",
+      "target": "function:ai_module/fire_module.py:has_significant_motion",
+      "type": "calls",
+      "direction": "forward",
+      "weight": 0.5
+    },
+    {
+      "source": "function:ai_module/fire_module.py:main",
+      "target": "function:ai_module/fire_module.py:send_event",
+      "type": "calls",
+      "direction": "forward",
+      "weight": 0.5
+    },
+    {
+      "source": "function:ai_module/fire_module.py:main",
+      "target": "file:ai_module/yolov8n_fire.pt",
+      "type": "references",
+      "direction": "forward",
+      "weight": 0.5
+    },
+    {
+      "source": "file:ai_module/flood_module.py",
+      "target": "function:ai_module/flood_module.py:compute_water_ratio",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 0.5
+    },
+    {
+      "source": "file:ai_module/flood_module.py",
+      "target": "function:ai_module/flood_module.py:resolve_stream_url",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 0.5
+    },
+    {
+      "source": "file:ai_module/flood_module.py",
+      "target": "function:ai_module/flood_module.py:main",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 0.5
+    },
+    {
+      "source": "function:ai_module/flood_module.py:main",
+      "target": "function:ai_module/flood_module.py:compute_water_ratio",
+      "type": "calls",
+      "direction": "forward",
+      "weight": 0.5
+    },
+    {
+      "source": "function:ai_module/flood_module.py:main",
+      "target": "function:ai_module/flood_module.py:resolve_stream_url",
+      "type": "calls",
+      "direction": "forward",
+      "weight": 0.5
+    },
+    {
+      "source": "file:ai_module/traffic_module.py",
+      "target": "function:ai_module/traffic_module.py:main",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 0.5
+    },
+    {
+      "source": "function:ai_module/traffic_module.py:main",
+      "target": "file:ai_module/yolov8n.pt",
+      "type": "references",
+      "direction": "forward",
+      "weight": 0.5
+    },
+    {
+      "source": "file:ai_module/usb_camera_module.py",
+      "target": "function:ai_module/usb_camera_module.py:get_current_location",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 0.5
+    },
+    {
+      "source": "file:ai_module/usb_camera_module.py",
+      "target": "function:ai_module/usb_camera_module.py:open_camera",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 0.5
+    },
+    {
+      "source": "file:ai_module/usb_camera_module.py",
+      "target": "function:ai_module/usb_camera_module.py:main",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 0.5
+    },
+    {
+      "source": "function:ai_module/usb_camera_module.py:main",
+      "target": "function:ai_module/usb_camera_module.py:get_current_location",
+      "type": "calls",
+      "direction": "forward",
+      "weight": 0.5
+    },
+    {
+      "source": "function:ai_module/usb_camera_module.py:main",
+      "target": "function:ai_module/usb_camera_module.py:open_camera",
+      "type": "calls",
+      "direction": "forward",
+      "weight": 0.5
+    },
+    {
+      "source": "function:ai_module/usb_camera_module.py:main",
+      "target": "file:ai_module/yolov8n_fire.pt",
+      "type": "references",
+      "direction": "forward",
+      "weight": 0.5
+    },
+    {
+      "source": "function:ai_module/usb_camera_module.py:main",
+      "target": "file:ai_module/yolov8m.pt",
+      "type": "references",
+      "direction": "forward",
+      "weight": 0.5
+    },
+    {
+      "source": "file:ai_module/fire_module.py",
+      "target": "config:ai_module/.env.example",
+      "type": "references",
+      "direction": "forward",
+      "weight": 0.5
+    },
+    {
+      "source": "file:ai_module/flood_module.py",
+      "target": "config:ai_module/.env.example",
+      "type": "references",
+      "direction": "forward",
+      "weight": 0.5
+    },
+    {
+      "source": "file:ai_module/traffic_module.py",
+      "target": "config:ai_module/.env.example",
+      "type": "references",
+      "direction": "forward",
+      "weight": 0.5
+    },
+    {
+      "source": "file:ai_module/usb_camera_module.py",
+      "target": "config:ai_module/.env.example",
+      "type": "references",
+      "direction": "forward",
+      "weight": 0.5
+    },
+    {
+      "source": "file:ai_module/test_detect.py",
+      "target": "config:ai_module/.env.example",
+      "type": "references",
+      "direction": "forward",
+      "weight": 0.5
+    },
+    {
+      "source": "file:ai_module/test_fire.py",
+      "target": "config:ai_module/.env.example",
+      "type": "references",
+      "direction": "forward",
+      "weight": 0.5
+    },
+    {
+      "source": "file:ai_module/test_flood.py",
+      "target": "config:ai_module/.env.example",
+      "type": "references",
+      "direction": "forward",
+      "weight": 0.5
+    },
+    {
+      "source": "file:backend/scripts/test_alerts.js",
+      "target": "function:backend/scripts/test_alerts.js:sendEvent",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 0.5
+    },
+    {
+      "source": "file:backend/test_wss.js",
+      "target": "function:backend/test_wss.js:test",
+      "type": "contains",
+      "direction": "forward",
+      "weight": 0.5
+    },
+    {
+      "source": "file:backend/ecosystem.config.js",
+      "target": "config:backend/package.json",
+      "type": "references",
+      "direction": "forward",
+      "weight": 0.5
+    },
+    {
+      "source": "file:backend/src/routes/hanoiCameras.js",
+      "target": "config:backend/package.json",
+      "type": "references",
+      "direction": "forward",
+      "weight": 0.5
+    },
+    {
+      "source": "file:backend/src/routes/streamProxy.js",
+      "target": "config:backend/package.json",
+      "type": "references",
+      "direction": "forward",
+      "weight": 0.5
+    },
+    {
+      "source": "file:frontend/index.html",
+      "target": "file:backend/src/routes/hanoiCameras.js",
+      "type": "references",
+      "direction": "forward",
+      "weight": 0.5
+    },
+    {
+      "source": "file:frontend/index.html",
+      "target": "file:backend/src/routes/streamProxy.js",
+      "type": "references",
+      "direction": "forward",
+      "weight": 0.5
+    },
+    {
+      "source": "file:backend/scripts/create_device_token.js",
+      "target": "file:backend/src/models/Camera.js",
+      "type": "imports",
+      "direction": "forward",
+      "weight": 0.7,
+      "recoveredFromImportMap": true
+    },
+    {
+      "source": "file:backend/scripts/seed.js",
+      "target": "file:backend/src/models/User.js",
+      "type": "imports",
+      "direction": "forward",
+      "weight": 0.7,
+      "recoveredFromImportMap": true
+    },
+    {
+      "source": "file:backend/src/app.js",
+      "target": "file:backend/src/routes/auth.js",
+      "type": "imports",
+      "direction": "forward",
+      "weight": 0.7,
+      "recoveredFromImportMap": true
+    },
+    {
+      "source": "file:backend/src/app.js",
+      "target": "file:backend/src/routes/cameras.js",
+      "type": "imports",
+      "direction": "forward",
+      "weight": 0.7,
+      "recoveredFromImportMap": true
+    },
+    {
+      "source": "file:backend/src/app.js",
+      "target": "file:backend/src/routes/chatbot.js",
+      "type": "imports",
+      "direction": "forward",
+      "weight": 0.7,
+      "recoveredFromImportMap": true
+    },
+    {
+      "source": "file:backend/src/app.js",
+      "target": "file:backend/src/routes/events.js",
+      "type": "imports",
+      "direction": "forward",
+      "weight": 0.7,
+      "recoveredFromImportMap": true
+    },
+    {
+      "source": "file:backend/src/controllers/cameraController.js",
+      "target": "file:backend/src/config/database.js",
+      "type": "imports",
+      "direction": "forward",
+      "weight": 0.7,
+      "recoveredFromImportMap": true
+    },
+    {
+      "source": "file:backend/src/controllers/cameraController.js",
+      "target": "file:backend/src/models/Camera.js",
+      "type": "imports",
+      "direction": "forward",
+      "weight": 0.7,
+      "recoveredFromImportMap": true
+    },
+    {
+      "source": "file:backend/src/controllers/eventController.js",
+      "target": "file:backend/src/config/database.js",
+      "type": "imports",
+      "direction": "forward",
+      "weight": 0.7,
+      "recoveredFromImportMap": true
+    },
+    {
+      "source": "file:backend/src/controllers/eventController.js",
+      "target": "file:backend/src/controllers/cameraController.js",
+      "type": "imports",
+      "direction": "forward",
+      "weight": 0.7,
+      "recoveredFromImportMap": true
+    },
+    {
+      "source": "file:backend/src/controllers/eventController.js",
+      "target": "file:backend/src/models/Camera.js",
+      "type": "imports",
+      "direction": "forward",
+      "weight": 0.7,
+      "recoveredFromImportMap": true
+    },
+    {
+      "source": "file:backend/src/controllers/eventController.js",
+      "target": "file:backend/src/services/alertService.js",
+      "type": "imports",
+      "direction": "forward",
+      "weight": 0.7,
+      "recoveredFromImportMap": true
+    },
+    {
+      "source": "file:backend/src/controllers/eventController.js",
+      "target": "file:backend/src/services/floodService.js",
+      "type": "imports",
+      "direction": "forward",
+      "weight": 0.7,
+      "recoveredFromImportMap": true
+    },
+    {
+      "source": "file:backend/src/controllers/eventController.js",
+      "target": "file:backend/src/services/trafficService.js",
+      "type": "imports",
+      "direction": "forward",
+      "weight": 0.7,
+      "recoveredFromImportMap": true
+    },
+    {
+      "source": "file:backend/src/middleware/auth.js",
+      "target": "file:backend/src/config/database.js",
+      "type": "imports",
+      "direction": "forward",
+      "weight": 0.7,
+      "recoveredFromImportMap": true
+    },
+    {
+      "source": "file:backend/src/middleware/auth.js",
+      "target": "file:backend/src/models/Camera.js",
+      "type": "imports",
+      "direction": "forward",
+      "weight": 0.7,
+      "recoveredFromImportMap": true
+    },
+    {
+      "source": "file:backend/src/middleware/auth.js",
+      "target": "file:backend/src/models/User.js",
+      "type": "imports",
+      "direction": "forward",
+      "weight": 0.7,
+      "recoveredFromImportMap": true
+    },
+    {
+      "source": "file:backend/src/routes/auth.js",
+      "target": "file:backend/src/config/database.js",
+      "type": "imports",
+      "direction": "forward",
+      "weight": 0.7,
+      "recoveredFromImportMap": true
+    },
+    {
+      "source": "file:backend/src/routes/auth.js",
+      "target": "file:backend/src/middleware/auth.js",
+      "type": "imports",
+      "direction": "forward",
+      "weight": 0.7,
+      "recoveredFromImportMap": true
+    },
+    {
+      "source": "file:backend/src/routes/auth.js",
+      "target": "file:backend/src/models/User.js",
+      "type": "imports",
+      "direction": "forward",
+      "weight": 0.7,
+      "recoveredFromImportMap": true
+    },
+    {
+      "source": "file:backend/src/routes/cameras.js",
+      "target": "file:backend/src/config/database.js",
+      "type": "imports",
+      "direction": "forward",
+      "weight": 0.7,
+      "recoveredFromImportMap": true
+    },
+    {
+      "source": "file:backend/src/routes/cameras.js",
+      "target": "file:backend/src/controllers/cameraController.js",
+      "type": "imports",
+      "direction": "forward",
+      "weight": 0.7,
+      "recoveredFromImportMap": true
+    },
+    {
+      "source": "file:backend/src/routes/cameras.js",
+      "target": "file:backend/src/middleware/auth.js",
+      "type": "imports",
+      "direction": "forward",
+      "weight": 0.7,
+      "recoveredFromImportMap": true
+    },
+    {
+      "source": "file:backend/src/routes/cameras.js",
+      "target": "file:backend/src/models/Camera.js",
+      "type": "imports",
+      "direction": "forward",
+      "weight": 0.7,
+      "recoveredFromImportMap": true
+    },
+    {
+      "source": "file:backend/src/routes/chatbot.js",
+      "target": "file:backend/src/middleware/auth.js",
+      "type": "imports",
+      "direction": "forward",
+      "weight": 0.7,
+      "recoveredFromImportMap": true
+    },
+    {
+      "source": "file:backend/src/routes/events.js",
+      "target": "file:backend/src/config/database.js",
+      "type": "imports",
+      "direction": "forward",
+      "weight": 0.7,
+      "recoveredFromImportMap": true
+    },
+    {
+      "source": "file:backend/src/routes/events.js",
+      "target": "file:backend/src/middleware/auth.js",
+      "type": "imports",
+      "direction": "forward",
+      "weight": 0.7,
+      "recoveredFromImportMap": true
+    },
+    {
+      "source": "file:backend/src/routes/events.js",
+      "target": "file:backend/src/services/alertService.js",
+      "type": "imports",
+      "direction": "forward",
+      "weight": 0.7,
+      "recoveredFromImportMap": true
+    },
+    {
+      "source": "file:backend/src/server.js",
+      "target": "file:backend/src/app.js",
+      "type": "imports",
+      "direction": "forward",
+      "weight": 0.7,
+      "recoveredFromImportMap": true
+    },
+    {
+      "source": "file:backend/src/server.js",
+      "target": "file:backend/src/config/database.js",
+      "type": "imports",
+      "direction": "forward",
+      "weight": 0.7,
+      "recoveredFromImportMap": true
+    },
+    {
+      "source": "file:backend/src/server.js",
+      "target": "file:backend/src/config/redis.js",
+      "type": "imports",
+      "direction": "forward",
+      "weight": 0.7,
+      "recoveredFromImportMap": true
+    },
+    {
+      "source": "file:backend/src/server.js",
+      "target": "file:backend/src/controllers/cameraController.js",
+      "type": "imports",
+      "direction": "forward",
+      "weight": 0.7,
+      "recoveredFromImportMap": true
+    },
+    {
+      "source": "file:backend/src/server.js",
+      "target": "file:backend/src/services/alertService.js",
+      "type": "imports",
+      "direction": "forward",
+      "weight": 0.7,
+      "recoveredFromImportMap": true
+    }
+  ],
+  "layers": [
+    {
+      "id": "layer:backend",
+      "name": "Hệ thống Backend (Node.js)",
+      "description": "Lớp xử lý logic trung tâm, bao gồm API, quản lý cơ sở dữ liệu, xác thực và các dịch vụ tính toán sự kiện.",
+      "nodeIds": [
+        "file:backend/src/server.js",
+        "file:backend/src/app.js",
+        "file:backend/src/controllers/cameraController.js",
+        "file:backend/src/controllers/eventController.js",
+        "file:backend/src/models/Camera.js",
+        "file:backend/src/models/User.js",
+        "file:backend/src/services/alertService.js",
+        "file:backend/src/services/floodService.js",
+        "file:backend/src/services/trafficService.js",
+        "file:backend/src/routes/auth.js",
+        "file:backend/src/routes/cameras.js",
+        "file:backend/src/routes/events.js",
+        "file:backend/src/config/database.js",
+        "file:backend/src/config/redis.js"
+      ]
+    },
+    {
+      "id": "layer:ai_modules",
+      "name": "Module AI & Nhận diện (Python)",
+      "description": "Các kịch bản Python sử dụng mô hình YOLOv8 và thư viện OpenCV để thực hiện nhận diện hỏa hoạn, ngập lụt và mật độ giao thông từ luồng video.",
+      "nodeIds": [
+        "file:ai_module/fire_module.py",
+        "file:ai_module/flood_module.py",
+        "file:ai_module/traffic_module.py",
+        "file:ai_module/usb_camera_module.py",
+        "file:ai_module/yolov8n_fire.pt",
+        "file:ai_module/yolov8n.pt",
+        "file:ai_module/yolov8m.pt"
+      ]
+    },
+    {
+      "id": "layer:frontend",
+      "name": "Giao diện Dashboard",
+      "description": "Trang web hiển thị bản đồ tương tác, luồng video trực tiếp và danh sách các cảnh báo thời gian thực cho người dùng.",
+      "nodeIds": [
+        "file:frontend/index.html"
+      ]
+    },
+    {
+      "id": "layer:configuration",
+      "name": "Cấu hình & Công cụ",
+      "description": "Các tệp cấu hình môi trường, quản lý thư viện phụ thuộc và các kịch bản thiết lập hệ thống ban đầu.",
+      "nodeIds": [
+        "config:backend/.env.example",
+        "config:ai_module/.env.example",
+        "file:backend/ecosystem.config.js",
+        "config:backend/package.json",
+        "document:ai_module/requirements.txt",
+        "file:backend/scripts/seed.js",
+        "file:backend/scripts/create_device_token.js"
+      ]
+    }
+  ],
+  "tour": [
+    {
+      "order": 1,
+      "title": "Chào mừng đến với Smart Alert System",
+      "description": "Smart Alert System là một giải pháp giám sát đô thị thông minh, giúp phát hiện tức thời các sự cố như hỏa hoạn, ngập lụt và ùn tắc giao thông thông qua mạng lưới camera IP.",
+      "nodeIds": [
+        "file:frontend/index.html"
+      ]
+    },
+    {
+      "order": 2,
+      "title": "Khởi động Máy chủ Backend",
+      "description": "Trung tâm điều phối của hệ thống là máy chủ Node.js. Nó khởi tạo các kết nối đến MongoDB và Redis, đồng thời thiết lập Socket.io để truyền tin thời gian thực.",
+      "nodeIds": [
+        "file:backend/src/server.js",
+        "file:backend/src/app.js",
+        "file:backend/src/config/database.js"
+      ]
+    },
+    {
+      "order": 3,
+      "title": "Phát hiện Sự cố bằng AI",
+      "description": "Các module Python chạy ngầm, sử dụng các mô hình YOLOv8 để phân tích từng khung hình từ camera. Chẳng hạn, fire_module tìm kiếm dấu hiệu lửa và khói, trong khi traffic_module đếm số lượng xe.",
+      "nodeIds": [
+        "file:ai_module/fire_module.py",
+        "file:ai_module/flood_module.py",
+        "file:ai_module/traffic_module.py",
+        "file:ai_module/yolov8n_fire.pt"
+      ]
+    },
+    {
+      "order": 4,
+      "title": "Đánh giá Mức độ Sự kiện",
+      "description": "Khi nhận được dữ liệu từ AI, các dịch vụ như trafficService và floodService sẽ phân tích để xác định xem tình hình có đủ nghiêm trọng để phát cảnh báo hay không (ví dụ: mật độ giao thông vượt ngưỡng).",
+      "nodeIds": [
+        "file:backend/src/controllers/eventController.js",
+        "file:backend/src/services/trafficService.js",
+        "file:backend/src/services/floodService.js"
+      ]
+    },
+    {
+      "order": 5,
+      "title": "Phát Cảnh báo Thời gian thực",
+      "description": "Nếu sự cố được xác nhận, alertService sẽ ngay lập tức phát đi thông báo qua WebSocket tới tất cả các trình duyệt đang mở dashboard, đảm bảo thông tin được truyền tải không có độ trễ.",
+      "nodeIds": [
+        "file:backend/src/services/alertService.js"
+      ]
+    },
+    {
+      "order": 6,
+      "title": "Giao diện Điều hành trực quan",
+      "description": "Người vận hành có thể theo dõi toàn bộ thành phố trên một bản đồ duy nhất, xem luồng video trực tiếp từ điểm xảy ra sự cố và nhận các phản hồi hỗ trợ từ Chatbot tích hợp.",
+      "nodeIds": [
+        "file:frontend/index.html",
+        "file:backend/src/routes/chatbot.js"
+      ]
+    }
+  ]
+}

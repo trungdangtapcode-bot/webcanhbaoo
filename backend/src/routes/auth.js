@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const jwt = require('jsonwebtoken');
 const User = require('../models/User');
+const { isDatabaseConnected } = require('../config/database');
 const { authMiddleware, roleMiddleware } = require('../middleware/auth');
 
 function signUserToken(user) {
@@ -18,6 +19,10 @@ function signUserToken(user) {
 // ─────────────────────────────────────────────────────────────────────────────
 router.post('/register', authMiddleware, roleMiddleware('admin'), async (req, res) => {
   try {
+    if (!isDatabaseConnected()) {
+      return res.status(503).json({ error: 'Database not connected. Running in demo mode.' });
+    }
+
     const { username, email, password, role, full_name } = req.body;
 
     if (!username || !email || !password) {
@@ -47,6 +52,10 @@ router.post('/register', authMiddleware, roleMiddleware('admin'), async (req, re
 // ─────────────────────────────────────────────────────────────────────────────
 router.post('/signup', async (req, res) => {
   try {
+    if (!isDatabaseConnected()) {
+      return res.status(503).json({ error: 'Database not connected. Running in demo mode.' });
+    }
+
     const { username, email, password, full_name } = req.body;
 
     if (!username || !email || !password) {
@@ -93,6 +102,10 @@ router.post('/signup', async (req, res) => {
 // ─────────────────────────────────────────────────────────────────────────────
 router.post('/login', async (req, res) => {
   try {
+    if (!isDatabaseConnected()) {
+      return res.status(503).json({ error: 'Database not connected. Running in demo mode.' });
+    }
+
     const { username, password } = req.body;
 
     if (!username || !password) {
@@ -146,6 +159,10 @@ router.get('/me', authMiddleware, (req, res) => {
 // ─────────────────────────────────────────────────────────────────────────────
 router.get('/users', authMiddleware, roleMiddleware('admin'), async (req, res) => {
   try {
+    if (!isDatabaseConnected()) {
+      return res.status(503).json({ error: 'Database not connected. Running in demo mode.' });
+    }
+
     const users = await User.find({}).select('-password').sort({ createdAt: -1 });
     res.json({ total: users.length, users });
   } catch (err) {
@@ -159,6 +176,10 @@ router.get('/users', authMiddleware, roleMiddleware('admin'), async (req, res) =
 // ─────────────────────────────────────────────────────────────────────────────
 router.patch('/users/:id', authMiddleware, roleMiddleware('admin'), async (req, res) => {
   try {
+    if (!isDatabaseConnected()) {
+      return res.status(503).json({ error: 'Database not connected. Running in demo mode.' });
+    }
+
     const { role, is_active, full_name } = req.body;
     const updates = {};
     if (role !== undefined) updates.role = role;
