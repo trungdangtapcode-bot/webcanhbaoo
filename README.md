@@ -1,246 +1,105 @@
-# 🛡️ Smart Alert System
+# 🚨 Smart Alert System — Hệ Thống Cảnh Báo Giao Thông Thông Minh
 
-Real-time dashboard for detecting **traffic jams**, **flooding**, and **fire** from IP cameras.
+![Smart Alert System](https://img.shields.io/badge/Status-Active-brightgreen) ![Node.js](https://img.shields.io/badge/Node.js-20.x-green) ![Python](https://img.shields.io/badge/Python-3.11-blue) ![YOLOv8](https://img.shields.io/badge/AI-YOLOv8-orange)
 
----
-
-## System Requirements
-
-| Component   | Version       | Purpose                        |
-|-------------|---------------|--------------------------------|
-| Node.js     | >= 20.x       | Backend API + Socket.io        |
-| MongoDB     | >= 7.0        | Event & camera data store      |
-| Redis       | >= 7.0        | Socket.io adapter (cluster)    |
-| Python      | >= 3.11       | AI detection modules           |
-| PM2         | >= 5.4        | Process manager (production)   |
-| OpenCV      | >= 4.9        | Computer vision (Python)       |
-| CUDA        | >= 12.0 (opt) | GPU acceleration for YOLOv8    |
+**Smart Alert System** là một hệ thống giám sát và cảnh báo sự cố giao thông theo thời gian thực (Real-time). Hệ thống tự động phân tích hình ảnh từ các camera giao thông để phát hiện **Kẹt xe (Traffic Jam)**, **Ngập lụt (Flood)**, và **Cháy nổ (Fire)**.
 
 ---
 
-## Project Structure
+## 🎯 1. Mục Tiêu Đồ Án
 
-```
-smart-alert-system/
-├── backend/
-│   ├── src/
-│   │   ├── app.js                    # Express app + middleware
-│   │   ├── server.js                 # HTTP + Socket.io + Redis
-│   │   ├── routes/events.js          # POST/GET /api/events
-│   │   ├── routes/cameras.js         # GET/POST /api/cameras
-│   │   ├── controllers/eventController.js
-│   │   ├── controllers/cameraController.js
-│   │   ├── services/trafficService.js # Sliding window (120s)
-│   │   ├── services/floodService.js   # State machine
-│   │   ├── services/alertService.js   # Socket.io emit
-│   │   ├── models/Event.js
-│   │   ├── models/Camera.js
-│   │   ├── middleware/auth.js         # JWT validation
-│   │   └── config/database.js + redis.js
-│   ├── scripts/
-│   │   ├── seed.js                   # Seed demo cameras
-│   │   └── create_device_token.js    # Generate JWT for camera
-│   ├── ecosystem.config.js           # PM2 cluster config
-│   └── package.json
-├── frontend/
-│   └── index.html                    # Dashboard (Leaflet + Socket.io)
-├── ai_module/
-│   ├── traffic_module.py
-│   ├── fire_module.py
-│   ├── flood_module.py
-│   ├── requirements.txt
-│   └── .env.example
-└── README.md
-```
+- Xây dựng một giải pháp phần mềm toàn diện giúp các cơ quan quản lý giao thông và người dân giám sát tình hình giao thông tự động, thay thế việc con người phải túc trực xem camera 24/7.
+- Cung cấp các cảnh báo tức thời, chính xác bằng việc kết hợp các công nghệ AI tiên tiến (Computer Vision & Large Language Models) để loại bỏ cảnh báo giả.
+- Thiết kế kiến trúc phần mềm tối ưu hiệu năng, có khả năng mở rộng (scale) lên hàng trăm camera bằng mô hình Microservices và Xử lý hàng đợi đồng thời (Concurrency).
 
 ---
 
-## 🔍 Hướng dẫn Đánh giá Mã nguồn (Code Review)
+## ⭐ 2. Tính Năng Nổi Bật
 
-Để hỗ trợ giáo viên và các nhà phát triển hiểu nhanh kiến trúc hệ thống, dự án tích hợp một **Bản đồ kiến trúc tương tác (Interactive Code Map)**.
-
-1.  **Truy cập nhanh**: Sau khi khởi chạy Backend, truy cập: [http://localhost:3000/codegraph](http://localhost:3000/codegraph)
-2.  **Tính năng**:
-    *   Xem sơ đồ kết nối giữa các thành phần (Backend, AI, Frontend).
-    *   Phân tích các tầng kiến trúc (Layers).
-    *   Guided Tour: Chuyến tham quan mã nguồn theo từng bước quan trọng.
-3.  **Công nghệ**: Bản đồ được tạo tự động bằng công cụ `Understand Anything`, giúp trực quan hóa cấu trúc thư mục và các mối quan hệ `imports`/`calls` trong dự án.
+- **Phát hiện 3 loại sự cố chính:**
+  - 🚗 **Kẹt xe:** Đếm số lượng xe và đo tốc độ di chuyển bằng luồng quang học (Optical flow).
+  - 🌊 **Ngập lụt:** Phân tích dải màu, diện tích mặt nước và độ nhám bề mặt bằng hình học và HSV.
+  - 🔥 **Cháy nổ:** Phát hiện hình dáng ngọn lửa và khói bốc lên.
+- **Xác minh AI Đa Tầng:** Không chỉ dùng YOLO/OpenCV, hệ thống gửi hình ảnh sự cố lên **Groq/OpenRouter LLM (Llama/Nemotron)** để phân tích ngữ nghĩa, đảm bảo kết quả chính xác tuyệt đối.
+- **Bản đồ Giám sát Real-time:** Hiển thị trực quan tình trạng các ngã tư trên bản đồ. Các điểm xảy ra sự cố sẽ tự động chuyển đỏ, nhấp nháy và phát âm thanh báo động mà không cần tải lại trang.
+- **Chatbot AI Trợ lý:** Tích hợp AI hỏi đáp trực tiếp với người dùng về tình hình giao thông hiện tại ("Đường nào đang ngập?", "Ngã tư X có kẹt xe không?").
+- **Tự động quét (Auto Scanner):** Dịch vụ chạy ngầm tự động lấy ảnh từ hệ thống camera công cộng TP.HCM và Hà Nội định kỳ để phân tích.
+- **Kết nối Camera USB/Điện thoại:** Hỗ trợ dùng camera từ bất kỳ thiết bị cá nhân nào làm nguồn cấp dữ liệu (Webcam/Mobile Camera) để quét sự cố.
 
 ---
 
-## Installation (Ubuntu 22.04+)
+## 🛠️ 3. Công Nghệ Sử Dụng
 
-### 1. Install System Dependencies
+Kiến trúc hệ thống được chia làm 3 phân hệ chính:
 
-```bash
-# Node.js 20
-curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
-sudo apt-get install -y nodejs
+### Frontend (Giao diện hiển thị)
+- **HTML5, CSS3, JavaScript (Vanilla):** Giúp ứng dụng siêu nhẹ, tải nhanh và không bị độ trễ so với các framework cồng kềnh.
+- **Leaflet.js:** Render bản đồ tương tác.
+- **Chart.js:** Vẽ biểu đồ thống kê mật độ giao thông.
 
-# Redis
-sudo apt-get install -y redis-server
-sudo systemctl enable redis-server
-sudo systemctl start redis-server
+### Backend (Máy chủ điều phối)
+- **Node.js & Express.js:** Đảm bảo hiệu năng cao khi xử lý I/O không đồng bộ (non-blocking).
+- **Socket.io:** Phát (broadcast) thông tin sự cố đến tất cả client trong vài mili-giây.
+- **MongoDB:** Cơ sở dữ liệu NoSQL lưu trữ lịch sử sự kiện linh hoạt. Có cơ chế TTL tự động xóa dữ liệu cũ sau 7 ngày.
 
-# MongoDB (or use MongoDB Atlas)
-# See: https://www.mongodb.com/docs/manual/tutorial/install-mongodb-on-ubuntu/
+### AI Module (Máy chủ nhận diện)
+- **Python 3:** Ngôn ngữ mạnh nhất cho hệ sinh thái AI.
+- **YOLOv8 / YOLOv26:** Mô hình Deep Learning nhận diện vật thể (Object Detection) theo thời gian thực.
+- **OpenCV:** Xử lý ảnh máy tính truyền thống (Computer Vision) phân tích màu sắc và hình học.
+- **Groq / OpenRouter API:** Cung cấp LLM Vision cực mạnh đóng vai trò "Trọng tài" xác minh sự cố.
 
-# Python 3.11
-sudo apt-get install -y python3.11 python3.11-venv python3-pip
+### DevOps
+- **GitHub Actions:** Tự động hóa quá trình deploy (CI/CD) lên VPS.
+- **PM2:** Quản lý tiến trình (Process Manager) giữ cho hệ thống luôn chạy 24/7.
 
-# PM2 (global)
-sudo npm install -g pm2
-```
+---
 
-### 2. Setup Backend
+## ⚙️ 4. Cơ Chế Vận Hành (Data Flow)
 
+1. **Thu thập dữ liệu:** `multiCameraScannerService` tự động tải ảnh từ 12 camera công cộng mỗi 10 giây. Để tránh quá tải, hệ thống sử dụng thuật toán hàng đợi (Concurrency = 4) chia thành các batch để xử lý song song.
+2. **Phát hiện cấp độ 1 (YOLO/OpenCV):** Hình ảnh được gửi tới server Python. YOLO khoanh vùng xe cộ/ngọn lửa. OpenCV phân tích dải màu nước ngập.
+3. **Phát hiện cấp độ 2 (LLM Vision):** Nếu nghi ngờ có sự cố, hệ thống đóng gói ảnh dạng Base64 gửi lên Groq/OpenRouter. AI này sẽ trả lời YES/NO có thực sự là sự cố hay không (tránh tình trạng bóng áo đỏ bị nhận nhầm là lửa).
+4. **Xác nhận qua thời gian (Temporal Confirmation):** Cần ít nhất 3 khung hình liên tiếp báo có sự cố thì hệ thống mới xác nhận (để loại bỏ nhiễu ngẫu nhiên).
+5. **Cảnh báo (Real-time Alert):** Backend Node.js lưu sự cố vào MongoDB và dùng Socket.io đẩy cảnh báo thẳng xuống màn hình trình duyệt của tất cả người dùng đang theo dõi.
+
+---
+
+## 🚀 5. Hướng Dẫn Cài Đặt (Local Development)
+
+### 5.1 Yêu cầu hệ thống
+- Node.js >= 20.x
+- Python >= 3.11
+- MongoDB (Local hoặc Atlas)
+
+### 5.2 Khởi động Backend
 ```bash
 cd backend
-
-# Install dependencies
 npm install
-
-# Configure environment
+# Tạo file .env từ .env.example và điền các API Key (MongoDB, Groq/OpenRouter)
 cp .env.example .env
-# Edit .env with your MongoDB URI, Redis URL, API_SECRET,
-# JWT_SECRET, and GROQ_API_KEY for the chatbot
-nano .env
-```
-
-### 3. Seed Database
-
-```bash
-cd backend
-npm run seed
-```
-
-Expected output:
-```
-✅ Connected to MongoDB
-   📷 Seeded: CAM_001 — Nguyễn Huệ — Lê Lợi
-   📷 Seeded: CAM_002 — Điện Biên Phủ — Hai Bà Trưng
-   📷 Seeded: CAM_003 — Bình Triệu Bridge
-✅ Seeded 3 cameras successfully
-```
-
-### 4. Generate Device Tokens
-
-```bash
-cd backend
-node scripts/create_device_token.js CAM_001
-node scripts/create_device_token.js CAM_002
-node scripts/create_device_token.js CAM_003
-```
-
-Copy the generated JWT tokens to each AI module's `.env` file.
-
-### 5. Setup AI Modules (Python)
-
-```bash
-cd ai_module
-
-# Create virtual environment
-python3.11 -m venv venv
-source venv/bin/activate
-
-# Install dependencies
-pip install -r requirements.txt
-
-# Configure environment
-cp .env.example .env
-# Edit .env with camera ID, RTSP URL, backend URL, and JWT token
-nano .env
-```
-
----
-
-## Running
-
-### Backend (Development)
-
-```bash
-cd backend
+# Chạy Server
 npm run dev
 ```
+*Backend sẽ chạy ở địa chỉ `http://localhost:3000`*
 
-### Backend (Production with PM2)
-
-```bash
-cd backend
-npm start       # starts PM2 cluster
-pm2 logs        # view logs
-pm2 status      # view process status
-npm run stop    # stop all
-```
-
-### AI Modules
-
+### 5.3 Khởi động AI Module
 ```bash
 cd ai_module
-source venv/bin/activate
-
-# Run each module in separate terminals or use PM2/screen
-python traffic_module.py
-python fire_module.py
-python flood_module.py
+# Tạo môi trường ảo và cài đặt thư viện
+python -m venv venv
+venv\Scripts\activate  # Windows
+# source venv/bin/activate # Linux/Mac
+pip install -r requirements.txt
+# Chạy API Nhận diện
+python detector_api.py
 ```
+*AI API sẽ chạy ở địa chỉ `http://127.0.0.1:5055`*
 
-### Open Dashboard
-
-Navigate to: **http://localhost:3000**
-
-The dashboard will:
-- Show a dark-themed Leaflet map centered on Ho Chi Minh City
-- Display camera markers (🟢 = normal)
-- Listen for real-time alerts via Socket.io
-- Play audio beep and blink markers on alert
+### 5.4 Sử dụng
+1. Mở trình duyệt truy cập: `http://localhost:3000` (Dashboard chính)
+2. Truy cập: `http://localhost:3000/demo.html` (Giao diện dùng USB Camera để test nhận diện thực tế)
 
 ---
 
-## API Endpoints
-
-| Method | Endpoint        | Auth     | Description              |
-|--------|-----------------|----------|--------------------------|
-| GET    | /api/health     | None     | Health check             |
-| GET    | /api/cameras    | None     | List all cameras         |
-| POST   | /api/cameras    | None     | Create/update camera     |
-| GET    | /api/events     | None     | Query events             |
-| POST   | /api/events     | JWT      | Submit detection event   |
-
-### POST /api/events payload
-
-```json
-{
-  "camera_id": "CAM_001",
-  "event_type": "traffic_jam",
-  "confidence": 0.85,
-  "vehicle_count": 12,
-  "avg_speed": 2.3,
-  "water_ratio": null,
-  "image_base64": "<base64-jpeg>",
-  "timestamp": "2026-05-10T03:00:00Z"
-}
-```
-
----
-
-## Architecture
-
-```
-┌──────────────┐     POST /api/events     ┌──────────────────┐
-│  IP Camera   │◄──── RTSP ────►│ AI Module (Python) │────────►│  Node.js Backend │
-│  (RTSP)      │                │ YOLOv8 / OpenCV    │  JWT    │  Express+Socket  │
-└──────────────┘                └────────────────────┘         └────────┬─────────┘
-                                                                        │ Socket.io
-                                                                        ▼
-                                                               ┌────────────────┐
-                                                               │  Web Dashboard  │
-                                                               │  Leaflet + SIO  │
-                                                               └────────────────┘
-```
-
----
-
-## License
-
-MIT
+## 🛡️ Bản quyền
+Dự án được xây dựng phục vụ mục đích nghiên cứu và học thuật.
