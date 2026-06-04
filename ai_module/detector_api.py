@@ -96,6 +96,7 @@ FLOOD_MIN_LARGEST_BLOB_RATIO = float(os.getenv("DETECTOR_FLOOD_MIN_LARGEST_BLOB_
 FLOOD_MIN_BOTTOM_COVERAGE = float(os.getenv("DETECTOR_FLOOD_MIN_BOTTOM_COVERAGE", "0.18"))
 FLOOD_MAX_TEXTURE_SCORE = float(os.getenv("DETECTOR_FLOOD_MAX_TEXTURE_SCORE", "0.50"))
 FLOOD_MAX_EDGE_DENSITY = float(os.getenv("DETECTOR_FLOOD_MAX_EDGE_DENSITY", "0.18"))
+FLOOD_ENABLE_REFLECTIVE_MASK = os.getenv("DETECTOR_FLOOD_ENABLE_REFLECTIVE_MASK", "false").lower() == "true"
 
 # ── Traffic thresholds ───────────────────────────────────────────────────────
 TRAFFIC_MIN_VEHICLES = int(os.getenv("DETECTOR_TRAFFIC_MIN_VEHICLES", "21"))
@@ -788,9 +789,10 @@ def _flood_mask(hsv: np.ndarray) -> np.ndarray:
     mask = (
         cv2.inRange(hsv_roi, muddy_lower, muddy_upper) |
         cv2.inRange(hsv_roi, tan_lower, tan_upper) |
-        cv2.inRange(hsv_roi, grey_lower, grey_upper) |
-        cv2.inRange(hsv_roi, reflective_lower, reflective_upper)
+        cv2.inRange(hsv_roi, grey_lower, grey_upper)
     )
+    if FLOOD_ENABLE_REFLECTIVE_MASK:
+        mask |= cv2.inRange(hsv_roi, reflective_lower, reflective_upper)
 
     kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (7, 7))
     mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN,  kernel)
@@ -1513,6 +1515,64 @@ def analyze_traffic_with_ai(frame: np.ndarray, camera_id: str = "unknown") -> Di
         return None
 
 
+def _is_strong_verified_flood(detection: Dict[str, Any]) -> bool:
+    """
+    Keep flood alongside traffic only when flood evidence is very strong.
+
+    Traffic scenes often contain grey asphalt, shadows, lane markings, and
+    vehicle reflections in the lower road band. Those can look like a broad
+    flood-colour mask, so a traffic jam should suppress weak flood candidates.
+    """
+    metadata = detection.get("metadata", {}) or {}
+    water_ratio = float(detection.get("water_ratio") or metadata.get("water_ratio") or 0.0)
+    bottom_coverage = float(metadata.get("bottom_coverage") or 0.0)
+    largest_blob_ratio = float(metadata.get("largest_blob_ratio") or 0.0)
+    ai_evidence = str(metadata.get("ai_visual_evidence") or "").lower()
+    ai_verified = metadata.get("verified_by_ai") is True
+    strong_visual_evidence = ai_evidence in {
+        "standing_water",
+        "submerged_road",
+        "submerged_lane",
+        "submerged_curb",
+        "water_reaching_wheels",
+        "continuous_water_sheet",
+    }
+
+    return (
+        water_ratio >= max(FLOOD_ALERT_RATIO, 0.46) and
+        bottom_coverage >= max(FLOOD_MIN_BOTTOM_COVERAGE, 0.32) and
+        largest_blob_ratio >= max(FLOOD_MIN_LARGEST_BLOB_RATIO, 0.18) and
+        (ai_verified or strong_visual_evidence)
+    )
+
+
+def arbitrate_incident_detections(detections: List[Dict[str, Any]], camera_id: str) -> List[Dict[str, Any]]:
+    has_traffic_jam = any(
+        item.get("event_type") == "traffic_jam" and item.get("active", True) is not False
+        for item in detections
+    )
+    if not has_traffic_jam:
+        return detections
+
+    filtered: List[Dict[str, Any]] = []
+    for item in detections:
+        if item.get("event_type") != "flood":
+            filtered.append(item)
+            continue
+        if _is_strong_verified_flood(item):
+            filtered.append(item)
+            continue
+        log.info(
+            "Suppressing weak flood candidate because traffic_jam is present "
+            "(camera=%s, water_ratio=%s, bottom=%s, largest=%s)",
+            camera_id,
+            item.get("water_ratio") or item.get("metadata", {}).get("water_ratio"),
+            item.get("metadata", {}).get("bottom_coverage"),
+            item.get("metadata", {}).get("largest_blob_ratio"),
+        )
+    return filtered
+
+
 def detect(
     frame: np.ndarray,
     camera_id: str = "unknown",
@@ -1691,7 +1751,7 @@ def detect(
         if ai_traffic:
             detections.append(ai_traffic)
 
-    return detections
+    return arbitrate_incident_detections(detections, camera_id)
 
 
 class DetectorHandler(BaseHTTPRequestHandler):
@@ -1727,6 +1787,7 @@ class DetectorHandler(BaseHTTPRequestHandler):
                 "fire_allow_local_fallback": FIRE_ALLOW_LOCAL_FALLBACK,
                 "flood_require_ai_verification": FLOOD_REQUIRE_AI_VERIFICATION,
                 "flood_allow_local_fallback": FLOOD_ALLOW_LOCAL_FALLBACK,
+                "flood_reflective_mask_enabled": FLOOD_ENABLE_REFLECTIVE_MASK,
                 "fire_yolo_classes": sorted(FIRE_YOLO_CLASSES),
                 "ai_provider": AI_PROVIDER,
                 "ai_endpoint": AI_ENDPOINT,
