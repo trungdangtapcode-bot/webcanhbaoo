@@ -17,10 +17,12 @@ module.exports = {
       env: {
         NODE_ENV: 'development',
         PORT: 3000,
+        DISABLE_REDIS: 'true',
       },
       env_production: {
         NODE_ENV: 'production',
         PORT: 3000,
+        DISABLE_REDIS: 'true',
         ALERT_CLEAR_HEARTBEATS: '3',
         EVENT_IMAGE_STORAGE: 'active',
         EVENT_RETENTION_DAYS: '7',

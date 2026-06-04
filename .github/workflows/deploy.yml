@@ -109,7 +109,13 @@ jobs:
               || echo "Event cleanup skipped."
 
             echo "Checking backend health..."
-            wait_for_url "backend" "http://127.0.0.1:3000/api/health" 30 2
+            if ! wait_for_url "backend" "http://127.0.0.1:3000/api/health" 30 2; then
+              echo "Backend did not become healthy. PM2 status:"
+              pm2 status || true
+              echo "Recent backend logs:"
+              pm2 logs smart-alert-api --lines 120 --nostream || true
+              exit 1
+            fi
 
             echo "Checking Hanoi proxy health..."
             wait_for_url "Hanoi proxy" "http://127.0.0.1:5001/health" 30 2
