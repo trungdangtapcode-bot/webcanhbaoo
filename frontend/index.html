@@ -107,6 +107,24 @@
         </div>
       </section>
 
+      <section class="quick-action-section" aria-label="Emergency actions">
+        <button class="emergency-button" id="emergency-open" type="button">
+          <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+            <path d="M12 3.5 21 20H3L12 3.5Z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" />
+            <path d="M12 9v4.7" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" />
+            <path d="M12 17.2h.01" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" />
+          </svg>
+          Send emergency report
+        </button>
+        <button class="contribute-camera-button" id="contribute-camera-open" type="button">
+          <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+            <path d="M4 8.5A2.5 2.5 0 0 1 6.5 6h11A2.5 2.5 0 0 1 20 8.5v7A2.5 2.5 0 0 1 17.5 18h-11A2.5 2.5 0 0 1 4 15.5v-7Z" stroke="currentColor" stroke-width="1.8"/>
+            <path d="M12 10v5M9.5 12.5h5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+          </svg>
+          Contribute camera
+        </button>
+      </section>
+
       <nav class="workspace-nav" aria-label="Dashboard sections">
         <button class="workspace-tab" type="button" data-workspace-tab="cameras">
           <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
@@ -159,6 +177,7 @@
           <div class="account-user">
             <div class="account-user-name" id="account-user-name">Operator</div>
           </div>
+          <a class="account-admin-link" id="account-admin-link" href="admin.html" title="Admin console" hidden>Admin</a>
           <button class="account-logout-icon" id="account-logout" type="button" title="Logout">
             <svg viewBox="0 0 24 24" fill="none"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
           </button>
@@ -468,6 +487,139 @@
     </main>
   </div>
 
+  <div class="video-modal" id="contribute-camera-modal" role="dialog" aria-modal="true" aria-labelledby="contribute-camera-title">
+    <div class="modal-content compact-modal">
+      <div class="modal-header">
+        <div class="modal-title">
+          <strong id="contribute-camera-title">Contribute camera</strong>
+          <span class="live-badge">Community source</span>
+        </div>
+        <button class="close-modal" id="contribute-camera-close" type="button" aria-label="Close camera contribution">
+          <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+            <path d="M6.5 6.5 17.5 17.5M17.5 6.5 6.5 17.5" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" />
+          </svg>
+        </button>
+      </div>
+      <form class="modal-form" id="contribute-camera-form">
+        <label class="field">
+          <span class="field-label">Camera name or intersection</span>
+          <input id="contribute-camera-name" type="text" maxlength="120" placeholder="Example: Le Loi - Nguyen Hue" required />
+        </label>
+        <div class="modal-form-grid">
+          <label class="field">
+            <span class="field-label">Latitude</span>
+            <input id="contribute-camera-lat" type="number" step="0.000001" min="-90" max="90" required />
+          </label>
+          <label class="field">
+            <span class="field-label">Longitude</span>
+            <input id="contribute-camera-lng" type="number" step="0.000001" min="-180" max="180" required />
+          </label>
+        </div>
+        <button class="secondary-action location-fill-action" id="contribute-use-location" type="button">Use current location</button>
+        <label class="field">
+          <span class="field-label">Address or area</span>
+          <input id="contribute-camera-address" type="text" maxlength="240" placeholder="District, road, or landmark" />
+        </label>
+        <label class="field">
+          <span class="field-label">Snapshot URL</span>
+          <input id="contribute-camera-snapshot" type="url" maxlength="500" placeholder="https://.../snapshot.jpg" />
+        </label>
+        <label class="field">
+          <span class="field-label">Stream URL</span>
+          <input id="contribute-camera-stream" type="url" maxlength="500" placeholder="rtsp:// or https://..." />
+        </label>
+        <label class="field">
+          <span class="field-label">Notes</span>
+          <textarea id="contribute-camera-note" maxlength="500" placeholder="Source, expected uptime, view direction, or why this camera helps"></textarea>
+        </label>
+        <fieldset class="privacy-fieldset">
+          <legend>Bạn có muốn người khác nhìn thấy camera này không?</legend>
+          <label class="privacy-option">
+            <input type="radio" name="contribute-public-visible" value="yes" checked />
+            <span>Có</span>
+          </label>
+          <label class="privacy-option">
+            <input type="radio" name="contribute-public-visible" value="no" />
+            <span>Không</span>
+          </label>
+        </fieldset>
+        <fieldset class="privacy-fieldset" id="incident-share-question" hidden>
+          <legend>Nếu có sự cố thì bạn có sẵn sàng chia sẻ camera của mình cho người khác biết không?</legend>
+          <label class="privacy-option">
+            <input type="radio" name="contribute-incident-share" value="yes" checked />
+            <span>Có</span>
+          </label>
+          <label class="privacy-option">
+            <input type="radio" name="contribute-incident-share" value="no" />
+            <span>Không</span>
+          </label>
+        </fieldset>
+        <div class="form-status" id="contribute-camera-status">An admin will review this before it appears on the map.</div>
+        <div class="modal-actions">
+          <button class="secondary-action" id="contribute-camera-cancel" type="button">Cancel</button>
+          <button class="primary-action" type="submit">
+            <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+              <path d="M4 12 20 4l-4 16-3.4-6.6L4 12Z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" />
+              <path d="m12.6 13.4 3.1-5.1" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" />
+            </svg>
+            Send contribution
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <div class="video-modal" id="emergency-modal" role="dialog" aria-modal="true" aria-labelledby="emergency-title">
+    <div class="modal-content compact-modal">
+      <div class="modal-header">
+        <div class="modal-title">
+          <strong id="emergency-title">Send emergency report</strong>
+          <span class="live-badge">Urgent incident</span>
+        </div>
+        <button class="close-modal" id="emergency-close" type="button" aria-label="Close emergency report">
+          <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+            <path d="M6.5 6.5 17.5 17.5M17.5 6.5 6.5 17.5" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" />
+          </svg>
+        </button>
+      </div>
+      <form class="modal-form" id="emergency-form">
+        <div class="modal-form-grid">
+          <label class="field">
+            <span class="field-label">Incident type</span>
+            <select id="emergency-type">
+              <option value="fire">Fire</option>
+              <option value="flood">Flood</option>
+              <option value="traffic_jam">Traffic jam</option>
+            </select>
+          </label>
+          <label class="field">
+            <span class="field-label">Camera fallback</span>
+            <select id="emergency-camera"></select>
+          </label>
+        </div>
+        <label class="checkbox-row">
+          <input id="emergency-use-location" type="checkbox" checked />
+          <span>Use my current position when available, otherwise report through the selected camera.</span>
+        </label>
+        <label class="field">
+          <span class="field-label">Notes</span>
+          <textarea id="emergency-note" maxlength="500" placeholder="Optional details for operators"></textarea>
+        </label>
+        <div class="form-status" id="emergency-status">Ready to send.</div>
+        <div class="modal-actions">
+          <button class="secondary-action" id="emergency-cancel" type="button">Cancel</button>
+          <button class="primary-action" type="submit">
+            <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+              <path d="M4 12 20 4l-4 16-3.4-6.6L4 12Z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" />
+              <path d="m12.6 13.4 3.1-5.1" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" />
+            </svg>
+            Send report
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+
   <div class="video-modal snapshot-modal" id="alert-snapshot-modal" role="dialog" aria-modal="true" aria-labelledby="alert-snapshot-title">
     <div class="modal-content snapshot-modal-content">
       <div class="modal-header">
@@ -520,6 +672,7 @@
           </div>
         </div>
         <img id="video-stream" src="" alt="AI processed camera stream" />
+        <iframe id="youtube-stream" title="YouTube camera stream" allow="autoplay; encrypted-media; picture-in-picture; fullscreen" allowfullscreen hidden></iframe>
       </div>
       <div class="camera-history-panel" id="camera-history-panel">
         <div class="camera-history-item">

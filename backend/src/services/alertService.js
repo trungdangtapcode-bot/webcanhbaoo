@@ -8,6 +8,7 @@
 
 let ioInstance = null;
 const alertQueueService = require('./alertQueueService');
+const emailAlertService = require('./emailAlertService');
 
 // Map<`${camera_id}:${event_type}`, activeAlert>
 const activeAlerts = new Map();
@@ -102,6 +103,7 @@ function upsertActiveAlert(alertData, options = {}) {
   if (!existing) {
     if (ioInstance) ioInstance.emit('alert', { ...payload, queue_status: queueItem.status });
     else console.error('[AlertService] Socket.io not initialized');
+    emailAlertService.notifyAlert(payload);
     console.log(`[AlertService] alert: ${payload.event_type} @ ${payload.camera_id} (${payload.severity})`);
     return { created: true, alert: payload };
   }

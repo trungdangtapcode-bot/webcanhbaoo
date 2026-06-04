@@ -55,6 +55,81 @@ const DEMO_CAMERAS = [
   },
 ];
 
+function mergeCameraLists(primary, extras) {
+  const seen = new Set();
+  return [...primary, ...extras].filter((camera) => {
+    if (!camera?.camera_id || seen.has(camera.camera_id)) return false;
+    seen.add(camera.camera_id);
+    return true;
+  });
+}
+
+function cleanString(value, maxLength = 500) {
+  return String(value || '').trim().slice(0, maxLength);
+}
+
+function extractYoutubeVideoId(value) {
+  const input = cleanString(value, 500);
+  if (!input) return null;
+
+  try {
+    const url = new URL(input);
+    const host = url.hostname.replace(/^www\./, '').toLowerCase();
+    if (host === 'youtu.be') return cleanString(url.pathname.split('/').filter(Boolean)[0], 32);
+    if (host.endsWith('youtube.com')) {
+      if (url.searchParams.get('v')) return cleanString(url.searchParams.get('v'), 32);
+      const parts = url.pathname.split('/').filter(Boolean);
+      const markerIndex = parts.findIndex((part) => ['embed', 'shorts', 'live'].includes(part));
+      if (markerIndex >= 0 && parts[markerIndex + 1]) return cleanString(parts[markerIndex + 1], 32);
+    }
+  } catch (_err) {
+    return null;
+  }
+
+  return null;
+}
+
+function getYoutubeThumbnailUrl(value) {
+  const videoId = extractYoutubeVideoId(value);
+  return videoId ? `https://i.ytimg.com/vi/${videoId}/hqdefault_live.jpg` : null;
+}
+
+function normalizeCommunityCamera(camera) {
+  if (camera?.source !== 'user_contribution') return camera;
+  const youtubeSnapshot = getYoutubeThumbnailUrl(camera.stream_url) || getYoutubeThumbnailUrl(camera.metadata?.original_url);
+  const snapshotUrl =
+    youtubeSnapshot ||
+    camera.snapshot_url;
+
+  if (!snapshotUrl) return camera;
+  return {
+    ...camera,
+    snapshot_url: snapshotUrl,
+    stream_type: 'snapshot',
+    metadata: {
+      ...(camera.metadata || {}),
+      snapshot_refresh_ms: 5000,
+    },
+  };
+}
+
+async function getApprovedCommunityCameras() {
+  if (isDatabaseConnected()) {
+    const cameras = await Camera.find({
+      active: { $ne: false },
+      source: 'user_contribution',
+    })
+      .select('-token_hash')
+      .sort({ created_at: -1 })
+      .lean();
+    return cameras.map(normalizeCommunityCamera);
+  }
+
+  return DEMO_CAMERAS
+    .filter((camera) => camera.source === 'user_contribution' && camera.active !== false)
+    .map(normalizeCommunityCamera);
+}
+
 /**
  * GET /api/cameras
  * Returns all cameras (optionally filtered by active status).
@@ -63,9 +138,10 @@ const DEMO_CAMERAS = [
 async function getCameras(req, res) {
   try {
     if (req.query.source === 'hcm') {
+      const communityCameras = await getApprovedCommunityCameras();
       return res.json({
-        cameras: getHcmCameras(req.query.limit),
-        source: 'hcm_traffic_portal',
+        cameras: mergeCameraLists(getHcmCameras(req.query.limit), communityCameras),
+        source: 'hcm_traffic_portal_with_community',
       });
     }
 
@@ -100,9 +176,10 @@ async function getCameras(req, res) {
  */
 async function getHcmTrafficCameras(req, res) {
   try {
+    const communityCameras = await getApprovedCommunityCameras();
     return res.json({
-      cameras: getHcmCameras(req.query.limit),
-      source: 'hcm_traffic_portal',
+      cameras: mergeCameraLists(getHcmCameras(req.query.limit), communityCameras),
+      source: 'hcm_traffic_portal_with_community',
     });
   } catch (err) {
     console.error('[CameraController] HCM cameras error:', err);

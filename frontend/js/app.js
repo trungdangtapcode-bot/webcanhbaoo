@@ -384,6 +384,8 @@
         return;
       }
       document.getElementById("account-user-name").textContent = user.name || user.email;
+      const adminLink = document.getElementById("account-admin-link");
+      if (adminLink) adminLink.hidden = user.role !== "admin";
     }
 
     function logout() {
@@ -1172,11 +1174,16 @@
       const camName = cam ? maybeRepairMojibake(cam.data.name) : "Camera";
       const shell = document.querySelector(".video-shell");
       const stream = document.getElementById("video-stream");
+      const youtubeStream = document.getElementById("youtube-stream");
       const snapshotUrl = cam?.data?.snapshot_url;
       const streamUrl = cam?.data?.stream_url;
+      const youtubeEmbedUrl = getYoutubeEmbedUrl(streamUrl || snapshotUrl);
       const streamType = cam?.data?.stream_type || "";
       const sourceType = cam?.data?.source || "";
       const isSnapshotStream = cam?.data?.stream_type === "snapshot" || Boolean(snapshotUrl);
+      const snapshotRefreshMs = Number(cam?.data?.metadata?.snapshot_refresh_ms) || (
+        sourceType === "user_contribution" ? 5000 : 2000
+      );
       const isHanoiRealtime =
         streamType === "wss_video" ||
         sourceType === "hanoi_video_wall" ||
@@ -1189,16 +1196,24 @@
       let hanoiRetryCount = 0;
 
       document.getElementById("modal-cam-name").textContent = camName;
-      if (liveBadge) liveBadge.textContent = isHanoiRealtime ? "Realtime WSS metadata" : "Live AI stream";
-      document.getElementById("stream-placeholder-title").textContent = isHanoiRealtime
+      if (liveBadge) liveBadge.textContent = youtubeEmbedUrl ? "YouTube live stream" : isHanoiRealtime ? "Realtime WSS metadata" : "Live AI stream";
+      document.getElementById("stream-placeholder-title").textContent = youtubeEmbedUrl
+        ? "Opening YouTube player"
+        : isHanoiRealtime
         ? "Connecting to Hanoi realtime video"
         : isSnapshotStream ? "Connecting to live camera" : "Waiting for stream";
-      document.getElementById("stream-placeholder-copy").textContent = isHanoiRealtime
+      document.getElementById("stream-placeholder-copy").textContent = youtubeEmbedUrl
+        ? "This community camera is shown through the embedded YouTube player."
+        : isHanoiRealtime
         ? "The local Hanoi WSS proxy is decoding HEVC video into a browser-friendly MJPEG stream."
         : isSnapshotStream
-        ? "Live frames are loading through the local camera proxy."
+          ? sourceType === "user_contribution"
+          ? "Community camera snapshots refresh automatically."
+          : "Live frames are loading through the local camera proxy."
         : "The AI video proxy will appear here when the camera feed is available.";
-      shell.classList.remove("stream-offline");
+      shell.classList.remove("stream-offline", "youtube-mode");
+      youtubeStream.hidden = true;
+      youtubeStream.src = "";
       stream.onload = () => {
         if (sessionId !== streamSessionId) return;
         shell.classList.remove("stream-offline");
@@ -1231,7 +1246,11 @@
           : "Start the AI proxy on localhost:5000 to view the processed camera feed.";
       };
 
-      if (isHanoiRealtime) {
+      if (youtubeEmbedUrl) {
+        shell.classList.add("youtube-mode");
+        youtubeStream.hidden = false;
+        youtubeStream.src = youtubeEmbedUrl;
+      } else if (isHanoiRealtime) {
         prewarmHanoiDecoder(camId, sessionId, stream, sourceUrl);
         watchHanoiDecoderStatus(camId, sessionId, shell);
       } else if (isSnapshotStream) {
@@ -1240,7 +1259,7 @@
           stream.src = sourceUrl + joiner + "ts=" + Date.now();
         };
         loadFrame();
-        streamRefreshTimer = window.setInterval(loadFrame, 2000);
+        streamRefreshTimer = window.setInterval(loadFrame, Math.max(snapshotRefreshMs, 2000));
       } else {
         stream.src = sourceUrl;
       }
@@ -1346,9 +1365,15 @@
         hanoiStatusTimer = null;
       }
       const stream = document.getElementById("video-stream");
+      const youtubeStream = document.getElementById("youtube-stream");
       stream.onload = null;
       stream.onerror = null;
       stream.src = "";
+      if (youtubeStream) {
+        youtubeStream.src = "";
+        youtubeStream.hidden = true;
+      }
+      document.querySelector(".video-shell")?.classList.remove("youtube-mode");
     }
 
     function getAlertImageSrc(alertData) {
@@ -1399,6 +1424,53 @@
       modal.classList.add("active");
     }
 
+    function openContributeCameraModal() {
+      const form = document.getElementById("contribute-camera-form");
+      const status = document.getElementById("contribute-camera-status");
+      form.reset();
+      updateContributionPrivacyQuestions();
+      status.textContent = "Camera proposals are reviewed by the admin before going live.";
+      status.classList.remove("error");
+      document.getElementById("contribute-camera-modal").classList.add("active");
+    }
+
+    function closeContributeCameraModal() {
+      document.getElementById("contribute-camera-modal").classList.remove("active");
+    }
+
+    function populateEmergencyCameraSelect() {
+      const select = document.getElementById("emergency-camera");
+      if (!select) return;
+      const currentValue = select.value || activeCameraId;
+      select.innerHTML = "";
+      Array.from(cameras.entries())
+        .filter(([id]) => id)
+        .sort(([a], [b]) => a.localeCompare(b))
+        .forEach(([id, cam]) => {
+          const option = document.createElement("option");
+          option.value = id;
+          option.textContent = maybeRepairMojibake(cam.data.name || id);
+          select.appendChild(option);
+        });
+      if (currentValue && cameras.has(currentValue)) {
+        select.value = currentValue;
+      } else if (select.options.length) {
+        select.selectedIndex = 0;
+      }
+    }
+
+    function openEmergencyModal() {
+      populateEmergencyCameraSelect();
+      const select = document.getElementById("emergency-camera");
+      if (activeCameraId && cameras.has(activeCameraId)) select.value = activeCameraId;
+      document.getElementById("emergency-status").textContent = "Ready to send.";
+      document.getElementById("emergency-modal").classList.add("active");
+    }
+
+    function closeEmergencyModal() {
+      document.getElementById("emergency-modal").classList.remove("active");
+    }
+
     function getCurrentPosition() {
       return new Promise((resolve, reject) => {
         if (!navigator.geolocation) {
@@ -1411,6 +1483,158 @@
           maximumAge: 30000,
         });
       });
+    }
+
+    async function submitEmergencyReport(event) {
+      event.preventDefault();
+      const status = document.getElementById("emergency-status");
+      status.textContent = "Sending emergency report...";
+
+      const payload = {
+        event_type: document.getElementById("emergency-type").value,
+        camera_id: document.getElementById("emergency-camera").value || activeCameraId || undefined,
+        note: document.getElementById("emergency-note").value.trim(),
+        timestamp: new Date().toISOString(),
+      };
+
+      if (document.getElementById("emergency-use-location").checked) {
+        try {
+          const position = await getCurrentPosition();
+          payload.lat = position.coords.latitude;
+          payload.lng = position.coords.longitude;
+          userLocation = { lat: payload.lat, lng: payload.lng };
+          updateNearbyStatus();
+        } catch (_err) {
+          status.textContent = "Location unavailable. Sending through selected camera...";
+        }
+      }
+
+      try {
+        const res = await fetch(apiUrl("/api/events/emergency"), {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        });
+        const json = await res.json();
+        if (!res.ok) throw new Error(json.error || "Could not send report");
+        status.textContent = "Emergency report sent to operators.";
+        document.getElementById("emergency-note").value = "";
+        setTimeout(closeEmergencyModal, 800);
+      } catch (err) {
+        status.textContent = err.message || "Could not send emergency report.";
+      }
+    }
+
+    function extractYoutubeVideoId(value) {
+      const input = String(value || "").trim();
+      if (!input) return null;
+      try {
+        const url = new URL(input);
+        const host = url.hostname.replace(/^www\./, "").toLowerCase();
+        if (host === "youtu.be") return url.pathname.split("/").filter(Boolean)[0] || null;
+        if (host.endsWith("youtube.com")) {
+          const directId = url.searchParams.get("v");
+          if (directId) return directId;
+          const parts = url.pathname.split("/").filter(Boolean);
+          const markerIndex = parts.findIndex((part) => ["embed", "shorts", "live"].includes(part));
+          if (markerIndex >= 0 && parts[markerIndex + 1]) return parts[markerIndex + 1];
+        }
+      } catch (_err) {
+        return null;
+      }
+      return null;
+    }
+
+    function getYoutubeEmbedUrl(value) {
+      const videoId = extractYoutubeVideoId(value);
+      if (!videoId) return null;
+      const params = new URLSearchParams({
+        autoplay: "1",
+        mute: "1",
+        playsinline: "1",
+        rel: "0",
+        modestbranding: "1",
+      });
+      return "https://www.youtube.com/embed/" + encodeURIComponent(videoId) + "?" + params.toString();
+    }
+
+    function getCheckedValue(name, fallback) {
+      return document.querySelector(`input[name="${name}"]:checked`)?.value || fallback;
+    }
+
+    function updateContributionPrivacyQuestions() {
+      const publicVisible = getCheckedValue("contribute-public-visible", "yes") === "yes";
+      const incidentQuestion = document.getElementById("incident-share-question");
+      incidentQuestion.hidden = publicVisible;
+      if (publicVisible) {
+        const yes = document.querySelector('input[name="contribute-incident-share"][value="yes"]');
+        if (yes) yes.checked = true;
+      }
+    }
+
+    async function fillContributionLocation() {
+      const status = document.getElementById("contribute-camera-status");
+      status.textContent = "Reading your current location...";
+      status.classList.remove("error");
+      try {
+        const position = await getCurrentPosition();
+        const lat = position.coords.latitude;
+        const lng = position.coords.longitude;
+        document.getElementById("contribute-camera-lat").value = lat.toFixed(6);
+        document.getElementById("contribute-camera-lng").value = lng.toFixed(6);
+        userLocation = { lat, lng };
+        updateNearbyStatus();
+        status.textContent = "Location filled. Add a name or address before sending.";
+      } catch (_err) {
+        status.textContent = "Could not read your location. You can type coordinates manually.";
+        status.classList.add("error");
+      }
+    }
+
+    async function submitCameraContribution(event) {
+      event.preventDefault();
+      const status = document.getElementById("contribute-camera-status");
+      status.textContent = "Sending camera proposal...";
+      status.classList.remove("error");
+
+      const user = getCurrentUser();
+      const publicVisible = getCheckedValue("contribute-public-visible", "yes") === "yes";
+      const payload = {
+        name: document.getElementById("contribute-camera-name").value.trim(),
+        lat: Number(document.getElementById("contribute-camera-lat").value),
+        lng: Number(document.getElementById("contribute-camera-lng").value),
+        address: document.getElementById("contribute-camera-address").value.trim(),
+        snapshot_url: document.getElementById("contribute-camera-snapshot").value.trim(),
+        stream_url: document.getElementById("contribute-camera-stream").value.trim(),
+        note: document.getElementById("contribute-camera-note").value.trim(),
+        contributor_name: user?.name || "User",
+        contributor_email: user?.email || "",
+        privacy: {
+          public_visible: publicVisible,
+          incident_share: publicVisible ? true : getCheckedValue("contribute-incident-share", "yes") === "yes",
+        },
+      };
+
+      if (!payload.name || !Number.isFinite(payload.lat) || !Number.isFinite(payload.lng)) {
+        status.textContent = "Please enter camera name, latitude, and longitude.";
+        status.classList.add("error");
+        return;
+      }
+
+      try {
+        const res = await fetch(apiUrl("/api/camera-contributions"), {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        });
+        const json = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(json.error || "Could not send camera proposal");
+        status.textContent = "Camera sent to admin for review.";
+        setTimeout(closeContributeCameraModal, 900);
+      } catch (err) {
+        status.textContent = err.message || "Could not send camera proposal.";
+        status.classList.add("error");
+      }
     }
 
     function setNearbyRadius(radius) {
@@ -2032,6 +2256,18 @@
     });
 
     document.getElementById("alert-snapshot-close")?.addEventListener("click", closeAlertSnapshot);
+    document.getElementById("emergency-open").addEventListener("click", openEmergencyModal);
+    document.getElementById("emergency-close").addEventListener("click", closeEmergencyModal);
+    document.getElementById("emergency-cancel").addEventListener("click", closeEmergencyModal);
+    document.getElementById("emergency-form").addEventListener("submit", submitEmergencyReport);
+    document.getElementById("contribute-camera-open").addEventListener("click", openContributeCameraModal);
+    document.getElementById("contribute-camera-close").addEventListener("click", closeContributeCameraModal);
+    document.getElementById("contribute-camera-cancel").addEventListener("click", closeContributeCameraModal);
+    document.getElementById("contribute-use-location").addEventListener("click", fillContributionLocation);
+    document.getElementById("contribute-camera-form").addEventListener("submit", submitCameraContribution);
+    document.querySelectorAll('input[name="contribute-public-visible"]').forEach((input) => {
+      input.addEventListener("change", updateContributionPrivacyQuestions);
+    });
     document.getElementById("nearby-toggle").addEventListener("click", toggleNearbyNotifications);
     document.getElementById("scanner-toggle").addEventListener("click", toggleScanner);
     document.getElementById("health-check").addEventListener("click", refreshCameraHealth);
@@ -2127,6 +2363,8 @@
       if (event.key === "Escape") {
         closeVideoModal();
         closeAlertSnapshot();
+        closeEmergencyModal();
+        closeContributeCameraModal();
       }
     });
 

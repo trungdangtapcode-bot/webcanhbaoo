@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<html lang="en" class="wa-theme-default wa-palette-default wa-brand-blue wa-dark">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="description" content="Smart Alert admin operations console" />
+  <title>Smart Alert Admin</title>
+  <script>
+    function syncWebAwesomeTheme(theme) {
+      const root = document.documentElement;
+      root.classList.add("wa-theme-default", "wa-palette-default", "wa-brand-blue");
+      root.classList.toggle("wa-light", theme === "light");
+      root.classList.toggle("wa-dark", theme !== "light");
+    }
+
+    (function initStoredTheme() {
+      try {
+        const savedTheme = localStorage.getItem("smart-alert-theme");
+        const prefersLight = window.matchMedia && window.matchMedia("(prefers-color-scheme: light)").matches;
+        const theme = savedTheme || (prefersLight ? "light" : "dark");
+        document.documentElement.dataset.theme = theme;
+        syncWebAwesomeTheme(theme);
+      } catch (_err) {
+        document.documentElement.dataset.theme = "dark";
+        syncWebAwesomeTheme("dark");
+      }
+    })();
+
+    (function requireAdmin() {
+      try {
+        const session = JSON.parse(localStorage.getItem("smart-alert-auth-session") || "null");
+        if (!session || session.role !== "admin") window.location.replace("login.html");
+      } catch (_err) {
+        window.location.replace("login.html");
+      }
+    })();
+  </script>
+  <link rel="stylesheet" href="./css/style.css" />
+</head>
+<body class="admin-page">
+  <div id="toast-container" class="toast-container"></div>
+  <header class="admin-topbar">
+    <a class="admin-brand" href="index.html" aria-label="Back to dashboard">
+      <span class="brand-mark" aria-hidden="true">
+        <svg viewBox="0 0 24 24" fill="none">
+          <path d="M12 3.2 19 6v5.2c0 4.5-2.8 8.4-7 9.6-4.2-1.2-7-5.1-7-9.6V6l7-2.8Z" stroke="currentColor" stroke-width="1.8" />
+          <path d="M8.6 12.2 10.8 14.4 15.7 9.4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" />
+        </svg>
+      </span>
+      <span>
+        <strong>Smart Alert Admin</strong>
+        <small>Operations console</small>
+      </span>
+    </a>
+    <div class="admin-top-actions">
+      <button class="secondary-action" id="admin-refresh" type="button">Refresh</button>
+      <a class="secondary-action admin-link-action" href="index.html">Dashboard</a>
+      <button class="secondary-action" id="admin-logout" type="button">Logout</button>
+    </div>
+  </header>
+
+  <main class="admin-shell">
+    <section class="admin-hero">
+      <div>
+        <span class="admin-kicker">LIVE TRIAGE</span>
+        <h1>Alerts and community cameras</h1>
+        <p>Review active incidents, operator queue status, and user-submitted camera locations from one place.</p>
+      </div>
+      <div class="admin-stat-grid">
+        <div class="admin-stat-card">
+          <strong id="admin-stat-alerts">0</strong>
+          <span>Alert queue</span>
+        </div>
+        <div class="admin-stat-card warning">
+          <strong id="admin-stat-new">0</strong>
+          <span>New alerts</span>
+        </div>
+        <div class="admin-stat-card">
+          <strong id="admin-stat-contributions">0</strong>
+          <span>Camera proposals</span>
+        </div>
+        <div class="admin-stat-card approved">
+          <strong id="admin-stat-approved">0</strong>
+          <span>Approved cameras</span>
+        </div>
+      </div>
+    </section>
+
+    <section class="admin-grid">
+      <section class="admin-panel">
+        <div class="admin-panel-head">
+          <div>
+            <h2>Alert queue</h2>
+            <p>User reports and detector alerts that need operator action.</p>
+          </div>
+          <select id="admin-alert-filter" class="admin-select" aria-label="Filter alerts">
+            <option value="">All statuses</option>
+            <option value="new">New</option>
+            <option value="in_progress">In progress</option>
+            <option value="confirmed">Confirmed</option>
+            <option value="false_alarm">False alarm</option>
+            <option value="resolved">Resolved</option>
+          </select>
+        </div>
+        <div class="admin-list" id="admin-alert-list"></div>
+      </section>
+
+      <section class="admin-panel">
+        <div class="admin-panel-head">
+          <div>
+            <h2>Camera contributions</h2>
+            <p>Approve useful community cameras or reject incomplete submissions.</p>
+          </div>
+          <select id="admin-contribution-filter" class="admin-select" aria-label="Filter camera contributions">
+            <option value="">All statuses</option>
+            <option value="pending">Pending</option>
+            <option value="approved">Approved</option>
+            <option value="rejected">Rejected</option>
+          </select>
+        </div>
+        <div class="admin-list" id="admin-contribution-list"></div>
+      </section>
+    </section>
+  </main>
+
+  <script src="./js/admin.js"></script>
+</body>
+</html>
