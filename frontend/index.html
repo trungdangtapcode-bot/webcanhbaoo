@@ -107,17 +107,6 @@
         </div>
       </section>
 
-      <section class="quick-action-section" aria-label="Emergency actions">
-        <button class="emergency-button" id="emergency-open" type="button">
-          <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
-            <path d="M12 3.5 21 20H3L12 3.5Z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" />
-            <path d="M12 9v4.7" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" />
-            <path d="M12 17.2h.01" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" />
-          </svg>
-          Send emergency report
-        </button>
-      </section>
-
       <nav class="workspace-nav" aria-label="Dashboard sections">
         <button class="workspace-tab" type="button" data-workspace-tab="cameras">
           <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
@@ -470,54 +459,29 @@
     </main>
   </div>
 
-  <div class="video-modal" id="emergency-modal" role="dialog" aria-modal="true" aria-labelledby="emergency-title">
-    <div class="modal-content compact-modal">
+  <div class="video-modal snapshot-modal" id="alert-snapshot-modal" role="dialog" aria-modal="true" aria-labelledby="alert-snapshot-title">
+    <div class="modal-content snapshot-modal-content">
       <div class="modal-header">
         <div class="modal-title">
-          <strong id="emergency-title">Send emergency report</strong>
-          <span class="live-badge">Urgent incident</span>
+          <strong id="alert-snapshot-title">Incident snapshot</strong>
+          <span class="live-badge" id="alert-snapshot-meta">Detection frame</span>
         </div>
-        <button class="close-modal" id="emergency-close" type="button" aria-label="Close emergency report">
+        <button class="close-modal" id="alert-snapshot-close" type="button" aria-label="Close snapshot">
           <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
             <path d="M6.5 6.5 17.5 17.5M17.5 6.5 6.5 17.5" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" />
           </svg>
         </button>
       </div>
-      <form class="modal-form" id="emergency-form">
-        <div class="modal-form-grid">
-          <label class="field">
-            <span class="field-label">Incident type</span>
-            <select id="emergency-type">
-              <option value="fire">Fire</option>
-              <option value="flood">Flood</option>
-              <option value="traffic_jam">Traffic jam</option>
-            </select>
-          </label>
-          <label class="field">
-            <span class="field-label">Camera fallback</span>
-            <select id="emergency-camera"></select>
-          </label>
+      <div class="snapshot-shell">
+        <img id="alert-snapshot-image" src="" alt="Incident detection snapshot" />
+      </div>
+      <div class="snapshot-footer">
+        <div>
+          <strong id="alert-snapshot-camera">Camera</strong>
+          <span id="alert-snapshot-time">--</span>
         </div>
-        <label class="checkbox-row">
-          <input id="emergency-use-location" type="checkbox" checked />
-          <span>Use my current position when available, otherwise report through the selected camera.</span>
-        </label>
-        <label class="field">
-          <span class="field-label">Notes</span>
-          <textarea id="emergency-note" maxlength="500" placeholder="Optional details for operators"></textarea>
-        </label>
-        <div class="form-status" id="emergency-status">Ready to send.</div>
-        <div class="modal-actions">
-          <button class="secondary-action" id="emergency-cancel" type="button">Cancel</button>
-          <button class="primary-action" type="submit">
-            <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
-              <path d="M4 12 20 4l-4 16-3.4-6.6L4 12Z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" />
-              <path d="m12.6 13.4 3.1-5.1" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" />
-            </svg>
-            Send report
-          </button>
-        </div>
-      </form>
+        <button class="secondary-action" id="alert-snapshot-watch" type="button">Watch live</button>
+      </div>
     </div>
   </div>
 
@@ -577,6 +541,6 @@
       : "";
     document.write('<script src="' + socketBase + '/socket.io/socket.io.js"><\/script>');
   </script>
-  <script src="./js/app.js?v=20260603-3"></script>
+  <script src="./js/app.js?v=20260604-1"></script>
 </body>
 </html>

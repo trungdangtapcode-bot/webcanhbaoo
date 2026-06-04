@@ -699,7 +699,6 @@
       document.getElementById("camera-count").textContent = routeCameraIds ? `${rendered}/${cameras.size}` : cameras.size;
       document.getElementById("stat-cameras").textContent = cameras.size;
       updateHealthSummaryUi(cameraHealthSummary);
-      populateEmergencyCameraSelect();
     }
 
     function updateCameraMarkerVisibility(cameraId) {
@@ -723,27 +722,6 @@
       renderCameraList();
       const clearButton = document.getElementById("route-filter-clear");
       if (clearButton) clearButton.hidden = !routeCameraIds;
-    }
-
-    function populateEmergencyCameraSelect() {
-      const select = document.getElementById("emergency-camera");
-      if (!select) return;
-      const currentValue = select.value || activeCameraId;
-      select.innerHTML = "";
-      Array.from(cameras.entries())
-        .filter(([id]) => id)
-        .sort(([a], [b]) => a.localeCompare(b))
-        .forEach(([id, cam]) => {
-          const option = document.createElement("option");
-          option.value = id;
-          option.textContent = maybeRepairMojibake(cam.data.name || id);
-          select.appendChild(option);
-        });
-      if (currentValue && cameras.has(currentValue)) {
-        select.value = currentValue;
-      } else if (select.options.length) {
-        select.selectedIndex = 0;
-      }
     }
 
     function focusCamera(cameraId, zoom = 16) {
@@ -1047,7 +1025,9 @@
 
       const row = document.createElement("div");
       const queueStatus = alertData.queue_status || alertData.status || getQueueStatus(alertData.camera_id, alertData.event_type);
+      const canOpenSnapshot = hasAlertSnapshot(alertData);
       row.className = "alert-row";
+      if (canOpenSnapshot) row.classList.add("has-snapshot");
       row.dataset.cameraId = alertData.camera_id;
       row.dataset.queueKey = key;
       row.dataset.queueStatus = queueStatus;
@@ -1061,6 +1041,7 @@
         </div>
         <div class="alert-actions">
           <span class="alert-severity severity-${escapeAttr(alertData.severity || "medium")}">${escapeHtml(alertData.severity || "medium")}</span>
+          ${canOpenSnapshot ? `<button class="alert-snapshot-btn" type="button" title="View snapshot" aria-label="View incident snapshot">${iconSvg("camera")}</button>` : ""}
           <select class="alert-queue-select" data-camera-id="${escapeAttr(alertData.camera_id)}" data-event-type="${escapeAttr(alertData.event_type)}" aria-label="Alert queue status">
             ${renderQueueStatusOptions(queueStatus)}
           </select>
@@ -1072,6 +1053,10 @@
 
       row.addEventListener("click", (event) => {
         if (event.target.closest(".alert-queue-select, .alert-delete-btn")) return;
+        if (canOpenSnapshot || event.target.closest(".alert-snapshot-btn")) {
+          openAlertSnapshot(alertData);
+          return;
+        }
         const cam = cameras.get(alertData.camera_id);
         if (cam) {
           focusCamera(alertData.camera_id);
@@ -1302,16 +1287,52 @@
       stream.src = "";
     }
 
-    function openEmergencyModal() {
-      populateEmergencyCameraSelect();
-      const select = document.getElementById("emergency-camera");
-      if (activeCameraId && cameras.has(activeCameraId)) select.value = activeCameraId;
-      document.getElementById("emergency-status").textContent = "Ready to send.";
-      document.getElementById("emergency-modal").classList.add("active");
+    function getAlertImageSrc(alertData) {
+      const image = alertData?.image_base64 || alertData?.image_url || "";
+      if (!image) return "";
+      if (/^data:image\//i.test(image) || /^https?:\/\//i.test(image)) return image;
+      return `data:image/jpeg;base64,${image}`;
     }
 
-    function closeEmergencyModal() {
-      document.getElementById("emergency-modal").classList.remove("active");
+    function hasAlertSnapshot(alertData) {
+      return Boolean(getAlertImageSrc(alertData));
+    }
+
+    function closeAlertSnapshot() {
+      const modal = document.getElementById("alert-snapshot-modal");
+      if (!modal) return;
+      modal.classList.remove("active");
+      const image = document.getElementById("alert-snapshot-image");
+      if (image) image.src = "";
+    }
+
+    function openAlertSnapshot(alertData) {
+      const imageSrc = getAlertImageSrc(alertData);
+      if (!imageSrc) {
+        if (alertData?.camera_id) focusCamera(alertData.camera_id);
+        return;
+      }
+
+      const meta = getAlertMeta(alertData.event_type);
+      const modal = document.getElementById("alert-snapshot-modal");
+      if (!modal) return;
+
+      document.getElementById("alert-snapshot-title").textContent = meta.label;
+      document.getElementById("alert-snapshot-meta").textContent = `${alertData.severity || "medium"} incident`;
+      document.getElementById("alert-snapshot-camera").textContent = maybeRepairMojibake(alertData.camera_name || alertData.camera_id || "Camera");
+      document.getElementById("alert-snapshot-time").textContent = formatDateTime(alertData.timestamp);
+      document.getElementById("alert-snapshot-image").src = imageSrc;
+
+      const watchButton = document.getElementById("alert-snapshot-watch");
+      if (watchButton) {
+        watchButton.hidden = !alertData.camera_id;
+        watchButton.onclick = () => {
+          closeAlertSnapshot();
+          openVideoModal(alertData.camera_id);
+        };
+      }
+
+      modal.classList.add("active");
     }
 
     function getCurrentPosition() {
@@ -1326,46 +1347,6 @@
           maximumAge: 30000,
         });
       });
-    }
-
-    async function submitEmergencyReport(event) {
-      event.preventDefault();
-      const status = document.getElementById("emergency-status");
-      status.textContent = "Sending emergency report...";
-
-      const payload = {
-        event_type: document.getElementById("emergency-type").value,
-        camera_id: document.getElementById("emergency-camera").value || activeCameraId || undefined,
-        note: document.getElementById("emergency-note").value.trim(),
-        timestamp: new Date().toISOString(),
-      };
-
-      if (document.getElementById("emergency-use-location").checked) {
-        try {
-          const position = await getCurrentPosition();
-          payload.lat = position.coords.latitude;
-          payload.lng = position.coords.longitude;
-          userLocation = { lat: payload.lat, lng: payload.lng };
-          updateNearbyStatus();
-        } catch (_err) {
-          status.textContent = "Location unavailable. Sending through selected camera...";
-        }
-      }
-
-      try {
-        const res = await fetch(apiUrl("/api/events/emergency"), {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(payload),
-        });
-        const json = await res.json();
-        if (!res.ok) throw new Error(json.error || "Could not send report");
-        status.textContent = "Emergency report sent to operators.";
-        document.getElementById("emergency-note").value = "";
-        setTimeout(closeEmergencyModal, 800);
-      } catch (err) {
-        status.textContent = err.message || "Could not send emergency report.";
-      }
     }
 
     function setNearbyRadius(radius) {
@@ -1985,10 +1966,7 @@
       applyTheme(getCurrentTheme() === "light" ? "dark" : "light");
     });
 
-    document.getElementById("emergency-open").addEventListener("click", openEmergencyModal);
-    document.getElementById("emergency-close").addEventListener("click", closeEmergencyModal);
-    document.getElementById("emergency-cancel").addEventListener("click", closeEmergencyModal);
-    document.getElementById("emergency-form").addEventListener("submit", submitEmergencyReport);
+    document.getElementById("alert-snapshot-close")?.addEventListener("click", closeAlertSnapshot);
     document.getElementById("nearby-toggle").addEventListener("click", toggleNearbyNotifications);
     document.getElementById("scanner-toggle").addEventListener("click", toggleScanner);
     document.getElementById("health-check").addEventListener("click", refreshCameraHealth);
@@ -2079,7 +2057,7 @@
     document.addEventListener("keydown", (event) => {
       if (event.key === "Escape") {
         closeVideoModal();
-        closeEmergencyModal();
+        closeAlertSnapshot();
       }
     });
 
@@ -2143,11 +2121,11 @@
 let chatRouteLayer = null;
 let chatRouteMarkers = [];
 
-document.querySelector('#chat-panel .chat-header h3').textContent = 'AI Route Assistant';
-document.querySelector('#chat-body .chat-message.ai').textContent = 'Hello! I can help you plan a route. Where are you going?';
-document.getElementById('chat-input').placeholder = 'Type a question or destination...';
-document.getElementById('btn-force-route').title = 'Route to this destination';
-document.querySelector('#chat-form button[type="submit"]').textContent = 'Send';
+document.querySelector('#chat-panel .chat-header h3').textContent = 'Trợ lý Chỉ đường AI';
+document.querySelector('#chat-body .chat-message.ai').textContent = 'Xin chào! Tôi có thể giúp bạn lập tuyến đường. Bạn muốn đi đâu?';
+document.getElementById('chat-input').placeholder = 'Nhập câu hỏi hoặc điểm đến...';
+document.getElementById('btn-force-route').title = 'Chỉ đường đến điểm này';
+document.querySelector('#chat-form button[type="submit"]').textContent = 'Gửi';
 
 document.getElementById('chat-toggle').addEventListener('click', () => {
   const panel = document.getElementById('chat-panel');
@@ -2259,6 +2237,9 @@ function showToast(alertData) {
   const meta = getAlertMeta(alertData.event_type);
   const toast = document.createElement("div");
   toast.className = "toast-item";
+  if (hasAlertSnapshot(alertData)) toast.classList.add("has-snapshot");
+  toast.setAttribute("role", "button");
+  toast.tabIndex = 0;
   toast.innerHTML = `
     <div class="toast-icon" style="color: var(--${meta.color})">${iconSvg(alertData.event_type)}</div>
     <div class="toast-content">
@@ -2276,7 +2257,20 @@ function showToast(alertData) {
     toast.classList.add("toast-leaving");
     toast.addEventListener("transitionend", () => toast.remove());
   };
-  closeBtn.addEventListener("click", removeToast);
+  closeBtn.addEventListener("click", (event) => {
+    event.stopPropagation();
+    removeToast();
+  });
+  toast.addEventListener("click", () => {
+    if (hasAlertSnapshot(alertData)) openAlertSnapshot(alertData);
+    else if (alertData.camera_id) focusCamera(alertData.camera_id);
+  });
+  toast.addEventListener("keydown", (event) => {
+    if (event.key !== "Enter" && event.key !== " ") return;
+    event.preventDefault();
+    if (hasAlertSnapshot(alertData)) openAlertSnapshot(alertData);
+    else if (alertData.camera_id) focusCamera(alertData.camera_id);
+  });
   setTimeout(removeToast, 6000);
 }
 

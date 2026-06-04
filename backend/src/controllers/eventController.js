@@ -34,61 +34,6 @@ function clearDetectorState(cameraId, eventType) {
   if (eventType === 'flood') floodService.resetState(cameraId);
 }
 
-function toFiniteNumber(value) {
-  const number = Number(value);
-  return Number.isFinite(number) ? number : null;
-}
-
-function distanceMeters(a, b) {
-  const earthRadiusMeters = 6371000;
-  const toRad = (value) => (value * Math.PI) / 180;
-  const dLat = toRad(b.lat - a.lat);
-  const dLng = toRad(b.lng - a.lng);
-  const lat1 = toRad(a.lat);
-  const lat2 = toRad(b.lat);
-  const h =
-    Math.sin(dLat / 2) ** 2 +
-    Math.cos(lat1) * Math.cos(lat2) * Math.sin(dLng / 2) ** 2;
-  return 2 * earthRadiusMeters * Math.atan2(Math.sqrt(h), Math.sqrt(1 - h));
-}
-
-async function getCameraCandidates() {
-  if (!isDatabaseConnected()) return DEMO_CAMERAS;
-  return Camera.find({ active: { $ne: false }, camera_id: { $ne: '' } })
-    .select('-token_hash')
-    .lean();
-}
-
-async function findCameraForReport({ camera_id, lat, lng }) {
-  if (camera_id) {
-    const camera = isDatabaseConnected()
-      ? await Camera.findOne({ camera_id }).lean()
-      : DEMO_CAMERAS.find((c) => c.camera_id === camera_id);
-    if (camera) return { camera, distance: null };
-  }
-
-  const cameras = (await getCameraCandidates())
-    .filter((camera) => camera.camera_id && camera.location);
-
-  if (!cameras.length) return { camera: null, distance: null };
-
-  if (Number.isFinite(lat) && Number.isFinite(lng)) {
-    const origin = { lat, lng };
-    return cameras.reduce(
-      (best, camera) => {
-        const distance = distanceMeters(origin, {
-          lat: Number(camera.location.lat),
-          lng: Number(camera.location.lng),
-        });
-        return !best.camera || distance < best.distance ? { camera, distance } : best;
-      },
-      { camera: null, distance: Infinity }
-    );
-  }
-
-  return { camera: cameras[0], distance: null };
-}
-
 async function createEvent(req, res) {
   try {
     const {
@@ -321,113 +266,6 @@ async function getEvents(req, res) {
 }
 
 /**
- * POST /api/events/emergency
- *
- * Public user report endpoint for urgent incidents.
- */
-async function createEmergencyEvent(req, res) {
-  try {
-    const {
-      camera_id,
-      event_type,
-      lat,
-      lng,
-      note,
-      timestamp,
-    } = req.body;
-
-    if (!VALID_EVENT_TYPES.includes(event_type)) {
-      return res.status(400).json({
-        error: `Invalid event_type. Must be one of: ${VALID_EVENT_TYPES.join(', ')}`,
-      });
-    }
-
-    const reportLat = toFiniteNumber(lat);
-    const reportLng = toFiniteNumber(lng);
-    const { camera, distance } = await findCameraForReport({
-      camera_id,
-      lat: reportLat,
-      lng: reportLng,
-    });
-
-    if (!camera) {
-      return res.status(404).json({ error: 'No camera is available for this report' });
-    }
-
-    const eventTimestamp = timestamp ? new Date(timestamp) : new Date();
-    const safeTimestamp = Number.isNaN(eventTimestamp.getTime()) ? new Date() : eventTimestamp;
-    const alertLat = Number.isFinite(reportLat) ? reportLat : camera.location.lat;
-    const alertLng = Number.isFinite(reportLng) ? reportLng : camera.location.lng;
-    const severity = event_type === 'fire' ? 'critical' : 'high';
-    const confidence = 1;
-    const metadata = {
-      active: true,
-      source: 'user_emergency',
-      note: String(note || '').slice(0, 500),
-      report_location: Number.isFinite(reportLat) && Number.isFinite(reportLng)
-        ? { lat: reportLat, lng: reportLng }
-        : null,
-      nearest_camera_distance_m: Number.isFinite(distance) ? Math.round(distance) : null,
-    };
-
-    let eventDoc = {
-      _id: `emergency_${Date.now()}`,
-      camera_id: camera.camera_id,
-      event_type,
-      severity,
-      confidence,
-      metadata,
-      timestamp: safeTimestamp,
-    };
-
-    if (isDatabaseConnected()) {
-      try {
-        eventDoc = await Event.create({
-          camera_id: camera.camera_id,
-          event_type,
-          severity,
-          confidence,
-          image_base64: null,
-          metadata,
-          timestamp: safeTimestamp,
-        });
-      } catch (err) {
-        console.error('[EventController] Emergency persistence failed:', err.message);
-      }
-    }
-
-    const activeResult = alertService.upsertActiveAlert({
-      camera_id: camera.camera_id,
-      event_type,
-      severity,
-      image_base64: null,
-      lat: alertLat,
-      lng: alertLng,
-      camera_name: camera.name,
-      timestamp: eventDoc.timestamp,
-      metadata,
-    });
-
-    return res.status(201).json({
-      success: true,
-      event_id: eventDoc._id,
-      alert_created: activeResult.created,
-      active: true,
-      severity,
-      nearest_camera: {
-        camera_id: camera.camera_id,
-        name: camera.name,
-        distance_m: Number.isFinite(distance) ? Math.round(distance) : null,
-      },
-      alert: activeResult.alert,
-    });
-  } catch (err) {
-    console.error('[EventController] Emergency error:', err);
-    return res.status(500).json({ error: 'Internal server error' });
-  }
-}
-
-/**
  * GET /api/events/active
  */
 async function getActiveEvents(_req, res) {
@@ -470,7 +308,6 @@ async function deleteAlertQueueItem(req, res) {
 
 module.exports = {
   createEvent,
-  createEmergencyEvent,
   getAlertQueue,
   getEvents,
   getActiveEvents,

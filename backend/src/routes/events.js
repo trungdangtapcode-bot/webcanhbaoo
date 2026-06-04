@@ -3,7 +3,6 @@ const router = express.Router();
 const authMiddleware = require('../middleware/auth');
 const {
   createEvent,
-  createEmergencyEvent,
   getAlertQueue,
   getEvents,
   getActiveEvents,
@@ -19,9 +18,6 @@ router.post('/',
   typeof authMiddleware === 'function' ? authMiddleware : (req, res, next) => next(), 
   typeof createEvent === 'function' ? createEvent : (req, res) => res.status(500).json({ error: 'createEvent is not a function' })
 );
-
-// POST /api/events/emergency - public urgent user report
-router.post('/emergency', createEmergencyEvent);
 
 // GET /api/events/active - public current map state
 router.get('/active', getActiveEvents);
