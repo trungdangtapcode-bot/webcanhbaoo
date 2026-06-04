@@ -1,5 +1,9 @@
 const express = require('express');
 const scannerService = require('../services/multiCameraScannerService');
+const alertService = require('../services/alertService');
+const Event = require('../models/Event');
+const { isDatabaseConnected } = require('../config/database');
+const { getPersistedEventImage } = require('../services/eventImagePolicy');
 
 const router = express.Router();
 
@@ -57,8 +61,43 @@ router.post('/demo-detect', async (req, res) => {
     });
 
     const payload = await response.json().catch(() => ({}));
+    
     if (Array.isArray(payload.detections)) {
-      payload.detections = payload.detections.filter((item) => item?.event_type !== 'traffic_volume');
+      for (const det of payload.detections) {
+        if (det.event_type === 'fire' || det.event_type === 'flood' || det.event_type === 'traffic_jam') {
+          const activeResult = alertService.upsertActiveAlert({
+            camera_id: req.body?.camera_id || 'browser_usb_demo',
+            camera_name: 'Browser USB Camera Demo',
+            confidence: det.confidence,
+            event_type: det.event_type,
+            image_base64: imageBase64,
+            metadata: { ...det.metadata, demo: true },
+            severity: det.severity || 'medium',
+            timestamp: new Date(),
+          });
+          
+          if (activeResult.created && isDatabaseConnected()) {
+            try {
+              const persistedImage = getPersistedEventImage(imageBase64, {
+                active: true,
+                event_type: det.event_type,
+                severity: det.severity || 'medium',
+              });
+              await Event.create({
+                camera_id: req.body?.camera_id || 'browser_usb_demo',
+                confidence: det.confidence,
+                event_type: det.event_type,
+                image_base64: persistedImage,
+                metadata: { ...det.metadata, demo: true },
+                severity: det.severity || 'medium',
+                timestamp: new Date(),
+              });
+            } catch (err) {
+              console.error('[ScannerRoute] Event persistence failed:', err.message);
+            }
+          }
+        }
+      }
     }
     res.status(response.ok ? 200 : response.status).json(payload);
   } catch (err) {
