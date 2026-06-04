@@ -1,12 +1,10 @@
 # Dependencies
 node_modules/
-package-lock.json
 
 # Environment variables (contains secrets!)
 .env
 backend/.env
 ai_module/.env
-
 # Python
 ai_module/venv/
 ai_module/__pycache__/
