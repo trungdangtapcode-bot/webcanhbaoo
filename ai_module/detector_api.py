@@ -44,11 +44,17 @@ PORT = int(os.getenv("DETECTOR_PORT", "5055"))
 ENABLE_YOLO = os.getenv("DETECTOR_ENABLE_YOLO", "false").lower() == "true"
 GROQ_API_KEY = os.getenv("GROQ_API_KEY", "")
 GROQ_VISION_MODEL = os.getenv("GROQ_VISION_MODEL", "meta-llama/llama-4-scout-17b-16e-instruct")
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
+GEMINI_VISION_MODEL = os.getenv("GEMINI_VISION_MODEL", "gemini-2.5-flash")
 OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY", "")
 AI_PROVIDER = os.getenv("DETECTOR_AI_PROVIDER", "groq").strip().lower()
+DEFAULT_AI_MODEL = {
+    "gemini": GEMINI_VISION_MODEL,
+    "openrouter": "nvidia/nemotron-3-super-120b-a12b:free",
+}.get(AI_PROVIDER, GROQ_VISION_MODEL)
 REQUESTED_AI_MODEL = os.getenv(
     "DETECTOR_AI_MODEL",
-    "nvidia/nemotron-3-super-120b-a12b:free" if AI_PROVIDER == "openrouter" else GROQ_VISION_MODEL,
+    DEFAULT_AI_MODEL,
 )
 AI_TEXT_MODEL_FALLBACK = os.getenv("DETECTOR_AI_TEXT_MODEL_FALLBACK", "x-ai/grok-4.3")
 IMAGE_ONLY_AI_MODELS = {"x-ai/grok-imagine-image-quality"}
@@ -61,11 +67,15 @@ if AI_PROVIDER == "openrouter" and REQUESTED_AI_MODEL in IMAGE_ONLY_AI_MODELS:
     )
 AI_ENDPOINT = os.getenv(
     "DETECTOR_AI_ENDPOINT",
-    "https://openrouter.ai/api/v1/chat/completions"
-    if AI_PROVIDER == "openrouter"
-    else "https://api.groq.com/openai/v1/chat/completions",
+    {
+        "gemini": "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions",
+        "openrouter": "https://openrouter.ai/api/v1/chat/completions",
+    }.get(AI_PROVIDER, "https://api.groq.com/openai/v1/chat/completions"),
 )
-AI_API_KEY = OPENROUTER_API_KEY if AI_PROVIDER == "openrouter" else GROQ_API_KEY
+AI_API_KEY = {
+    "gemini": GEMINI_API_KEY,
+    "openrouter": OPENROUTER_API_KEY,
+}.get(AI_PROVIDER, GROQ_API_KEY)
 AI_ENABLED_DEFAULT = os.getenv("DETECTOR_GROQ_ENABLED", "false") if AI_PROVIDER == "groq" else "true"
 AI_ENABLED = os.getenv("DETECTOR_AI_ENABLED", AI_ENABLED_DEFAULT).lower() == "true" and bool(AI_API_KEY)
 AI_RATE_LIMIT_PER_MIN = int(os.getenv("DETECTOR_AI_RATE_LIMIT_PER_MIN", "20" if AI_PROVIDER == "openrouter" else "30"))
@@ -1842,6 +1852,7 @@ def main():
     load_fire_yolo()
     server = ThreadingHTTPServer((HOST, PORT), DetectorHandler)
     log.info("Detector API listening on http://%s:%s", HOST, PORT)
+    log.info("Using AI_API_KEY: %s...", AI_API_KEY[:10])
     log.info("Use AI_DETECTOR_URL=http://%s:%s/detect in backend", HOST, PORT)
     log.info(
         "Traffic config: jam_confirm=%d frames, speed_stopped=%.1fpx, "

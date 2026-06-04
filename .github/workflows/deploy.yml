@@ -55,7 +55,7 @@ jobs:
               APP_DIR="$HOME/webcanhbaoo"
             fi
             set +x
-            export GROQ_API_KEY="${{ secrets.GROQ_API_KEY }}"
+            export GEMINI_API_KEY="${{ secrets.GEMINI_API_KEY }}"
             set -x
             cd "$APP_DIR"
             mkdir -p .deploy
@@ -108,7 +108,7 @@ jobs:
             # Truncate logs so health-check diagnostics show only this deploy
             : > logs/error.log
             : > logs/out.log
-            GROQ_API_KEY="$GROQ_API_KEY" \
+            GEMINI_API_KEY="$GEMINI_API_KEY" \
               AI_MODULE_PYTHON="$APP_DIR/ai_module/venv/bin/python" \
               pm2 start ecosystem.config.js --env production
             pm2 save
