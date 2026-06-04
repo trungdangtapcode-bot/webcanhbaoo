@@ -29,6 +29,23 @@ function serialize(entry) {
   };
 }
 
+function isUnverifiedVisionIncident(entry) {
+  if (!['fire', 'flood'].includes(entry.event_type)) return false;
+  const metadata = entry.metadata || {};
+  const detectorOrigin = Boolean(
+    metadata.detector ||
+    metadata.detector_url_configured ||
+    metadata.ai_status ||
+    metadata.ai_provider ||
+    metadata.scanner
+  );
+  return detectorOrigin && metadata.verified_by_ai !== true;
+}
+
+function visibleQueueItems(items) {
+  return items.filter((entry) => !isUnverifiedVisionIncident(entry));
+}
+
 function normalizeDateString(value) {
   if (!value) return new Date().toISOString();
   const date = value instanceof Date ? value : new Date(value);
@@ -143,10 +160,10 @@ async function listQueue({ status } = {}) {
     const filter = status ? { status } : {};
     const items = await AlertQueueItem.find(filter).sort({ updated_at: -1 }).lean();
     items.forEach(cacheEntry);
-    return items.map(serialize);
+    return visibleQueueItems(items.map(serialize));
   }
 
-  return Array.from(queue.values())
+  return visibleQueueItems(Array.from(queue.values()))
     .filter((entry) => !status || entry.status === status)
     .sort((a, b) => {
       const statusRank = { new: 0, in_progress: 1, confirmed: 2, false_alarm: 3, resolved: 4 };
@@ -161,15 +178,16 @@ async function getSummary() {
   const summary = { total: 0, new: 0, in_progress: 0, confirmed: 0, false_alarm: 0, resolved: 0 };
 
   if (isDatabaseConnected()) {
-    const rows = await AlertQueueItem.aggregate([{ $group: { _id: '$status', count: { $sum: 1 } } }]);
-    for (const row of rows) {
-      summary[row._id] = row.count;
-      summary.total += row.count;
+    const items = await AlertQueueItem.find({}).lean();
+    for (const row of visibleQueueItems(items.map(serialize))) {
+      const status = normalizeStatus(row.status);
+      summary[status] = (summary[status] || 0) + 1;
+      summary.total += 1;
     }
     return summary;
   }
 
-  for (const entry of queue.values()) {
+  for (const entry of visibleQueueItems(Array.from(queue.values()))) {
     const status = normalizeStatus(entry.status);
     summary.total += 1;
     summary[status] = (summary[status] || 0) + 1;

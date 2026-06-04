@@ -37,7 +37,7 @@ import numpy as np
 from dotenv import load_dotenv
 
 MODULE_DIR = Path(__file__).resolve().parent
-load_dotenv(MODULE_DIR / ".env", override=True)
+load_dotenv(MODULE_DIR / ".env", override=False)
 
 HOST = os.getenv("DETECTOR_HOST", "127.0.0.1")
 PORT = int(os.getenv("DETECTOR_PORT", "5055"))
@@ -71,12 +71,14 @@ AI_ENABLED = os.getenv("DETECTOR_AI_ENABLED", AI_ENABLED_DEFAULT).lower() == "tr
 AI_RATE_LIMIT_PER_MIN = int(os.getenv("DETECTOR_AI_RATE_LIMIT_PER_MIN", "20" if AI_PROVIDER == "openrouter" else "30"))
 AI_REFERER = os.getenv("DETECTOR_AI_REFERER", "http://localhost:3000")
 AI_TITLE = os.getenv("DETECTOR_AI_TITLE", "Smart Alert Detector Demo")
-AI_FIRE_MIN_CONFIDENCE = float(os.getenv("DETECTOR_AI_FIRE_MIN_CONFIDENCE", "0.55"))
-AI_FLOOD_MIN_CONFIDENCE = float(os.getenv("DETECTOR_AI_FLOOD_MIN_CONFIDENCE", "0.60"))
+AI_FIRE_MIN_CONFIDENCE = float(os.getenv("DETECTOR_AI_FIRE_MIN_CONFIDENCE", "0.75"))
+AI_FLOOD_MIN_CONFIDENCE = float(os.getenv("DETECTOR_AI_FLOOD_MIN_CONFIDENCE", "0.78"))
 OPENCV_INCIDENT_FALLBACK = os.getenv("DETECTOR_OPENCV_INCIDENT_FALLBACK", "false").lower() == "true"
 OPENCV_FIRE_SAFETY_NET = os.getenv("DETECTOR_OPENCV_FIRE_SAFETY_NET", "true").lower() == "true"
 FIRE_REQUIRE_AI_VERIFICATION = os.getenv("DETECTOR_FIRE_REQUIRE_AI_VERIFICATION", "true").lower() == "true"
 FIRE_ALLOW_LOCAL_FALLBACK = os.getenv("DETECTOR_FIRE_ALLOW_LOCAL_FALLBACK", "false").lower() == "true"
+FLOOD_REQUIRE_AI_VERIFICATION = os.getenv("DETECTOR_FLOOD_REQUIRE_AI_VERIFICATION", "true").lower() == "true"
+FLOOD_ALLOW_LOCAL_FALLBACK = os.getenv("DETECTOR_FLOOD_ALLOW_LOCAL_FALLBACK", "false").lower() == "true"
 
 # ── Fire thresholds ──────────────────────────────────────────────────────────
 MIN_FIRE_RATIO = float(os.getenv("DETECTOR_FIRE_RATIO", "0.025"))
@@ -124,11 +126,11 @@ VEHICLE_CLASSES = {2, 3, 5, 7}
 
 ENABLE_FIRE_YOLO = os.getenv("DETECTOR_ENABLE_FIRE_YOLO", "true").lower() == "true"
 FIRE_YOLO_WEIGHTS = os.getenv("DETECTOR_FIRE_YOLO_WEIGHTS", "fire_smoke_yolov8n.pt")
-FIRE_YOLO_CONF = float(os.getenv("DETECTOR_FIRE_YOLO_CONF", "0.35"))
+FIRE_YOLO_CONF = float(os.getenv("DETECTOR_FIRE_YOLO_CONF", "0.50"))
 FIRE_YOLO_IOU = float(os.getenv("DETECTOR_FIRE_YOLO_IOU", "0.45"))
 FIRE_YOLO_IMG_SIZE = int(os.getenv("DETECTOR_FIRE_YOLO_IMG_SIZE", "640"))
 FIRE_YOLO_CLASSES = {"fire", "smoke"}
-FIRE_YOLO_MIN_BOX_AREA_RATIO = float(os.getenv("DETECTOR_FIRE_YOLO_MIN_BOX_AREA_RATIO", "0.0025"))
+FIRE_YOLO_MIN_BOX_AREA_RATIO = float(os.getenv("DETECTOR_FIRE_YOLO_MIN_BOX_AREA_RATIO", "0.004"))
 FIRE_YOLO_IGNORE_TOP_RATIO = float(os.getenv("DETECTOR_FIRE_YOLO_IGNORE_TOP_RATIO", "0.10"))
 
 logging.basicConfig(
@@ -1146,12 +1148,51 @@ def ai_local_context(incident_type: str, local_result: Dict[str, Any]) -> str:
     return json.dumps(context, ensure_ascii=False, separators=(",", ":"))[:1400]
 
 
+def parse_ai_bool(value: Any) -> bool:
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, (int, float)) and value in (0, 1):
+        return bool(value)
+    if isinstance(value, str):
+        normalized = value.strip().lower()
+        if normalized in {"true", "yes", "y", "1"}:
+            return True
+        if normalized in {"false", "no", "n", "0", ""}:
+            return False
+    return False
+
+
+def evidence_is_allowed(incident_type: str, evidence: str) -> bool:
+    normalized = evidence.strip().lower().replace("-", "_").replace(" ", "_")
+    if incident_type == "fire":
+        allowed = {"flame", "flames", "active_flame", "active_flames", "smoke_plume", "rising_smoke"}
+        rejected = {
+            "", "unclear", "unknown", "light_reflection", "reflection", "wet_road", "road_marking",
+            "traffic_light", "brake_light", "street_lamp", "led", "sign", "screen", "sunset", "glare",
+            "exhaust", "fog", "blur",
+        }
+    elif incident_type == "flood":
+        allowed = {
+            "standing_water", "submerged_road", "submerged_lane", "submerged_curb",
+            "water_reaching_wheels", "wake", "ripples_across_lane", "continuous_water_sheet",
+        }
+        rejected = {
+            "", "unclear", "unknown", "wet_road", "wet_asphalt", "reflection", "puddle",
+            "small_puddle", "rain", "spray", "shadow", "dark_pavement", "glare",
+        }
+    else:
+        return True
+
+    if normalized in rejected:
+        return False
+    return normalized in allowed
+
+
 def verify_incident_with_ai(frame: np.ndarray, incident_type: str, local_result: Dict[str, Any]) -> Dict[str, Any]:
-    default_verified = incident_type != "fire"
     default_result = {
-        "is_verified": default_verified,
-        "confidence": local_result.get("confidence", 0.8),
-        "reason": "ai_unavailable_default_no_for_fire" if incident_type == "fire" else "ai_unavailable_default_yes",
+        "is_verified": False,
+        "confidence": 0.0,
+        "reason": f"ai_unavailable_default_no_for_{incident_type}",
         "status": "unavailable",
     }
 
@@ -1176,6 +1217,7 @@ def verify_incident_with_ai(frame: np.ndarray, incident_type: str, local_result:
                 "Reject isolated orange/red/yellow regions, brake lights, traffic lights, street lamps, LEDs, signs, screens, sunsets, reflections, construction cones, fire hydrants, and road markings. "
                 "For smoke-only alerts, require a visible gray/white/black plume, haze column, or expanding cloud; do not count blur, fog, camera glare, or exhaust as fire smoke. "
                 "If the evidence is ambiguous, set is_verified=false. "
+                "The visual_evidence value must be one of: flame, active_flame, smoke_plume, rising_smoke, light_reflection, wet_road, unclear. "
                 "Return a JSON object with:\n"
                 "- \"is_verified\": true/false\n"
                 "- \"confidence\": 0.0 to 1.0\n"
@@ -1191,6 +1233,7 @@ def verify_incident_with_ai(frame: np.ndarray, incident_type: str, local_result:
                 "Good evidence includes continuous water sheets, submerged curbs/lane markings, vehicles driving through water, wakes/ripples across the lane, or water reaching wheels. "
                 "Reject rain, wet asphalt, shiny road reflections, small puddles, gutter water, spray, shadows, dark pavement, and camera glare. "
                 "If you cannot distinguish flood water from wet road or reflections, set is_verified=false. "
+                "The visual_evidence value must be one of: standing_water, submerged_road, submerged_lane, submerged_curb, water_reaching_wheels, wet_road, reflection, puddle, unclear. "
                 "Return a JSON object with:\n"
                 "- \"is_verified\": true/false\n"
                 "- \"confidence\": 0.0 to 1.0\n"
@@ -1220,19 +1263,24 @@ def verify_incident_with_ai(frame: np.ndarray, incident_type: str, local_result:
 
         answer = resp.json()["choices"][0]["message"]["content"].strip()
         data = json.loads(answer)
-        raw_is_verified = bool(data.get("is_verified", False))
+        raw_is_verified = parse_ai_bool(data.get("is_verified", False))
         confidence = max(0.0, min(1.0, float(data.get("confidence", 0.5))))
-        is_verified = raw_is_verified and confidence >= min_confidence
+        visual_evidence = str(data.get("visual_evidence", ""))
+        allowed_evidence = evidence_is_allowed(incident_type, visual_evidence)
+        is_verified = raw_is_verified and confidence >= min_confidence and allowed_evidence
         reason = str(data.get("reason", "no_reason"))
         if raw_is_verified and not is_verified:
-            reason = f"ai_confidence_below_threshold({confidence:.2f}<{min_confidence:.2f}): {reason}"
+            if not allowed_evidence:
+                reason = f"ai_evidence_not_allowed({visual_evidence or 'missing'}): {reason}"
+            else:
+                reason = f"ai_confidence_below_threshold({confidence:.2f}<{min_confidence:.2f}): {reason}"
 
         result = {
             "is_verified": is_verified,
             "confidence": confidence,
             "reason": reason,
             "status": "ok",
-            "visual_evidence": str(data.get("visual_evidence", "")),
+            "visual_evidence": visual_evidence,
             "raw_is_verified": raw_is_verified,
             "min_confidence": min_confidence,
         }
@@ -1528,7 +1576,12 @@ def detect(
             "type": "flood_candidate",
             "accepted": bool(
                 (ai_verify["is_verified"] and ai_verify.get("status") == "ok") or
-                (ai_verify.get("status") != "ok" and strong_local_flood)
+                (
+                    ai_verify.get("status") != "ok" and
+                    strong_local_flood and
+                    FLOOD_ALLOW_LOCAL_FALLBACK and
+                    not FLOOD_REQUIRE_AI_VERIFICATION
+                )
             ),
             "candidate": flood_result,
             "ai_provider": AI_PROVIDER,
@@ -1552,12 +1605,22 @@ def detect(
                 flood_result["confidence"] = round(max(local_conf * 0.6 + ai_conf * 0.4, 0.65), 3)
                 detections.append(flood_result)
                 flood_diagnostic["accepted"] = True
-            elif strong_local_flood:
+            elif strong_local_flood and FLOOD_ALLOW_LOCAL_FALLBACK and not FLOOD_REQUIRE_AI_VERIFICATION:
                 flood_result["metadata"]["fallback_reason"] = "ai_unavailable_strong_local_flood"
                 flood_result["metadata"]["local_fallback"] = True
                 detections.append(flood_result)
             else:
-                flood_result["metadata"]["fallback_reason"] = "ai_unavailable"
+                flood_result["metadata"]["fallback_reason"] = (
+                    "ai_unavailable_or_required"
+                    if FLOOD_REQUIRE_AI_VERIFICATION
+                    else "ai_unavailable"
+                )
+                log.info(
+                    "Skipping flood candidate because AI is unavailable or required (camera=%s, ratio=%.3f, status=%s).",
+                    camera_id,
+                    flood_result.get("water_ratio", 0.0),
+                    ai_status,
+                )
         else:
             log.info("AI provider rejected the flood (reason: %s).", ai_verify["reason"])
         if diagnostics is not None:
@@ -1655,6 +1718,8 @@ class DetectorHandler(BaseHTTPRequestHandler):
                 "fire_yolo_min_box_area_ratio": FIRE_YOLO_MIN_BOX_AREA_RATIO,
                 "fire_require_ai_verification": FIRE_REQUIRE_AI_VERIFICATION,
                 "fire_allow_local_fallback": FIRE_ALLOW_LOCAL_FALLBACK,
+                "flood_require_ai_verification": FLOOD_REQUIRE_AI_VERIFICATION,
+                "flood_allow_local_fallback": FLOOD_ALLOW_LOCAL_FALLBACK,
                 "fire_yolo_classes": sorted(FIRE_YOLO_CLASSES),
                 "ai_provider": AI_PROVIDER,
                 "ai_endpoint": AI_ENDPOINT,

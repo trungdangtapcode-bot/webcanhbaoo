@@ -44,6 +44,7 @@ async function createEvent(req, res) {
       avg_speed,
       water_ratio,
       image_base64,
+      metadata: incomingMetadata,
       timestamp,
     } = req.body;
 
@@ -123,10 +124,13 @@ async function createEvent(req, res) {
       case 'flood': {
         const ratio = water_ratio || 0;
         const result = floodService.evaluate(camera_id, ratio);
-        shouldAlert = result.shouldAlert;
-        isActiveDetection = result.state === floodService.STATES.ALERT;
+        const aiVerified = incomingMetadata?.verified_by_ai === true;
+        const strictEnough = confidence >= Number(process.env.FLOOD_DIRECT_MIN_CONFIDENCE || 0.85);
+        shouldAlert = result.shouldAlert && (aiVerified || strictEnough);
+        isActiveDetection = result.state === floodService.STATES.ALERT && (aiVerified || strictEnough);
         severity = result.severity;
         metadata = {
+          ...(incomingMetadata || {}),
           water_ratio: ratio,
           state: result.state,
           prev_state: result.prevState,
@@ -137,13 +141,14 @@ async function createEvent(req, res) {
       }
 
       case 'fire': {
-        // Fire: any confidence >= 0.6 triggers alert
-        isActiveDetection = confidence >= 0.6;
+        const aiVerified = incomingMetadata?.verified_by_ai === true;
+        const strictEnough = confidence >= Number(process.env.FIRE_DIRECT_MIN_CONFIDENCE || 0.85);
+        isActiveDetection = aiVerified || strictEnough;
         shouldAlert = isActiveDetection;
         if (confidence >= 0.85) severity = 'critical';
         else if (confidence >= 0.7) severity = 'high';
         else severity = 'medium';
-        metadata = { confidence };
+        metadata = { ...(incomingMetadata || {}), confidence };
         break;
       }
     }
