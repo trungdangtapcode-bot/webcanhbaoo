@@ -1831,6 +1831,73 @@
       gap: 8px;
     }
 
+    .map-filter-panel {
+      gap: 10px;
+      flex-wrap: wrap;
+      justify-content: center;
+    }
+
+    .map-filter-label {
+      color: var(--text-soft);
+      font-size: 12px;
+      font-weight: 700;
+      white-space: nowrap;
+    }
+
+    .map-filter-buttons {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      flex-wrap: wrap;
+    }
+
+    .map-filter-btn {
+      height: 34px;
+      padding: 0 11px;
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      background: rgba(9, 13, 18, 0.48);
+      color: var(--text-soft);
+      font-size: 12px;
+      font-weight: 760;
+      cursor: pointer;
+      transition: border-color 0.18s ease, background 0.18s ease, color 0.18s ease;
+      white-space: nowrap;
+    }
+
+    .map-filter-btn:hover {
+      border-color: rgba(49, 214, 192, 0.5);
+      color: var(--text);
+    }
+
+    .map-filter-btn.active {
+      border-color: rgba(49, 214, 192, 0.72);
+      background: rgba(49, 214, 192, 0.16);
+      color: #8af8e9;
+    }
+
+    .map-filter-btn.active[data-map-incident-filter="traffic_jam"] {
+      border-color: rgba(246, 184, 75, 0.76);
+      background: rgba(246, 184, 75, 0.18);
+      color: #ffd98a;
+    }
+
+    .map-filter-btn.active[data-map-incident-filter="flood"] {
+      border-color: rgba(77, 171, 247, 0.76);
+      background: rgba(77, 171, 247, 0.18);
+      color: #a8d8ff;
+    }
+
+    .map-filter-btn.active[data-map-incident-filter="fire"] {
+      border-color: rgba(255, 91, 99, 0.78);
+      background: rgba(255, 91, 99, 0.18);
+      color: #ffadb2;
+    }
+
+    html[data-theme="light"] .map-filter-btn {
+      background: rgba(244, 247, 251, 0.78);
+    }
+
     .toolbar-metrics {
       display: flex;
       gap: 8px;

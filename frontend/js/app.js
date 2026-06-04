@@ -62,6 +62,7 @@
     let routeCameraIds = null;
     let cameraClusterLayer = null;
     let activeFilter = "all";
+    let activeMapIncidentFilter = "all";
     let activeCameraId = null;
     let activeCameraSource = new URLSearchParams(window.location.search).get("city") === "hanoi" ? "hanoi" : "hcm";
     let activeWorkspacePanel = "cameras";
@@ -181,6 +182,13 @@
     function getLatestActiveAlert() {
       return Array.from(activeAlerts.values())
         .sort((a, b) => new Date(b.last_seen || b.timestamp) - new Date(a.last_seen || a.timestamp))[0] || null;
+    }
+
+    function cameraMatchesMapIncidentFilter(cameraId) {
+      if (activeMapIncidentFilter === "all") return true;
+      return Array.from(activeAlerts.values()).some((alert) =>
+        alert.camera_id === cameraId && alert.event_type === activeMapIncidentFilter
+      );
     }
 
     function maybeRepairMojibake(value) {
@@ -704,7 +712,8 @@
     function updateCameraMarkerVisibility(cameraId) {
       const cam = cameras.get(cameraId);
       if (!cam?.marker) return;
-      const shouldShow = !routeCameraIds || routeCameraIds.has(cameraId);
+      const matchesRoute = !routeCameraIds || routeCameraIds.has(cameraId);
+      const shouldShow = matchesRoute && cameraMatchesMapIncidentFilter(cameraId);
       if (cameraClusterLayer) {
         const isClustered = cameraClusterLayer.hasLayer(cam.marker);
         if (shouldShow && !isClustered) cameraClusterLayer.addLayer(cam.marker);
@@ -720,8 +729,38 @@
     function refreshCameraMarkerVisibility() {
       cameras.forEach((_cam, cameraId) => updateCameraMarkerVisibility(cameraId));
       renderCameraList();
+      updateMapFilterSummary();
       const clearButton = document.getElementById("route-filter-clear");
       if (clearButton) clearButton.hidden = !routeCameraIds;
+    }
+
+    function updateMapFilterSummary() {
+      const summary = document.getElementById("map-filter-count");
+      if (!summary) return;
+      if (activeMapIncidentFilter === "all") {
+        summary.textContent = routeCameraIds ? "Camera trong tuyến" : "Tất cả camera";
+        return;
+      }
+      const visibleCount = Array.from(cameras.keys()).filter((cameraId) => {
+        const matchesRoute = !routeCameraIds || routeCameraIds.has(cameraId);
+        return matchesRoute && cameraMatchesMapIncidentFilter(cameraId);
+      }).length;
+      const labels = {
+        traffic_jam: "tắc đường",
+        flood: "ngập",
+        fire: "cháy",
+      };
+      summary.textContent = `${visibleCount} camera ${labels[activeMapIncidentFilter] || "có sự cố"}`;
+    }
+
+    function setMapIncidentFilter(filter) {
+      activeMapIncidentFilter = ["all", "traffic_jam", "flood", "fire"].includes(filter) ? filter : "all";
+      document.querySelectorAll("[data-map-incident-filter]").forEach((button) => {
+        const isActive = button.dataset.mapIncidentFilter === activeMapIncidentFilter;
+        button.classList.toggle("active", isActive);
+        button.setAttribute("aria-pressed", isActive ? "true" : "false");
+      });
+      refreshCameraMarkerVisibility();
     }
 
     function focusCamera(cameraId, zoom = 16) {
@@ -793,12 +832,16 @@
     function updateMarkerAlert(cameraId, alertData, options = {}) {
       activeAlerts.set(activeAlertKey(cameraId, alertData.event_type), alertData);
       renderCameraAlertState(cameraId, options);
+      updateCameraMarkerVisibility(cameraId);
+      updateMapFilterSummary();
       updateIncidentFocus(alertData);
     }
 
     function clearMarkerAlert(clearData) {
       activeAlerts.delete(activeAlertKey(clearData.camera_id, clearData.event_type));
       renderCameraAlertState(clearData.camera_id, { blink: false, openPopup: false });
+      updateCameraMarkerVisibility(clearData.camera_id);
+      updateMapFilterSummary();
       updateIncidentFocus(clearData);
     }
 
@@ -1768,6 +1811,7 @@
           activeAlerts.set(activeAlertKey(alertData.camera_id, alertData.event_type), alertData);
         });
         cameras.forEach((_cam, cameraId) => renderCameraAlertState(cameraId, { blink: false, openPopup: false }));
+        refreshCameraMarkerVisibility();
         updateIncidentFocus(getLatestActiveAlert());
         checkNearbyActiveAlerts();
       } catch (_err) {
@@ -2041,6 +2085,10 @@
         activeFilter = btn.dataset.filter;
         applyFilter();
       });
+    });
+
+    document.querySelectorAll("[data-map-incident-filter]").forEach((btn) => {
+      btn.addEventListener("click", () => setMapIncidentFilter(btn.dataset.mapIncidentFilter));
     });
 
     document.addEventListener("click", (event) => {
