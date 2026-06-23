@@ -616,7 +616,7 @@
         black: "Black frame",
         error: "Error",
         live: "Live",
-        offline: "Error",
+        offline: "Unavailable",
         stale: "Stale frame",
         timeout: "Timeout",
         unchecked: "Unchecked",
@@ -1304,7 +1304,7 @@
         youtubeStream.src = youtubeEmbedUrl;
       } else if (isHanoiRealtime) {
         prewarmHanoiDecoder(camId, sessionId, stream, sourceUrl);
-        watchHanoiDecoderStatus(camId, sessionId, shell);
+        watchHanoiDecoderStatus(camId, sessionId, shell, stream, sourceUrl);
       } else if (isSnapshotStream) {
         const loadFrame = () => {
           const joiner = sourceUrl.includes("?") ? "&" : "?";
@@ -1320,8 +1320,10 @@
       document.getElementById("video-modal").classList.add("active");
     }
 
-    function watchHanoiDecoderStatus(camId, sessionId, shell) {
+    function watchHanoiDecoderStatus(camId, sessionId, shell, stream, sourceUrl) {
       let checks = 0;
+      let reloads = 0;
+      let hasBeenLive = false;
       const poll = async () => {
         if (sessionId !== streamSessionId) return;
         checks += 1;
@@ -1335,10 +1337,26 @@
           Number(status.latest_age_ms || 0) < 15000;
 
         if (hasRecentFrame) {
+          hasBeenLive = true;
           shell.classList.remove("stream-offline");
           document.getElementById("stream-placeholder-title").textContent = "Live Hanoi stream";
           document.getElementById("stream-placeholder-copy").textContent =
             "Decoded video frames are coming through the backend proxy.";
+          hanoiStatusTimer = window.setTimeout(poll, 3500);
+          return;
+        }
+
+        const latestAgeMs = Number(status.latest_age_ms || 0);
+        const isStaleAfterLive = hasBeenLive && latestAgeMs > 15000;
+        if (isStaleAfterLive && reloads < 4) {
+          reloads += 1;
+          shell.classList.remove("stream-offline");
+          document.getElementById("stream-placeholder-title").textContent = "Refreshing Hanoi stream";
+          document.getElementById("stream-placeholder-copy").textContent =
+            "The latest frame is stale, so the dashboard is reconnecting to the decoder.";
+          const joiner = sourceUrl.includes("?") ? "&" : "?";
+          stream.src = sourceUrl + joiner + "recover=" + reloads + "&ts=" + Date.now();
+          hanoiStatusTimer = window.setTimeout(poll, 2500);
           return;
         }
 

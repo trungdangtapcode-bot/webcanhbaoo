@@ -22,19 +22,26 @@ function getPythonCommand() {
   if (process.env.HANOI_PROXY_PYTHON) return process.env.HANOI_PROXY_PYTHON;
 
   const candidates = [
+    process.env.PYTHON,
     path.resolve(__dirname, '../../venv/Scripts/python.exe'),
     path.resolve(__dirname, '../../venv/bin/python'),
     path.resolve(__dirname, '../../../ai_module/venv/Scripts/python.exe'),
     path.resolve(__dirname, '../../../ai_module/venv/bin/python'),
     'python',
     'python3',
-  ];
+  ].filter(Boolean);
 
   const existingCandidates = candidates.filter((candidate) =>
     candidate.includes(path.sep) ? fs.existsSync(candidate) : true
   );
 
-  return existingCandidates.find(canRunHanoiProxy) || existingCandidates[0] || 'python';
+  const runnable = existingCandidates.find(canRunHanoiProxy);
+  if (runnable) return runnable;
+
+  lastStartError =
+    'No runnable Python environment can import flask, imageio_ffmpeg, and websockets. ' +
+    'Install ai_module/requirements.txt or set HANOI_PROXY_PYTHON to a working interpreter.';
+  return null;
 }
 
 function canRunHanoiProxy(pythonCommand) {
@@ -69,6 +76,8 @@ function startProxy() {
   startAttemptedAt = now;
 
   const python = getPythonCommand();
+  if (!python) return;
+
   const env = {
     ...process.env,
     HANOI_PROXY_HOST: process.env.HANOI_PROXY_HOST || '127.0.0.1',
@@ -78,24 +87,27 @@ function startProxy() {
   };
 
   try {
-    proxyProcess = spawn(python, [PROXY_SCRIPT], {
+    const child = spawn(python, [PROXY_SCRIPT], {
       cwd: path.dirname(PROXY_SCRIPT),
       env,
       stdio: ['ignore', 'pipe', 'pipe'],
       windowsHide: true,
     });
+    proxyProcess = child;
 
-    proxyProcess.stdout.on('data', (chunk) => {
+    child.stdout.on('data', (chunk) => {
       process.stdout.write(`[HanoiProxy] ${chunk}`);
     });
-    proxyProcess.stderr.on('data', (chunk) => {
+    child.stderr.on('data', (chunk) => {
       process.stderr.write(`[HanoiProxy] ${chunk}`);
     });
-    proxyProcess.on('error', (err) => {
+    child.on('error', (err) => {
+      if (proxyProcess !== child) return;
       lastStartError = err.message;
       proxyProcess = null;
     });
-    proxyProcess.on('exit', (code, signal) => {
+    child.on('exit', (code, signal) => {
+      if (proxyProcess !== child) return;
       if (code && code !== 0) lastStartError = `Proxy exited with code ${code}`;
       if (signal) lastStartError = `Proxy exited with signal ${signal}`;
       proxyProcess = null;
@@ -108,6 +120,7 @@ function startProxy() {
 
 async function ensureHanoiProxyStarted() {
   if (await checkProxyHealth()) {
+    lastStartError = null;
     return { available: true, autostarted: false };
   }
 
@@ -117,6 +130,7 @@ async function ensureHanoiProxyStarted() {
   while (Date.now() < deadline) {
     await new Promise((resolve) => setTimeout(resolve, 500));
     if (await checkProxyHealth()) {
+      lastStartError = null;
       return { available: true, autostarted: true };
     }
   }

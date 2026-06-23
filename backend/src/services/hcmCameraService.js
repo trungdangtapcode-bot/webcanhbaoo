@@ -1,9 +1,17 @@
 const HCM_TRAFFIC_BASE_URL = process.env.HCM_TRAFFIC_BASE_URL || 'https://giaothong.hochiminhcity.gov.vn';
+const crypto = require('crypto');
 const HCM_CAMERA_RENDER_BASE_URL =
   process.env.HCM_CAMERA_RENDER_BASE_URL || 'https://giaothong.hochiminhcity.gov.vn:8007';
 const SESSION_TTL_MS = Number(process.env.HCM_CAMERA_SESSION_TTL_MS || 15 * 60 * 1000);
 const SNAPSHOT_TIMEOUT_MS = Number(process.env.HCM_CAMERA_SNAPSHOT_TIMEOUT_MS || 12000);
+const DEFAULT_SNAPSHOT_WIDTH = Number(process.env.HCM_CAMERA_SNAPSHOT_WIDTH || 640);
+const DEFAULT_SNAPSHOT_HEIGHT = Number(process.env.HCM_CAMERA_SNAPSHOT_HEIGHT || 360);
 const { cameras: HCM_CAMERA_SEEDS } = require('../data/hcmTrafficCameras.json');
+
+const HCM_UNAVAILABLE_PNG_HASHES = new Set([
+  '2a9b6294e69278aee39e6489563dcd174e9490e5',
+  'c2d6b5a633943d0625a503b2e477b29c7e6717b9',
+]);
 
 let cachedCookieHeader = '';
 let sessionExpiresAt = 0;
@@ -40,7 +48,17 @@ function findHcmCamera(cameraIdOrExternalId) {
 }
 
 function buildRenderUrl(externalId) {
-  return `${HCM_CAMERA_RENDER_BASE_URL}/Render/CameraHandler.ashx?id=${encodeURIComponent(externalId)}`;
+  const params = new URLSearchParams({
+    id: externalId,
+    bg: 'black',
+  });
+  if (Number.isFinite(DEFAULT_SNAPSHOT_WIDTH) && DEFAULT_SNAPSHOT_WIDTH > 0) {
+    params.set('w', String(DEFAULT_SNAPSHOT_WIDTH));
+  }
+  if (Number.isFinite(DEFAULT_SNAPSHOT_HEIGHT) && DEFAULT_SNAPSHOT_HEIGHT > 0) {
+    params.set('h', String(DEFAULT_SNAPSHOT_HEIGHT));
+  }
+  return `${HCM_CAMERA_RENDER_BASE_URL}/Render/CameraHandler.ashx?${params.toString()}`;
 }
 
 function collectCookies(headers) {
@@ -91,6 +109,30 @@ async function fetchWithTimeout(url, options = {}) {
   }
 }
 
+function sha1(buffer) {
+  return crypto.createHash('sha1').update(buffer).digest('hex');
+}
+
+function isPng(buffer) {
+  return buffer.length >= 24 && buffer.subarray(0, 8).toString('hex') === '89504e470d0a1a0a';
+}
+
+function isUnavailablePlaceholder(buffer) {
+  if (!isPng(buffer)) return false;
+  const hash = sha1(buffer);
+  if (HCM_UNAVAILABLE_PNG_HASHES.has(hash)) return true;
+
+  const width = buffer.readUInt32BE(16);
+  const height = buffer.readUInt32BE(20);
+  return (
+    buffer.length < 16000 &&
+    width >= 250 &&
+    width <= 700 &&
+    height >= 150 &&
+    height <= 450
+  );
+}
+
 async function fetchSnapshot(cameraIdOrExternalId) {
   const camera = findHcmCamera(cameraIdOrExternalId);
   const rawId = String(cameraIdOrExternalId || '');
@@ -131,14 +173,28 @@ async function fetchSnapshot(cameraIdOrExternalId) {
     throw err;
   }
 
+  const buffer = Buffer.from(await response.arrayBuffer());
+  if (isUnavailablePlaceholder(buffer)) {
+    const err = new Error('HCM camera returned IMAGE NOT AVAILABLE placeholder');
+    err.statusCode = 503;
+    err.issueType = 'unavailable_placeholder';
+    throw err;
+  }
+
+  const contentType = isPng(buffer)
+    ? 'image/png'
+    : response.headers.get('content-type') || 'image/jpeg';
+
   return {
-    contentType: response.headers.get('content-type') || 'image/jpeg',
-    buffer: Buffer.from(await response.arrayBuffer()),
+    contentType,
+    buffer,
   };
 }
 
 module.exports = {
+  buildRenderUrl,
   fetchSnapshot,
   findHcmCamera,
   getHcmCameras,
+  isUnavailablePlaceholder,
 };

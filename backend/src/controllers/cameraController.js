@@ -437,7 +437,12 @@ async function getCameraSnapshot(req, res) {
     return res.send(snapshot.buffer);
   } catch (err) {
     console.error('[CameraController] Snapshot error:', err);
-    return res.status(err.statusCode || 502).json({ error: 'Unable to load camera snapshot' });
+    return res.status(err.statusCode || 502).json({
+      error: err.issueType === 'unavailable_placeholder'
+        ? 'Camera source returned an unavailable placeholder'
+        : 'Unable to load camera snapshot',
+      issue_type: err.issueType || null,
+    });
   }
 }
 

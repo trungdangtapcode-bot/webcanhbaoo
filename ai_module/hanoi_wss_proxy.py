@@ -31,7 +31,7 @@ load_dotenv()
 
 HOST = os.getenv("HANOI_PROXY_HOST", "127.0.0.1")
 PORT = int(os.getenv("HANOI_PROXY_PORT", "5001"))
-FPS = int(os.getenv("HANOI_PROXY_FPS", "10"))
+FPS = int(os.getenv("HANOI_PROXY_FPS", "6"))
 JPEG_QUALITY = int(os.getenv("HANOI_PROXY_JPEG_QUALITY", "4"))
 HEADER_BYTES = int(os.getenv("HANOI_WSS_HEADER_BYTES", "12"))
 IDLE_SECONDS = int(os.getenv("HANOI_PROXY_IDLE_SECONDS", "75"))
@@ -104,6 +104,10 @@ def start_ffmpeg() -> subprocess.Popen:
         "error",
         "-fflags",
         "nobuffer",
+        "-analyzeduration",
+        "0",
+        "-probesize",
+        "32",
         "-flags",
         "low_delay",
         "-f",
@@ -114,6 +118,8 @@ def start_ffmpeg() -> subprocess.Popen:
         f"fps={FPS}",
         "-q:v",
         str(JPEG_QUALITY),
+        "-flush_packets",
+        "1",
         "-f",
         "image2pipe",
         "-vcodec",
@@ -168,6 +174,8 @@ async def write_hevc_to_ffmpeg(wss_url: str, stdin, stop_event: threading.Event)
                 ping_interval=None,
                 open_timeout=10,
                 max_size=None,
+                max_queue=1,
+                close_timeout=2,
             ) as ws:
                 log.info("Connected WSS camera stream")
                 await ws.send("PING")
@@ -231,6 +239,7 @@ class CameraStream:
         self.last_access = time.time()
         self.status = "idle"
         self.error: Optional[str] = None
+        self.process: Optional[subprocess.Popen] = None
         self.thread: Optional[threading.Thread] = None
         self.stop_event = threading.Event()
         self.decoder_started_at = 0.0
@@ -287,6 +296,8 @@ class CameraStream:
                 with self.condition:
                     self.decoder_started_at = time.time()
                 process = start_ffmpeg()
+                with self.condition:
+                    self.process = process
                 start_writer_thread(self.wss_url, process.stdin, writer_stop)
                 self._start_idle_watchdog(process)
                 self._set_status("decoding")
@@ -306,6 +317,9 @@ class CameraStream:
                         process.wait(timeout=2)
                     except Exception:
                         process.kill()
+                with self.condition:
+                    if self.process is process:
+                        self.process = None
 
             if self.stop_event.is_set() or self._is_idle():
                 break
@@ -355,11 +369,37 @@ class CameraStream:
 
         threading.Thread(target=watchdog, daemon=True).start()
 
-    def wait_for_frame(self, last_sequence: int, timeout: float = 10) -> Tuple[bytes, int]:
+    def wait_for_frame(self, last_sequence: int, timeout: float = 2) -> Tuple[bytes, int]:
         with self.condition:
             if self.sequence == last_sequence:
                 self.condition.wait(timeout=timeout)
             return self.latest_frame, self.sequence
+
+    def restart_if_stale(self) -> bool:
+        with self.condition:
+            latest_at = self.latest_at
+            status = self.status
+            thread_alive = bool(self.thread and self.thread.is_alive())
+            cycle_age = time.time() - self.decoder_started_at if self.decoder_started_at else 0
+            stale_live = latest_at > 0 and time.time() - latest_at > STALE_SECONDS
+            stale_startup = (
+                latest_at <= 0 and
+                status in {"connecting", "decoding"} and
+                thread_alive and
+                cycle_age > max(SNAPSHOT_TIMEOUT * 2, 30)
+            )
+            if not stale_live and not stale_startup:
+                return False
+            self.error = "stale decoder restarted"
+            self.stop_event.set()
+            process = self.process
+            self.condition.notify_all()
+        if process and process.poll() is None:
+            try:
+                process.terminate()
+            except Exception:
+                pass
+        return True
 
     def wait_for_snapshot(self, timeout: float) -> Optional[bytes]:
         self.ensure_started()
@@ -411,7 +451,10 @@ def mjpeg_stream(camera_key: str):
     try:
         yield make_mjpeg_part(PLACEHOLDER_JPEG)
         while True:
-            frame, sequence = stream.wait_for_frame(sequence, timeout=10)
+            stream.ensure_started()
+            if stream.restart_if_stale():
+                stream.ensure_started()
+            frame, sequence = stream.wait_for_frame(sequence, timeout=2)
             yield make_mjpeg_part(frame)
     finally:
         stream.remove_client()

@@ -55,6 +55,7 @@ function getHealthSummary() {
     black: 0,
     error: 0,
     live: 0,
+    offline: 0,
     issues: 0,
     stale: 0,
     timeout: 0,
@@ -68,10 +69,11 @@ function getHealthSummary() {
     else if (status === 'timeout') summary.timeout += 1;
     else if (status === 'black') summary.black += 1;
     else if (status === 'stale') summary.stale += 1;
+    else if (status === 'offline') summary.offline += 1;
     else if (status === 'error') summary.error += 1;
     else summary.unchecked += 1;
   });
-  summary.issues = summary.timeout + summary.black + summary.stale + summary.error;
+  summary.issues = summary.timeout + summary.black + summary.stale + summary.offline + summary.error;
   summary.checked = summary.live + summary.issues;
   return summary;
 }
@@ -96,6 +98,9 @@ function classifyError(err) {
   const message = String(err?.message || '');
   if (err?.name === 'AbortError' || /abort|timeout|timed out/i.test(message)) {
     return 'timeout';
+  }
+  if (err?.issueType === 'unavailable_placeholder' || /IMAGE NOT AVAILABLE|placeholder/i.test(message)) {
+    return 'offline';
   }
   return 'error';
 }
