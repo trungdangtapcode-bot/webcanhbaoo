@@ -1636,7 +1636,18 @@ def detect(
                     ai_status,
                 )
         else:
-            log.info("AI provider rejected the fire (reason: %s).", ai_verify["reason"])
+            ai_status = ai_verify.get("status", "unavailable")
+            if ai_status != "ok" and strong_local_fire and FIRE_ALLOW_LOCAL_FALLBACK and not FIRE_REQUIRE_AI_VERIFICATION:
+                fire_result["metadata"]["verified_by_ai"] = False
+                fire_result["metadata"]["ai_provider"] = AI_PROVIDER
+                fire_result["metadata"]["ai_model"] = AI_MODEL
+                fire_result["metadata"]["ai_status"] = ai_status
+                fire_result["metadata"]["ai_reason"] = ai_verify["reason"]
+                fire_result["metadata"]["fallback_reason"] = "ai_unavailable_local_demo"
+                fire_result["metadata"]["local_fallback"] = True
+                detections.append(fire_result)
+            else:
+                log.info("AI provider rejected the fire (reason: %s).", ai_verify["reason"])
 
     # 1b. Flood Detection (Local first, then AI verify)
     flood_result = detect_flood(frame)
@@ -1699,7 +1710,19 @@ def detect(
                     ai_status,
                 )
         else:
-            log.info("AI provider rejected the flood (reason: %s).", ai_verify["reason"])
+            ai_status = ai_verify.get("status", "unavailable")
+            if ai_status != "ok" and strong_local_flood and FLOOD_ALLOW_LOCAL_FALLBACK and not FLOOD_REQUIRE_AI_VERIFICATION:
+                flood_result["metadata"]["verified_by_ai"] = False
+                flood_result["metadata"]["ai_provider"] = AI_PROVIDER
+                flood_result["metadata"]["ai_model"] = AI_MODEL
+                flood_result["metadata"]["ai_status"] = ai_status
+                flood_result["metadata"]["ai_reason"] = ai_verify["reason"]
+                flood_result["metadata"]["fallback_reason"] = "ai_unavailable_strong_local_flood"
+                flood_result["metadata"]["local_fallback"] = True
+                detections.append(flood_result)
+                flood_diagnostic["accepted"] = True
+            else:
+                log.info("AI provider rejected the flood (reason: %s).", ai_verify["reason"])
         if diagnostics is not None:
             diagnostics.append(flood_diagnostic)
 

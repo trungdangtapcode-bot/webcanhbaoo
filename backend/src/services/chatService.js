@@ -1,6 +1,188 @@
 const alertService = require('./alertService');
 const { getHcmCameras } = require('./hcmCameraService');
 
+const AI_REQUEST_TIMEOUT_MS = Number(process.env.CHAT_AI_TIMEOUT_MS || 12000);
+
+function normalizeText(value) {
+  return String(value || '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/đ/g, 'd')
+    .replace(/Đ/g, 'D')
+    .toLowerCase()
+    .trim();
+}
+
+function cleanLocation(value) {
+  return String(value || '')
+    .replace(/^[\s"'“”‘’]+|[\s"'“”‘’.!?]+$/g, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function trimRouteNoise(value) {
+  return cleanLocation(value)
+    .replace(/^(toi|tôi|minh|mình|em|anh|chi|chị|ban|bạn)\s+(muon|muốn|can|cần|di|đi)\s+/i, '')
+    .replace(/^(hay|hãy|vui long|vui lòng)\s+/i, '')
+    .replace(/^(chi duong|chỉ đường|dan duong|dẫn đường|tim duong|tìm đường|duong di|đường đi)\s+/i, '')
+    .replace(/^(den|đến|toi|tới)\s+/i, '')
+    .trim();
+}
+
+function summarizeAlerts(activeAlerts) {
+  if (!activeAlerts.length) {
+    return 'Hiện chưa có cảnh báo giao thông đang hoạt động trên hệ thống.';
+  }
+
+  const labelByType = {
+    traffic_jam: 'tắc đường',
+    fire: 'hỏa hoạn',
+    flood: 'ngập lụt',
+  };
+
+  const items = activeAlerts.slice(0, 5).map((alert) => {
+    const type = labelByType[alert.event_type] || alert.event_type || 'sự cố';
+    return `${type} tại ${alert.camera_name || alert.camera_id || 'một camera'}`;
+  });
+
+  const suffix = activeAlerts.length > items.length ? ` và ${activeAlerts.length - items.length} cảnh báo khác` : '';
+  return `Đang có ${activeAlerts.length} cảnh báo: ${items.join('; ')}${suffix}.`;
+}
+
+function buildGeneralReply(message, activeAlerts) {
+  const normalized = normalizeText(message);
+
+  if (/^(hi|hello|hey|xin chao|chao|alo|test)\b/.test(normalized)) {
+    return 'Xin chào! Bạn có thể hỏi tình hình giao thông hoặc nhập kiểu: "chỉ đường từ Quận 1 đến Quận 7".';
+  }
+
+  if (/(su co|canh bao|ket xe|tac duong|ngap|chay|hoa hoan|giao thong)/.test(normalized)) {
+    return summarizeAlerts(activeAlerts);
+  }
+
+  return 'Tôi có thể giúp bạn xem cảnh báo giao thông hoặc lập tuyến đường. Bạn thử nhập: "chỉ đường từ Quận 1 đến Quận 7".';
+}
+
+function parseRouteLocally(message, forceRoute = false) {
+  const normalized = normalizeText(message).replace(/\s+/g, ' ');
+
+  const fromToMatch = normalized.match(/(?:^|\s)(?:tu)\s+(.+?)\s+(?:den|toi|sang|qua)\s+(.+)$/);
+  if (fromToMatch) {
+    return {
+      intent: 'routing',
+      start: cleanLocation(fromToMatch[1]),
+      end: cleanLocation(fromToMatch[2]),
+    };
+  }
+
+  const toFromMatch = normalized.match(/(?:^|\s)(?:den|toi)\s+(.+?)\s+(?:tu)\s+(.+)$/);
+  if (toFromMatch) {
+    return {
+      intent: 'routing',
+      start: cleanLocation(toFromMatch[2]),
+      end: cleanLocation(toFromMatch[1]),
+    };
+  }
+
+  const looksLikeRoute =
+    forceRoute ||
+    /\b(chi duong|dan duong|tim duong|duong di|lo trinh|di den|di toi|den|toi)\b/.test(normalized);
+
+  if (!looksLikeRoute) return null;
+
+  const destinationMatch = normalized.match(
+    /(?:chi duong|dan duong|tim duong|duong di|lo trinh|di den|di toi|den|toi)\s+(.+)$/
+  );
+
+  const end = trimRouteNoise(destinationMatch?.[1] || normalized);
+  if (!end) return null;
+
+  return { intent: 'routing', start: null, end };
+}
+
+function parseMessageLocally(message, activeAlerts, forceRoute = false) {
+  const route = parseRouteLocally(message, forceRoute);
+  if (route) return route;
+
+  const normalized = normalizeText(message);
+  const isKnownGeneral =
+    /^(hi|hello|hey|xin chao|chao|alo|test)\b/.test(normalized) ||
+    /(su co|canh bao|ket xe|tac duong|ngap|chay|hoa hoan|giao thong)/.test(normalized);
+
+  if (isKnownGeneral) {
+    return {
+      intent: 'general',
+      reply: buildGeneralReply(message, activeAlerts),
+    };
+  }
+
+  return null;
+}
+
+function safeJsonFromModel(content) {
+  let text = String(content || '').trim();
+
+  if (text.startsWith('```json')) {
+    text = text.replace(/^```json/, '').replace(/```$/, '').trim();
+  } else if (text.startsWith('```')) {
+    text = text.replace(/^```/, '').replace(/```$/, '').trim();
+  }
+
+  return JSON.parse(text);
+}
+
+async function parseMessageWithAI(message, alertSummary) {
+  if (!process.env.OPENROUTER_API_KEY) return null;
+
+  const prompt = `Bạn là Trợ lý AI Giao thông thông minh cho khu vực TP.HCM.
+Dưới đây là danh sách các sự cố hiện tại trên hệ thống (nếu người dùng hỏi):
+${alertSummary}
+
+Nhiệm vụ: Phân tích tin nhắn của người dùng: "${message}"
+
+Nếu người dùng muốn tìm đường đi (có đề cập điểm xuất phát và đích đến, HOẶC CHỈ CÓ ĐÍCH ĐẾN):
+Trả về JSON: { "intent": "routing", "start": "Địa điểm xuất phát (nếu có, nếu không thì trả về null)", "end": "Địa điểm đến" }
+
+Nếu người dùng hỏi vấn đề chung:
+Trả về JSON: { "intent": "general", "reply": "Câu trả lời của bạn" }
+
+LƯU Ý: CHỈ TRẢ VỀ DUY NHẤT 1 ĐỐI TƯỢNG JSON HỢP LỆ. KHÔNG GIẢI THÍCH THÊM.`;
+
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), AI_REQUEST_TIMEOUT_MS);
+
+  try {
+    const openRouterRes = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+      method: "POST",
+      signal: controller.signal,
+      headers: {
+        "Authorization": `Bearer ${process.env.OPENROUTER_API_KEY}`,
+        "HTTP-Referer": "http://localhost:3000",
+        "X-Title": "Smart Alert Traffic",
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        model: process.env.OPENROUTER_MODEL || "deepseek/deepseek-chat-v3-0324",
+        response_format: { type: "json_object" },
+        messages: [{ role: "user", content: prompt }]
+      })
+    });
+
+    if (!openRouterRes.ok) {
+      const errText = await openRouterRes.text();
+      throw new Error(`OpenRouter API error: ${openRouterRes.status} ${errText}`);
+    }
+
+    const chatCompletion = await openRouterRes.json();
+    const content = chatCompletion?.choices?.[0]?.message?.content;
+    if (!content) throw new Error('OpenRouter returned an empty completion');
+
+    return safeJsonFromModel(content);
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 // Haversine formula to calculate distance between two coordinates in meters
 function getDistance(lat1, lon1, lat2, lon2) {
   const R = 6371e3; // metres
@@ -17,8 +199,16 @@ function getDistance(lat1, lon1, lat2, lon2) {
 
 async function geocode(locationStr) {
   try {
-    const url = `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(locationStr)}&format=json&limit=1`;
-    const res = await fetch(url, { headers: { 'User-Agent': 'SmartAlertSystem/1.0' }});
+    const params = new URLSearchParams({
+      q: locationStr,
+      format: 'json',
+      limit: '1',
+      addressdetails: '1',
+      countrycodes: 'vn',
+      'accept-language': 'vi',
+    });
+    const url = `https://nominatim.openstreetmap.org/search?${params.toString()}`;
+    const res = await fetch(url, { headers: { 'User-Agent': 'SmartAlertSystem/1.0 (+local routing assistant)' }});
     const data = await res.json();
     if (!data || data.length === 0) return null;
     return {
@@ -99,51 +289,22 @@ async function processChat(message, currentLocation, forceRoute) {
     const activeAlerts = alertService.getActiveAlerts();
     const alertSummary = activeAlerts.map(a => `- ${a.event_type} tại ${a.camera_name}`).join('\n') || "Không có sự cố nào.";
 
-    // 1. NLU Intent Classification
-    const prompt = `Bạn là Trợ lý AI Giao thông thông minh cho khu vực TP.HCM.
-Dưới đây là danh sách các sự cố hiện tại trên hệ thống (nếu người dùng hỏi):
-${alertSummary}
+    let parsed = parseMessageLocally(message, activeAlerts, forceRoute);
 
-Nhiệm vụ: Phân tích tin nhắn của người dùng: "${message}"
-
-Nếu người dùng muốn tìm đường đi (có đề cập điểm xuất phát và đích đến, HOẶC CHỈ CÓ ĐÍCH ĐẾN):
-Trả về JSON: { "intent": "routing", "start": "Địa điểm xuất phát (nếu có, nếu không thì trả về null)", "end": "Địa điểm đến" }
-
-Nếu người dùng hỏi vấn đề chung:
-Trả về JSON: { "intent": "general", "reply": "Câu trả lời của bạn" }
-
-LƯU Ý: CHỈ TRẢ VỀ DUY NHẤT 1 ĐỐI TƯỢNG JSON HỢP LỆ. KHÔNG GIẢI THÍCH THÊM.`;
-
-    const openRouterRes = await fetch("https://openrouter.ai/api/v1/chat/completions", {
-      method: "POST",
-      headers: {
-        "Authorization": `Bearer ${process.env.OPENROUTER_API_KEY}`,
-        "HTTP-Referer": "http://localhost:3000",
-        "X-Title": "Smart Alert Traffic",
-        "Content-Type": "application/json"
-      },
-      body: JSON.stringify({
-        model: process.env.OPENROUTER_MODEL || "moonshotai/kimi-k2.6:free",
-        response_format: { type: "json_object" },
-        messages: [{ role: "user", content: prompt }]
-      })
-    });
-
-    if (!openRouterRes.ok) {
-      const errText = await openRouterRes.text();
-      throw new Error(`OpenRouter API error: ${openRouterRes.status} ${errText}`);
+    if (!parsed) {
+      try {
+        parsed = await parseMessageWithAI(message, alertSummary);
+      } catch (aiError) {
+        console.warn('[ChatService] AI parsing unavailable, using local fallback:', aiError.message);
+      }
     }
 
-    const chatCompletion = await openRouterRes.json();
-    let content = chatCompletion.choices[0].message.content.trim();
-    
-    if (content.startsWith('```json')) {
-      content = content.replace(/^```json/, '').replace(/```$/, '').trim();
-    } else if (content.startsWith('```')) {
-      content = content.replace(/^```/, '').replace(/```$/, '').trim();
+    if (!parsed || typeof parsed !== 'object') {
+      parsed = {
+        intent: 'general',
+        reply: buildGeneralReply(message, activeAlerts),
+      };
     }
-
-    const parsed = JSON.parse(content);
 
     if (forceRoute) {
       parsed.intent = 'routing';
