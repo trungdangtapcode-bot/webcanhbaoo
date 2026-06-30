@@ -39,17 +39,17 @@ function getTransporter() {
 function getEventLabel(eventType) {
   return {
     fire: 'Cháy',
-    flood: 'Lũ lụt',
-    traffic_jam: 'Tắc đường',
+    flood: 'Ngập lụt',
+    traffic_jam: 'Ùn tắc giao thông',
   }[eventType] || eventType || 'Sự cố';
 }
 
 function getSeverityLabel(severity) {
   return {
-    critical: 'Nghiêm trọng',
-    high: 'Cao',
-    medium: 'Trung bình',
-    low: 'Thấp',
+    critical: 'Khẩn cấp',
+    high: 'Nguy hiểm',
+    medium: 'Cảnh báo',
+    low: 'Theo dõi',
   }[severity] || severity || 'Không rõ';
 }
 

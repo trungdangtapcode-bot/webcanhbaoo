@@ -36,7 +36,7 @@ function getPythonCommand() {
   );
 
   const runnable = existingCandidates.find(canRunHanoiProxy);
-  if (runnable) return runnable;
+  if (runnable) return runnable.includes(path.sep) ? path.resolve(runnable) : runnable;
 
   lastStartError =
     'No runnable Python environment can import flask, imageio_ffmpeg, and websockets. ' +

@@ -32,6 +32,7 @@ function serialize(entry) {
 function isUnverifiedVisionIncident(entry) {
   if (!['fire', 'flood'].includes(entry.event_type)) return false;
   const metadata = entry.metadata || {};
+  if (metadata.simulated_source || metadata.simulated_demo_fallback) return false;
   const detectorOrigin = Boolean(
     metadata.detector ||
     metadata.detector_url_configured ||

@@ -11,27 +11,64 @@
       dark: "https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png",
       light: "https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png",
     };
+    const PAGE_PARAMS = new URLSearchParams(window.location.search);
+    const FIRE_DEMO_VIDEO_URL = "./assets/demo/perry-fire.webm";
+    const FLOOD_DEMO_VIDEO_URL = "./assets/demo/flood-intersection.webm";
+    const TRAFFIC_DEMO_VIDEO_URL = "./assets/demo/rush-hour-traffic.webm";
     const CAMERA_SOURCES = {
       hcm: {
-        endpoint: "/api/cameras/hcm",
+        endpoint: "/api/cameras/hcm?include_demo=true",
         fallbackEndpoint: "/api/cameras",
         label: "TP.HCM",
         center: MAP_CENTER,
         zoom: MAP_ZOOM,
       },
       hanoi: {
-        endpoint: "/api/cameras/hanoi",
+        endpoint: "/api/cameras/hanoi?include_demo=true",
         fallbackEndpoint: "/api/cameras/hanoi",
         label: "Hà Nội",
         center: [21.0285, 105.8542],
         zoom: 12,
       },
     };
+    const DASHBOARD_DEMO_SOURCES = {
+      fire: {
+        url: FIRE_DEMO_VIDEO_URL,
+        cameraId: "DEMO_FIRE_CAM_001",
+        cameraName: "Camera mô phỏng — Sự cố cháy",
+        eventType: "fire",
+        label: "cháy",
+        maxAttempts: 24,
+      },
+      flood: {
+        url: FLOOD_DEMO_VIDEO_URL,
+        cameraId: "DEMO_FLOOD_CAM_001",
+        cameraName: "Camera mô phỏng — Tuyến đường ngập",
+        eventType: "flood",
+        label: "ngập",
+        maxAttempts: 18,
+      },
+      traffic: {
+        url: TRAFFIC_DEMO_VIDEO_URL,
+        cameraId: "DEMO_TRAFFIC_CAM_001",
+        cameraName: "Camera mô phỏng — Ùn tắc giờ cao điểm",
+        eventType: "traffic_jam",
+        label: "ùn tắc",
+        maxAttempts: 18,
+      },
+    };
     const ALERT_TYPES = {
-      traffic_jam: { label: "Traffic jam", shortLabel: "Traffic", color: "traffic_jam" },
-      fire: { label: "Fire detected", shortLabel: "Fire", color: "fire" },
-      flood: { label: "Flood warning", shortLabel: "Flood", color: "flood" },
-      normal: { label: "Normal", shortLabel: "Normal", color: "normal" },
+      traffic_jam: { label: "Phát hiện ùn tắc giao thông", shortLabel: "Ùn tắc", color: "traffic_jam" },
+      fire: { label: "Phát hiện sự cố cháy", shortLabel: "Cháy", color: "fire" },
+      flood: { label: "Phát hiện ngập lụt", shortLabel: "Ngập", color: "flood" },
+      normal: { label: "Bình thường", shortLabel: "Bình thường", color: "normal" },
+    };
+    const SEVERITY_LABELS = {
+      critical: "Khẩn cấp",
+      high: "Nguy hiểm",
+      medium: "Cảnh báo",
+      low: "Theo dõi",
+      normal: "Bình thường",
     };
     const CP1252 = {
       0x20ac: 0x80, 0x201a: 0x82, 0x0192: 0x83, 0x201e: 0x84, 0x2026: 0x85,
@@ -48,6 +85,7 @@
         : ""
     );
     const AUTH_SESSION_KEY = "smart-alert-auth-session";
+    const NEARBY_ALERTS_STORAGE_KEY = "smart-alert-nearby-alerts-enabled";
     const cameras = new Map();
     const alerts = [];
     const activeAlerts = new Map();
@@ -64,22 +102,42 @@
     let activeFilter = "all";
     let activeMapIncidentFilter = "all";
     let activeCameraId = null;
-    let activeCameraSource = new URLSearchParams(window.location.search).get("city") === "hanoi" ? "hanoi" : "hcm";
+    let activeVideoCameraId = null;
+    let activeCameraSource = PAGE_PARAMS.get("city") === "hanoi" ? "hanoi" : "hcm";
     let activeWorkspacePanel = "cameras";
     let streamRefreshTimer = null;
     let hanoiStreamRetryTimer = null;
     let hanoiStatusTimer = null;
     let streamSessionId = 0;
     let tileLayer = null;
+    let mapToolbarResizeObserver = null;
     let statsRange = "24h";
-    let nearbyRadius = 3000;
+    let nearbyRadius = 10000;
     let nearbyNotificationsEnabled = false;
     let activeNewsCategory = "all";
+    let currentNewsItems = [];
+    let newsSearchQuery = "";
+    let newsSourceFilter = "all";
+    let activeNewsTab = "text";
     let userLocation = null;
+    let showOnlyNearbyCameras = true;
+    let isFollowMeMode = false;
+    let isVoiceAlertEnabled = false;
+    let currentTimeRange = "24h";
+    let isCameraLayerVisible = true;
+    let isAlertLayerVisible = true;
     let geoWatchId = null;
     let userLocationMarker = null;
+    
+    let currentVideoNews = [];
     let userLocationAccuracyCircle = null;
+    let newsMarkers = [];
     let realtimeSocket = null;
+    let notificationServiceWorkerRegistration = null;
+    let dashboardDemoRunToken = 0;
+    let dashboardDemoRunning = false;
+    let preferredVietnameseVoice = null;
+    let speechRequestId = 0;
 
     const map = L.map("map", {
       zoomControl: false,
@@ -100,6 +158,48 @@
       cameraClusterLayer.on("clusterclick", handleCameraClusterClick);
     }
     L.control.zoom({ position: "topright" }).addTo(map);
+
+    L.Control.LocationButton = L.Control.extend({
+      onAdd: function(map) {
+        var container = L.DomUtil.create('div', 'leaflet-bar leaflet-control leaflet-control-custom');
+        container.style.backgroundColor = 'var(--surface)';
+        container.style.width = '34px';
+        container.style.height = '34px';
+        container.style.cursor = 'pointer';
+        container.style.display = 'flex';
+        container.style.alignItems = 'center';
+        container.style.justifyContent = 'center';
+        container.style.transition = 'background-color var(--fast)';
+        container.title = "Lấy vị trí hiện tại của bạn";
+        
+        container.innerHTML = `<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color: var(--text)"><circle cx="12" cy="12" r="10"></circle><circle cx="12" cy="12" r="3"></circle><line x1="12" y1="2" x2="12" y2="4"></line><line x1="12" y1="20" x2="12" y2="22"></line><line x1="2" y1="12" x2="4" y2="12"></line><line x1="20" y1="12" x2="22" y2="12"></line></svg>`;
+
+        container.onmouseover = function() {
+          container.style.backgroundColor = 'var(--surface-hover, #e0e0e0)';
+        };
+        container.onmouseout = function() {
+          container.style.backgroundColor = 'var(--surface)';
+        };
+
+        container.onclick = async function(e) {
+          e.stopPropagation();
+          e.preventDefault();
+          try {
+             container.style.opacity = '0.5';
+             const loc = await requestUserLocation({ focus: true });
+             if (loc) {
+               map.flyTo([loc.lat, loc.lng], 15);
+             }
+          } catch(err) {
+             console.error("Location error", err);
+          } finally {
+             container.style.opacity = '1';
+          }
+        }
+        return container;
+      }
+    });
+    new L.Control.LocationButton({ position: 'topright' }).addTo(map);
     setMapTiles(getCurrentTheme());
 
     function getCurrentTheme() {
@@ -153,11 +253,7 @@
     }
 
     function looksMojibaked(text) {
-      return Array.from(text).some((char) => {
-        const code = char.codePointAt(0);
-        return code === 0xc2 || code === 0xc3 || code === 0xc4 || code === 0xc6 ||
-          code === 0xe1 || code === 0xbb || code === 0xba || code === 0x2026;
-      });
+      return /(?:[ÃÂÄÆ][\u0080-\u00ff]|á[º»]|â€)/.test(String(text || ""));
     }
 
     function cameraDotId(cameraId) {
@@ -194,10 +290,18 @@
       );
     }
 
+    function cameraMatchesNearbyFilter(cameraId) {
+      if (!showOnlyNearbyCameras || !userLocation) return true;
+      const cam = cameras.get(cameraId);
+      if (!cam?.data?.location?.lat || !cam?.data?.location?.lng) return false;
+      const dist = distanceBetweenMeters(userLocation, { lat: cam.data.location.lat, lng: cam.data.location.lng });
+      return dist <= nearbyRadius;
+    }
+
     function getVisibleMapCameraCount() {
       return Array.from(cameras.keys()).filter((cameraId) => {
         const matchesRoute = !routeCameraIds || routeCameraIds.has(cameraId);
-        return matchesRoute && cameraMatchesMapIncidentFilter(cameraId);
+        return matchesRoute && cameraMatchesMapIncidentFilter(cameraId) && cameraMatchesNearbyFilter(cameraId);
       }).length;
     }
 
@@ -205,6 +309,29 @@
       const empty = document.getElementById("map-empty-filter");
       if (!empty) return;
       empty.hidden = activeMapIncidentFilter === "all" || visibleCount > 0;
+    }
+
+    function syncMapOverlayOffsets() {
+      const toolbar = document.querySelector(".map-toolbar");
+      const mapContainer = document.querySelector(".map-container");
+      const empty = document.getElementById("map-empty-filter");
+      if (!toolbar || !mapContainer || !empty) return;
+
+      const toolbarRect = toolbar.getBoundingClientRect();
+      const mapRect = mapContainer.getBoundingClientRect();
+      const safeTop = Math.max(96, Math.ceil(toolbarRect.bottom - mapRect.top + 12));
+      empty.style.setProperty("--map-empty-safe-top", safeTop + "px");
+    }
+
+    function observeMapToolbarLayout() {
+      const toolbar = document.querySelector(".map-toolbar");
+      if (!toolbar) return;
+      syncMapOverlayOffsets();
+      if (typeof ResizeObserver === "function") {
+        mapToolbarResizeObserver = new ResizeObserver(syncMapOverlayOffsets);
+        mapToolbarResizeObserver.observe(toolbar);
+      }
+      window.addEventListener("resize", syncMapOverlayOffsets, { passive: true });
     }
 
     function maybeRepairMojibake(value) {
@@ -246,7 +373,7 @@
     function formatTime(value, withSeconds = true) {
       const date = value ? new Date(value) : new Date();
       if (Number.isNaN(date.getTime())) return "--:--";
-      return date.toLocaleTimeString(navigator.language || "vi-VN", {
+      return date.toLocaleTimeString("vi-VN", {
         hour: "2-digit",
         minute: "2-digit",
         second: withSeconds ? "2-digit" : undefined,
@@ -255,8 +382,8 @@
 
     function formatDateTime(value) {
       const date = value ? new Date(value) : new Date();
-      if (Number.isNaN(date.getTime())) return "Unknown time";
-      return date.toLocaleString(navigator.language || "vi-VN", {
+      if (Number.isNaN(date.getTime())) return "Không rõ thời gian";
+      return date.toLocaleString("vi-VN", {
         year: "numeric",
         month: "2-digit",
         day: "2-digit",
@@ -270,8 +397,8 @@
       return API_BASE + path;
     }
 
-    async function fetchJsonOrNull(url) {
-      const res = await fetch(apiUrl(url));
+    async function fetchJsonOrNull(url, options = {}) {
+      const res = await fetch(apiUrl(url), options);
       const contentType = res.headers.get("content-type") || "";
       if (!res.ok || !contentType.includes("application/json")) return null;
       return res.json();
@@ -410,9 +537,90 @@
     }
 
     function updateClock() {
+      const now = new Date();
       document.getElementById("operations-clock").textContent =
-        "Live operations - " + formatDateTime(new Date());
-      document.getElementById("last-sync").textContent = formatTime(new Date());
+        "Live operations - " + formatDateTime(now);
+      document.getElementById("last-sync").textContent = formatTime(now);
+    }
+
+    function setVoiceAlertButtonState(state = "off") {
+      const button = document.getElementById("voice-alert-btn");
+      const label = document.getElementById("voice-alert-text");
+      if (!button || !label) return;
+
+      const enabled = state === "on" || state === "speaking";
+      button.classList.toggle("enabled", enabled);
+      button.setAttribute("aria-pressed", String(enabled));
+      button.title = enabled ? "Tắt cảnh báo bằng giọng nói" : "Bật cảnh báo bằng giọng nói";
+      label.textContent = {
+        on: "🔊 Đọc cảnh báo",
+        speaking: "🔊 Đang đọc…",
+        unsupported: "🔇 Không hỗ trợ",
+        error: "🔇 Lỗi giọng nói",
+        off: "🔇 Im lặng",
+      }[state] || "🔇 Im lặng";
+    }
+
+    function refreshVietnameseVoice() {
+      if (!window.speechSynthesis?.getVoices) return null;
+      const voices = window.speechSynthesis.getVoices();
+      preferredVietnameseVoice = voices.find((voice) =>
+        String(voice.lang || "").toLowerCase() === "vi-vn"
+      ) || voices.find((voice) =>
+        String(voice.lang || "").toLowerCase().startsWith("vi")
+      ) || null;
+      return preferredVietnameseVoice;
+    }
+
+    function initializeSpeechSynthesis() {
+      if (!window.speechSynthesis || !window.SpeechSynthesisUtterance) {
+        setVoiceAlertButtonState("unsupported");
+        return false;
+      }
+      refreshVietnameseVoice();
+      window.speechSynthesis.addEventListener?.("voiceschanged", refreshVietnameseVoice);
+      return true;
+    }
+
+    function speakAlert(text, options = {}) {
+      if (!isVoiceAlertEnabled) return false;
+      if (!window.speechSynthesis || !window.SpeechSynthesisUtterance) {
+        isVoiceAlertEnabled = false;
+        setVoiceAlertButtonState("unsupported");
+        return false;
+      }
+
+      const requestId = ++speechRequestId;
+      const synth = window.speechSynthesis;
+      const utterance = new SpeechSynthesisUtterance(String(text || "").trim());
+      if (!utterance.text) return false;
+      const voice = preferredVietnameseVoice || refreshVietnameseVoice();
+      if (voice) utterance.voice = voice;
+      utterance.lang = voice?.lang || "vi-VN";
+      utterance.rate = 0.96;
+      utterance.pitch = 1;
+      utterance.volume = 1;
+      utterance.onstart = () => {
+        if (requestId === speechRequestId && isVoiceAlertEnabled) setVoiceAlertButtonState("speaking");
+      };
+      utterance.onend = () => {
+        if (requestId === speechRequestId && isVoiceAlertEnabled) setVoiceAlertButtonState("on");
+      };
+      utterance.onerror = (event) => {
+        if (["canceled", "interrupted"].includes(event.error)) return;
+        if (requestId === speechRequestId && isVoiceAlertEnabled) setVoiceAlertButtonState("error");
+      };
+
+      synth.cancel();
+      if (synth.paused) synth.resume();
+      const play = () => {
+        if (requestId !== speechRequestId || !isVoiceAlertEnabled) return;
+        synth.speak(utterance);
+        if (synth.paused) synth.resume();
+      };
+      if (options.immediate) play();
+      else window.setTimeout(play, 60);
+      return true;
     }
 
     function createMarkerIcon(status = "normal") {
@@ -478,32 +686,45 @@
         .openOn(map);
 
       if (markers.length > 24 && map.getZoom() < 15) {
-        map.fitBounds(cluster.getBounds().pad(0.16), { maxZoom: 15, animate: true });
+        map.fitBounds(cluster.getBounds().pad(0.16), { maxZoom: 15, animate: true, paddingTopLeft: [450, 80] });
       } else if (typeof cluster.spiderfy === "function" && map.getZoom() >= 15) {
         cluster.spiderfy();
       }
     }
 
     function getAlertMeta(type) {
-      return ALERT_TYPES[type] || { label: maybeRepairMojibake(type || "Alert"), shortLabel: "Alert", color: "normal" };
+      return ALERT_TYPES[type] || { label: "Cảnh báo chưa xác định", shortLabel: "Cảnh báo", color: "normal" };
+    }
+
+    function getSeverityLabel(severity) {
+      return SEVERITY_LABELS[String(severity || "medium").toLowerCase()] || "Chưa xác định";
     }
 
     function buildNormalPopup(cam) {
       const id = escapeAttr(cam.camera_id);
+      const isRecordedDemo = cam.source === "simulated_demo" || cam.stream_type === "recorded_demo";
+      const demoEventType = cam.metadata?.expected_event_type || "normal";
+      const demoLabel = getAlertMeta(demoEventType).shortLabel;
       return `
         <div class="popup-content">
           <div class="popup-heading">
             <div class="popup-icon">${iconSvg("camera")}</div>
             <div>
               <div class="popup-title">${escapeHtml(cam.name)}</div>
-              <div class="popup-meta">${escapeHtml(cam.location?.address || "No address")}</div>
+              <div class="popup-meta">${escapeHtml(cam.location?.address || "Chưa có địa chỉ")}</div>
             </div>
           </div>
-          <div class="popup-badge">Normal</div>
+          <div class="popup-badge ${isRecordedDemo ? escapeAttr(demoEventType) : ""}">${isRecordedDemo ? `Mô phỏng ${escapeHtml(demoLabel.toLowerCase())}` : "Bình thường"}</div>
           <button class="popup-action" type="button" data-camera-id="${id}">
             ${iconSvg("play")}
-            Watch live
+            ${isRecordedDemo ? "Xem camera mô phỏng" : "Xem trực tiếp"}
           </button>
+          ${isRecordedDemo ? `
+            <a class="popup-action demo-detect-action" href="./demo.html?incident=${escapeAttr(demoEventType === "traffic_jam" ? "traffic" : demoEventType)}&autoplayDemo=1">
+              ${iconSvg("alert")}
+              Chạy nhận diện AI
+            </a>
+          ` : ""}
         </div>
       `;
     }
@@ -520,7 +741,7 @@
           <div class="popup-heading">
             <div class="popup-icon">${iconSvg(alertData.event_type)}</div>
             <div>
-              <div class="popup-title">${escapeHtml(alertData.camera_name || "Selected camera")}</div>
+              <div class="popup-title">${escapeHtml(alertData.camera_name || "Camera được chọn")}</div>
               <div class="popup-meta">${formatDateTime(alertData.timestamp)}</div>
             </div>
           </div>
@@ -528,7 +749,7 @@
           ${imgTag}
           <button class="popup-action" type="button" data-camera-id="${cameraId}">
             ${iconSvg("play")}
-            Watch live
+            Xem camera
           </button>
         </div>
       `;
@@ -586,6 +807,7 @@
       if (!json) throw new Error("Camera API unavailable");
 
       (json.cameras || []).forEach((cam) => addCameraMarker(cam));
+      syncIncidentDemoPanel();
       renderCameraList();
       updateHealthSummaryUi({ total: cameras.size, live: 0, issues: 0, unchecked: cameras.size });
 
@@ -613,14 +835,14 @@
 
     function getHealthLabel(status) {
       return {
-        black: "Black frame",
-        error: "Error",
-        live: "Live",
-        offline: "Unavailable",
-        stale: "Stale frame",
-        timeout: "Timeout",
-        unchecked: "Unchecked",
-      }[status] || "Unchecked";
+        black: "Mất hình",
+        error: "Lỗi",
+        live: "Đang hoạt động",
+        offline: "Không khả dụng",
+        stale: "Hình ảnh đã cũ",
+        timeout: "Quá thời gian",
+        unchecked: "Chưa kiểm tra",
+      }[status] || "Chưa kiểm tra";
     }
 
     function isHealthIssue(status) {
@@ -628,8 +850,11 @@
     }
 
     function getCameraHealthCopy(cam) {
+      if (cam.data?.stream_type === "recorded_demo" || cam.data?.source === "simulated_demo") {
+        return "Camera mô phỏng · video sẵn sàng";
+      }
       if (cam.data?.stream_type === "wss_video" && cam.healthStatus === "unchecked") {
-        return "Realtime WSS source";
+        return "Nguồn camera thời gian thực";
       }
       const status = cam.healthStatus || "unchecked";
       const checkedAt = cam.health?.checked_at ? " - " + formatTime(cam.health.checked_at, false) : "";
@@ -731,7 +956,13 @@
       const cam = cameras.get(cameraId);
       if (!cam?.marker) return;
       const matchesRoute = !routeCameraIds || routeCameraIds.has(cameraId);
-      const shouldShow = matchesRoute && cameraMatchesMapIncidentFilter(cameraId);
+      
+      const hasAlert = !!getDominantAlertForCamera(cameraId);
+      let layerVisible = false;
+      if (isCameraLayerVisible) layerVisible = true;
+      if (hasAlert && isAlertLayerVisible) layerVisible = true;
+      
+      const shouldShow = layerVisible && matchesRoute && cameraMatchesMapIncidentFilter(cameraId) && cameraMatchesNearbyFilter(cameraId);
       if (cameraClusterLayer) {
         const isClustered = cameraClusterLayer.hasLayer(cam.marker);
         if (shouldShow && !isClustered) cameraClusterLayer.addLayer(cam.marker);
@@ -762,7 +993,7 @@
       }
       const visibleCount = Array.from(cameras.keys()).filter((cameraId) => {
         const matchesRoute = !routeCameraIds || routeCameraIds.has(cameraId);
-        return matchesRoute && cameraMatchesMapIncidentFilter(cameraId);
+        return matchesRoute && cameraMatchesMapIncidentFilter(cameraId) && cameraMatchesNearbyFilter(cameraId);
       }).length;
       const labels = {
         traffic_jam: "tắc đường",
@@ -851,9 +1082,11 @@
 
     function renderCameraAlertState(cameraId, options = {}) {
       const cam = cameras.get(cameraId);
-      if (!cam) return;
+      if (!cam?.marker) return;
 
-      const activeAlert = getDominantAlertForCamera(cameraId);
+      const dominantAlert = isAlertLayerVisible ? getDominantAlertForCamera(cameraId) : null;
+      const markerEl = cam.marker.getElement();
+      const activeAlert = dominantAlert;
       if (!activeAlert) {
         cam.marker.setIcon(createMarkerIcon("normal"));
         cam.marker.setPopupContent(buildNormalPopup(cam.data));
@@ -885,6 +1118,7 @@
       updateCameraMarkerVisibility(cameraId);
       updateMapFilterSummary();
       updateIncidentFocus(alertData);
+      if (activeVideoCameraId === cameraId) updateVideoIncidentWatermark(cameraId);
     }
 
     function clearMarkerAlert(clearData) {
@@ -897,13 +1131,23 @@
       updateCameraMarkerVisibility(clearData.camera_id);
       updateMapFilterSummary();
       updateIncidentFocus(getLatestActiveAlert());
+      if (activeVideoCameraId === clearData.camera_id) updateVideoIncidentWatermark(clearData.camera_id);
     }
 
     function refreshStatistics() {
       const counts = { fire: 0, flood: 0, traffic_jam: 0 };
       const byCamera = new Map();
 
-      statsEvents.forEach((event) => {
+      const now = Date.now();
+      const filteredStats = currentTimeRange === "all" ? statsEvents : statsEvents.filter(event => {
+        const t = new Date(event.timestamp).getTime();
+        if (currentTimeRange === "1h") return now - t <= 3600000;
+        if (currentTimeRange === "24h") return now - t <= 86400000;
+        if (currentTimeRange === "7d") return now - t <= 7 * 86400000;
+        return true;
+      });
+
+      filteredStats.forEach((event) => {
         if (counts[event.event_type] !== undefined) counts[event.event_type] += 1;
         const key = event.camera_id || "unknown";
         const current = byCamera.get(key) || { count: 0, name: event.camera_name || key };
@@ -914,7 +1158,7 @@
       document.getElementById("stat-fire").textContent = counts.fire;
       document.getElementById("stat-flood").textContent = counts.flood;
       document.getElementById("stat-traffic").textContent = counts.traffic_jam;
-      document.getElementById("analytics-total").textContent = statsEvents.length;
+      document.getElementById("analytics-total").textContent = filteredStats.length;
       document.getElementById("stats-range-label").textContent = getRangeLabel();
 
       const peak = Object.entries(counts).sort((a, b) => b[1] - a[1])[0];
@@ -1050,9 +1294,9 @@
       document.getElementById("incident-focus-count").textContent = activeCount;
 
       if (!activeCount) {
-        document.getElementById("metric-last-alert").textContent = "None";
+        document.getElementById("metric-last-alert").textContent = "Không có";
         document.getElementById("incident-focus-copy").textContent =
-          "No active incidents on the map. Historical alerts remain available for reports and statistics.";
+          "Không có sự cố đang hoạt động trên bản đồ. Bạn vẫn có thể xem cảnh báo cũ trong mục thống kê.";
         return;
       }
 
@@ -1060,7 +1304,7 @@
       const meta = getAlertMeta(focusAlert.event_type);
       document.getElementById("metric-last-alert").textContent = meta.shortLabel;
       document.getElementById("incident-focus-copy").textContent =
-        meta.label + " at " + maybeRepairMojibake(focusAlert.camera_name || focusAlert.camera_id) + " around " + formatTime(focusAlert.last_seen || focusAlert.timestamp, false) + ".";
+        meta.label + " tại " + maybeRepairMojibake(focusAlert.camera_name || focusAlert.camera_id) + " lúc " + formatTime(focusAlert.last_seen || focusAlert.timestamp, false) + ".";
     }
 
     function queueKey(cameraId, eventType) {
@@ -1069,12 +1313,12 @@
 
     function getQueueStatusLabel(status) {
       return {
-        new: "New",
-        in_progress: "In progress",
-        confirmed: "Confirmed",
-        false_alarm: "False alarm",
-        resolved: "Resolved",
-      }[status] || "New";
+        new: "Mới",
+        in_progress: "Đang xử lý",
+        confirmed: "Đã xác minh",
+        false_alarm: "Cảnh báo sai",
+        resolved: "Đã xử lý",
+      }[status] || "Mới";
     }
 
     function getQueueStatus(cameraId, eventType, fallback = "new") {
@@ -1096,12 +1340,12 @@
       });
     }
 
-    function renderEmptyAlerts(message = "Waiting for incoming detections from camera modules.") {
+    function renderEmptyAlerts(message = "Đang chờ kết quả nhận diện từ hệ thống camera.") {
       const log = document.getElementById("alert-log");
       log.innerHTML = `
         <div class="empty-state">
           ${iconSvg("alert")}
-          <div class="empty-title">No alert history</div>
+          <div class="empty-title">Chưa có cảnh báo</div>
           <div class="empty-copy">${escapeHtml(message)}</div>
         </div>
       `;
@@ -1137,12 +1381,12 @@
           <div class="alert-time">${formatTime(alertData.timestamp)} - ${formatDateTime(alertData.timestamp)}</div>
         </div>
         <div class="alert-actions">
-          <span class="alert-severity severity-${escapeAttr(alertData.severity || "medium")}">${escapeHtml(alertData.severity || "medium")}</span>
-          ${canOpenSnapshot ? `<button class="alert-snapshot-btn" type="button" title="View snapshot" aria-label="View incident snapshot">${iconSvg("camera")}</button>` : ""}
-          <select class="alert-queue-select" data-camera-id="${escapeAttr(alertData.camera_id)}" data-event-type="${escapeAttr(alertData.event_type)}" aria-label="Alert queue status">
+          <span class="alert-severity severity-${escapeAttr(alertData.severity || "medium")}">${escapeHtml(getSeverityLabel(alertData.severity))}</span>
+          ${canOpenSnapshot ? `<button class="alert-snapshot-btn" type="button" title="Xem ảnh phát hiện" aria-label="Xem ảnh phát hiện sự cố">${iconSvg("camera")}</button>` : ""}
+          <select class="alert-queue-select" data-camera-id="${escapeAttr(alertData.camera_id)}" data-event-type="${escapeAttr(alertData.event_type)}" aria-label="Trạng thái xử lý cảnh báo">
             ${renderQueueStatusOptions(queueStatus)}
           </select>
-          <button class="alert-delete-btn" type="button" data-delete-queue="true" data-camera-id="${escapeAttr(alertData.camera_id)}" data-event-type="${escapeAttr(alertData.event_type)}" title="Delete alert" aria-label="Delete alert">
+          <button class="alert-delete-btn" type="button" data-delete-queue="true" data-camera-id="${escapeAttr(alertData.camera_id)}" data-event-type="${escapeAttr(alertData.event_type)}" title="Xóa cảnh báo" aria-label="Xóa cảnh báo">
             ${iconSvg("close")}
           </button>
         </div>
@@ -1212,26 +1456,59 @@
         empty.className = "empty-state filter-empty";
         empty.innerHTML = `
           ${iconSvg("alert")}
-          <div class="empty-title">No ${escapeHtml(meta.shortLabel.toLowerCase())} alerts</div>
-          <div class="empty-copy">Switch filters to review other incident types.</div>
+          <div class="empty-title">Không có cảnh báo ${escapeHtml(meta.shortLabel.toLowerCase())}</div>
+          <div class="empty-copy">Chọn bộ lọc khác để xem các loại sự cố còn lại.</div>
         `;
         log.appendChild(empty);
       }
     }
 
+    function renderIncidentWatermark(elementId, cameraId, alertData) {
+      const element = document.getElementById(elementId);
+      if (!element) return;
+      if (!alertData) {
+        element.hidden = true;
+        element.className = "incident-watermark";
+        element.innerHTML = "";
+        return;
+      }
+
+      const meta = getAlertMeta(alertData.event_type);
+      const simulated = cameras.get(cameraId)?.data?.source === "simulated_demo";
+      const confidence = Number(alertData.confidence);
+      element.className = `incident-watermark ${escapeAttr(alertData.event_type)}`;
+      element.innerHTML = `
+        <span class="incident-watermark-kicker">${simulated ? "MÔ PHỎNG · " : ""}AI PHÁT HIỆN</span>
+        <strong>${escapeHtml(meta.shortLabel)}</strong>
+        ${Number.isFinite(confidence) ? `<span>${Math.round(confidence * 100)}%</span>` : ""}
+      `;
+      element.hidden = false;
+    }
+
+    function updateVideoIncidentWatermark(cameraId = activeVideoCameraId) {
+      renderIncidentWatermark(
+        "video-incident-watermark",
+        cameraId,
+        cameraId ? getDominantAlertForCamera(cameraId) : null
+      );
+    }
+
     function openVideoModal(camId) {
       closeVideoModal();
+      activeVideoCameraId = camId;
       const sessionId = ++streamSessionId;
       const cam = cameras.get(camId);
       const camName = cam ? maybeRepairMojibake(cam.data.name) : "Camera";
       const shell = document.querySelector(".video-shell");
       const stream = document.getElementById("video-stream");
+      const recordedDemoStream = document.getElementById("recorded-demo-stream");
       const youtubeStream = document.getElementById("youtube-stream");
       const snapshotUrl = cam?.data?.snapshot_url;
       const streamUrl = cam?.data?.stream_url;
       const youtubeEmbedUrl = getYoutubeEmbedUrl(streamUrl || snapshotUrl);
       const streamType = cam?.data?.stream_type || "";
       const sourceType = cam?.data?.source || "";
+      const isRecordedDemo = streamType === "recorded_demo" || sourceType === "simulated_demo";
       const isSnapshotStream = cam?.data?.stream_type === "snapshot" || Boolean(snapshotUrl);
       const snapshotRefreshMs = Number(cam?.data?.metadata?.snapshot_refresh_ms) || (
         sourceType === "user_contribution" ? 5000 : 2000
@@ -1244,17 +1521,21 @@
       const sourceUrl = isHanoiRealtime
         ? hanoiProxyUrl
         : snapshotUrl || streamUrl || ("http://localhost:5000/video_feed/" + encodeURIComponent(camId));
-      const liveBadge = document.querySelector(".live-badge");
+      const liveBadge = document.querySelector("#video-modal .live-badge");
       let hanoiRetryCount = 0;
 
       document.getElementById("modal-cam-name").textContent = camName;
-      if (liveBadge) liveBadge.textContent = youtubeEmbedUrl ? "YouTube live stream" : isHanoiRealtime ? "Realtime WSS metadata" : "Live AI stream";
-      document.getElementById("stream-placeholder-title").textContent = youtubeEmbedUrl
+      if (liveBadge) liveBadge.textContent = isRecordedDemo ? "Nguồn camera mô phỏng" : youtubeEmbedUrl ? "Phát trực tiếp từ YouTube" : isHanoiRealtime ? "Luồng camera Hà Nội" : "Luồng camera AI";
+      document.getElementById("stream-placeholder-title").textContent = isRecordedDemo
+        ? "Đang mở camera mô phỏng"
+        : youtubeEmbedUrl
         ? "Opening YouTube player"
         : isHanoiRealtime
         ? "Connecting to Hanoi realtime video"
         : isSnapshotStream ? "Connecting to live camera" : "Waiting for stream";
-      document.getElementById("stream-placeholder-copy").textContent = youtubeEmbedUrl
+      document.getElementById("stream-placeholder-copy").textContent = isRecordedDemo
+        ? "Video có giấy phép được phát lại như một camera mô phỏng để hệ thống AI nhận diện sự cố."
+        : youtubeEmbedUrl
         ? "This community camera is shown through the embedded YouTube player."
         : isHanoiRealtime
         ? "The local Hanoi WSS proxy is decoding HEVC video into a browser-friendly MJPEG stream."
@@ -1263,7 +1544,12 @@
           ? "Community camera snapshots refresh automatically."
           : "Live frames are loading through the local camera proxy."
         : "The AI video proxy will appear here when the camera feed is available.";
-      shell.classList.remove("stream-offline", "youtube-mode");
+      shell.classList.remove("stream-offline", "youtube-mode", "recorded-demo-mode");
+      if (recordedDemoStream) {
+        recordedDemoStream.pause();
+        recordedDemoStream.hidden = true;
+        recordedDemoStream.removeAttribute("src");
+      }
       youtubeStream.hidden = true;
       youtubeStream.src = "";
       stream.onload = () => {
@@ -1298,7 +1584,13 @@
           : "Start the AI proxy on localhost:5000 to view the processed camera feed.";
       };
 
-      if (youtubeEmbedUrl) {
+      if (isRecordedDemo) {
+        shell.classList.add("recorded-demo-mode");
+        recordedDemoStream.hidden = false;
+        recordedDemoStream.src = sourceUrl;
+        recordedDemoStream.currentTime = 0;
+        recordedDemoStream.play().catch(() => {});
+      } else if (youtubeEmbedUrl) {
         shell.classList.add("youtube-mode");
         youtubeStream.hidden = false;
         youtubeStream.src = youtubeEmbedUrl;
@@ -1318,6 +1610,7 @@
 
       loadCameraHistory(camId);
       document.getElementById("video-modal").classList.add("active");
+      updateVideoIncidentWatermark(camId);
     }
 
     function watchHanoiDecoderStatus(camId, sessionId, shell, stream, sourceUrl) {
@@ -1435,15 +1728,24 @@
         hanoiStatusTimer = null;
       }
       const stream = document.getElementById("video-stream");
+      const recordedDemoStream = document.getElementById("recorded-demo-stream");
       const youtubeStream = document.getElementById("youtube-stream");
       stream.onload = null;
       stream.onerror = null;
       stream.src = "";
+      if (recordedDemoStream) {
+        recordedDemoStream.pause();
+        recordedDemoStream.removeAttribute("src");
+        recordedDemoStream.load();
+        recordedDemoStream.hidden = true;
+      }
       if (youtubeStream) {
         youtubeStream.src = "";
         youtubeStream.hidden = true;
       }
-      document.querySelector(".video-shell")?.classList.remove("youtube-mode");
+      document.querySelector(".video-shell")?.classList.remove("youtube-mode", "recorded-demo-mode");
+      activeVideoCameraId = null;
+      renderIncidentWatermark("video-incident-watermark", null, null);
     }
 
     function getAlertImageSrc(alertData) {
@@ -1463,6 +1765,7 @@
       modal.classList.remove("active");
       const image = document.getElementById("alert-snapshot-image");
       if (image) image.src = "";
+      renderIncidentWatermark("snapshot-incident-watermark", null, null);
     }
 
     function openAlertSnapshot(alertData) {
@@ -1477,10 +1780,11 @@
       if (!modal) return;
 
       document.getElementById("alert-snapshot-title").textContent = meta.label;
-      document.getElementById("alert-snapshot-meta").textContent = `${alertData.severity || "medium"} incident`;
+      document.getElementById("alert-snapshot-meta").textContent = `Mức độ: ${getSeverityLabel(alertData.severity)}`;
       document.getElementById("alert-snapshot-camera").textContent = maybeRepairMojibake(alertData.camera_name || alertData.camera_id || "Camera");
       document.getElementById("alert-snapshot-time").textContent = formatDateTime(alertData.timestamp);
       document.getElementById("alert-snapshot-image").src = imageSrc;
+      renderIncidentWatermark("snapshot-incident-watermark", alertData.camera_id, alertData);
 
       const watchButton = document.getElementById("alert-snapshot-watch");
       if (watchButton) {
@@ -1573,13 +1877,29 @@
     function setLocateButtonState(state, title) {
       const button = document.getElementById("locate-me-btn");
       if (!button) return;
-      button.classList.toggle("enabled", state === "ready");
+      button.classList.toggle("enabled", showOnlyNearbyCameras);
       button.classList.toggle("loading", state === "loading");
-      button.setAttribute("aria-pressed", state === "ready" ? "true" : "false");
-      if (title) {
-        button.title = title;
-        button.setAttribute("aria-label", title);
+      button.setAttribute("aria-pressed", showOnlyNearbyCameras ? "true" : "false");
+      const activeTitle = showOnlyNearbyCameras ? "Tắt lọc quanh vị trí" : (title || "Tìm và hiện camera quanh tôi");
+      button.title = activeTitle;
+      button.setAttribute("aria-label", activeTitle);
+      
+      const textSpan = document.getElementById("locate-me-text");
+      if (textSpan) {
+        textSpan.textContent = showOnlyNearbyCameras ? "📍 Gần tôi" : "🌍 Tất cả";
       }
+    }
+
+    function refreshAlertListVisibility() {
+      const rows = document.querySelectorAll("#alert-log .alert-row");
+      rows.forEach(row => {
+        const cameraId = row.dataset.cameraId;
+        if (cameraMatchesNearbyFilter(cameraId)) {
+          row.style.display = "";
+        } else {
+          row.style.display = "none";
+        }
+      });
     }
 
     function updateUserLocationMarker(location, accuracy = 0) {
@@ -1635,7 +1955,16 @@
       setLocateButtonState("ready", "Vị trí hiện tại đã sẵn sàng");
       updateNearbyStatus();
       checkNearbyActiveAlerts();
-      if (options.focus) {
+      
+      if (showOnlyNearbyCameras) {
+        refreshCameraMarkerVisibility();
+        applyNewsFilterAndRender();
+        refreshAlertListVisibility();
+      }
+
+      if (isFollowMeMode) {
+        map.panTo([lat, lng]);
+      } else if (options.focus) {
         map.flyTo([lat, lng], Math.max(map.getZoom(), 15), { duration: 0.65 });
       }
       return userLocation;
@@ -1844,7 +2173,7 @@
       const status = document.getElementById("nearby-status");
       const toggle = document.getElementById("nearby-toggle");
       toggle.classList.toggle("enabled", nearbyNotificationsEnabled);
-      toggle.textContent = nearbyNotificationsEnabled ? "Location alerts enabled" : "Enable location alerts";
+      toggle.textContent = nearbyNotificationsEnabled ? "Đang nhận cảnh báo gần tôi" : "Bật thông báo trên thiết bị";
 
       if (message) {
         status.textContent = message;
@@ -1861,13 +2190,59 @@
       }
 
       status.textContent = userLocation
-        ? "Watching for incidents within " + formatDistance(nearbyRadius) + " of your position."
-        : "Waiting for location permission...";
+        ? "Thiết bị sẽ báo khi có sự cố trong phạm vi " + formatDistance(nearbyRadius) + "."
+        : "Đang chờ quyền truy cập vị trí...";
+    }
+
+    function saveNearbyNotificationsPreference(enabled) {
+      try {
+        localStorage.setItem(NEARBY_ALERTS_STORAGE_KEY, enabled ? "true" : "false");
+      } catch (_err) {}
+    }
+
+    async function registerNotificationServiceWorker() {
+      if (!("serviceWorker" in navigator) || window.location.protocol === "file:") return null;
+      if (notificationServiceWorkerRegistration) return notificationServiceWorkerRegistration;
+      try {
+        notificationServiceWorkerRegistration = await navigator.serviceWorker.register("/sw.js", { scope: "/" });
+        return notificationServiceWorkerRegistration;
+      } catch (error) {
+        console.warn("Notification service worker is unavailable", error);
+        return null;
+      }
+    }
+
+    async function showDeviceNotification(title, options) {
+      if (!("Notification" in window) || Notification.permission !== "granted") return false;
+      try {
+        const registration = await registerNotificationServiceWorker();
+        if (registration?.showNotification) {
+          await registration.showNotification(title, options);
+          return true;
+        }
+        new Notification(title, options);
+        return true;
+      } catch (error) {
+        console.warn("Could not show device notification", error);
+        return false;
+      }
+    }
+
+    function restoreNearbyNotificationsPreference() {
+      try {
+        const saved = localStorage.getItem(NEARBY_ALERTS_STORAGE_KEY) === "true";
+        nearbyNotificationsEnabled = saved && "Notification" in window && Notification.permission === "granted";
+      } catch (_err) {
+        nearbyNotificationsEnabled = false;
+      }
+      if (nearbyNotificationsEnabled) registerNotificationServiceWorker();
+      updateNearbyStatus();
     }
 
     async function toggleNearbyNotifications() {
       if (nearbyNotificationsEnabled) {
         nearbyNotificationsEnabled = false;
+        saveNearbyNotificationsPreference(false);
         if (geoWatchId !== null && navigator.geolocation) {
           navigator.geolocation.clearWatch(geoWatchId);
           geoWatchId = null;
@@ -1882,11 +2257,13 @@
       }
 
       try {
+        await registerNotificationServiceWorker();
         if (Notification.permission === "default") {
           await Notification.requestPermission();
         }
         if (Notification.permission !== "granted") {
-          updateNearbyStatus("Notification permission was not granted.");
+          saveNearbyNotificationsPreference(false);
+          updateNearbyStatus("Bạn cần cho phép thông báo trong trình duyệt để nhận cảnh báo trên thiết bị.");
           return;
         }
 
@@ -1895,6 +2272,7 @@
           if (!location) return;
         }
         nearbyNotificationsEnabled = true;
+        saveNearbyNotificationsPreference(true);
         startUserLocationWatch();
         updateNearbyStatus();
         checkNearbyActiveAlerts();
@@ -1903,7 +2281,7 @@
       }
     }
 
-    function notifyNearbyAlert(alertData) {
+    async function notifyNearbyAlert(alertData) {
       if (!nearbyNotificationsEnabled || !userLocation) return;
       const lat = Number(alertData.lat);
       const lng = Number(alertData.lng);
@@ -1917,14 +2295,19 @@
       notifiedNearbyAlerts.add(key);
 
       const meta = getAlertMeta(alertData.event_type);
-      const body = meta.label + " near " + maybeRepairMojibake(alertData.camera_name || alertData.camera_id) + ", about " + formatDistance(distance) + " away.";
+      const cameraName = maybeRepairMojibake(alertData.camera_name || alertData.camera_id);
+      const body = meta.label + " gần " + cameraName + ", cách bạn khoảng " + formatDistance(distance) + ".";
       updateNearbyStatus(body);
-      try {
-        new Notification("Smart Alert nearby", {
-          body,
-          tag: key,
-        });
-      } catch (_err) {}
+      await showDeviceNotification("Cảnh báo sự cố gần bạn", {
+        body,
+        tag: key,
+        renotify: true,
+        requireInteraction: alertData.severity === "high" || alertData.severity === "critical",
+        data: {
+          cameraId: alertData.camera_id || "",
+          url: window.location.href,
+        },
+      });
     }
 
     function checkNearbyActiveAlerts() {
@@ -1941,18 +2324,21 @@
         btn.classList.toggle("active", active);
         btn.setAttribute("aria-selected", active ? "true" : "false");
       });
-      document.querySelectorAll("[data-workspace-panel]").forEach((panel) => {
-        panel.hidden = mapOnlyRequested
-          ? panel.dataset.workspacePanel !== "cameras"
-          : panel.dataset.workspacePanel !== activeWorkspacePanel;
+      document.querySelectorAll(".sidebar [data-workspace-panel]").forEach((panel) => {
+        panel.hidden = mapOnlyRequested || panel.dataset.workspacePanel !== activeWorkspacePanel;
       });
+
+      if (activeWorkspacePanel === "news") {
+        openNewsFeed();
+      } else {
+        closeNewsFeed();
+      }
 
       if (activeWorkspacePanel === "cameras" || activeWorkspacePanel === "map") {
         renderCameraList();
         setTimeout(() => map.invalidateSize(), 80);
       }
       if (activeWorkspacePanel === "alerts") applyFilter();
-      if (activeWorkspacePanel === "news") loadNews();
     }
 
     function setMapOnlyMode(enabled) {
@@ -1965,11 +2351,236 @@
         toggle.setAttribute("title", mapOnlyMode ? "Show dashboard" : "Map only");
         toggle.setAttribute("aria-label", mapOnlyMode ? "Show dashboard" : "Map only");
       }
+      requestAnimationFrame(syncMapOverlayOffsets);
       setTimeout(() => map.invalidateSize(), 120);
     }
 
     function toggleMapOnlyMode() {
       setWorkspacePanel(mapOnlyMode ? "cameras" : "map");
+    }
+
+    function syncIncidentDemoPanel() {
+      const panel = document.getElementById("incident-demo-panel");
+      if (!panel) return;
+      const availableCount = Object.values(DASHBOARD_DEMO_SOURCES)
+        .filter((source) => cameras.has(source.cameraId)).length;
+      panel.hidden = availableCount === 0;
+      const copy = document.getElementById("incident-demo-progress-copy");
+      if (copy && !dashboardDemoRunning) {
+        copy.textContent = availableCount
+          ? `Sẵn sàng · ${availableCount} camera mô phỏng`
+          : "Không có camera mô phỏng";
+      }
+    }
+
+    function setIncidentDemoProgress(copy, tone = "idle") {
+      const progress = document.getElementById("incident-demo-progress");
+      const label = document.getElementById("incident-demo-progress-copy");
+      if (progress) progress.dataset.tone = tone;
+      if (label) label.textContent = copy;
+    }
+
+    function setIncidentDemoControls(running, activeType = "") {
+      dashboardDemoRunning = running;
+      document.querySelectorAll("[data-dashboard-demo]").forEach((button) => {
+        button.disabled = running;
+        button.classList.toggle("running", running && button.dataset.dashboardDemo === activeType);
+      });
+      const reset = document.getElementById("incident-demo-reset");
+      if (reset) reset.disabled = running;
+    }
+
+    function waitForDemoVideo(video) {
+      return new Promise((resolve, reject) => {
+        let timeoutId;
+        const cleanup = () => {
+          video.removeEventListener("loadeddata", onReady);
+          video.removeEventListener("canplay", onReady);
+          video.removeEventListener("error", onError);
+          window.clearTimeout(timeoutId);
+        };
+        const onReady = () => {
+          cleanup();
+          resolve();
+        };
+        const onError = () => {
+          cleanup();
+          reject(new Error("Không thể tải video camera mô phỏng"));
+        };
+        video.addEventListener("loadeddata", onReady);
+        video.addEventListener("canplay", onReady);
+        video.addEventListener("error", onError);
+        timeoutId = window.setTimeout(() => {
+          cleanup();
+          reject(new Error("Video camera mô phỏng phản hồi quá lâu"));
+        }, 12000);
+        if (video.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA) onReady();
+      });
+    }
+
+    function seekDemoVideo(video, seconds) {
+      if (!Number.isFinite(video.duration) || video.duration <= 0) return Promise.resolve();
+      const target = Math.min(Math.max(seconds, 0), Math.max(video.duration - 0.12, 0));
+      if (Math.abs(video.currentTime - target) < 0.08) return Promise.resolve();
+      return new Promise((resolve) => {
+        const timeoutId = window.setTimeout(resolve, 1800);
+        video.addEventListener("seeked", () => {
+          window.clearTimeout(timeoutId);
+          resolve();
+        }, { once: true });
+        video.currentTime = target;
+      });
+    }
+
+    function captureDashboardDemoFrame(video) {
+      const sourceWidth = video.videoWidth || 854;
+      const sourceHeight = video.videoHeight || 480;
+      const scale = Math.min(1, 960 / sourceWidth);
+      const width = Math.max(1, Math.round(sourceWidth * scale));
+      const height = Math.max(1, Math.round(sourceHeight * scale));
+      const canvas = document.createElement("canvas");
+      canvas.width = width;
+      canvas.height = height;
+      canvas.getContext("2d").drawImage(video, 0, 0, width, height);
+      return {
+        width,
+        height,
+        image_base64: canvas.toDataURL("image/jpeg", 0.82).split(",")[1],
+      };
+    }
+
+    async function submitDashboardDemoFrame(source, frame) {
+      const camera = cameras.get(source.cameraId)?.data;
+      const response = await fetch(apiUrl("/api/scanner/demo-detect"), {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          camera_id: source.cameraId,
+          camera_name: camera?.name || source.cameraName,
+          camera_source: "recorded_demo_camera",
+          demo_session: "incident-dashboard-v1",
+          expected_event_type: source.eventType,
+          lat: camera?.location?.lat,
+          lng: camera?.location?.lng,
+          content_type: "image/jpeg",
+          ...frame,
+        }),
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error(payload.detail || payload.error || `Detector HTTP ${response.status}`);
+      }
+      return payload;
+    }
+
+    async function scanDashboardDemoSource(type, token) {
+      const source = DASHBOARD_DEMO_SOURCES[type];
+      if (!source || !cameras.has(source.cameraId)) {
+        throw new Error(`Camera mô phỏng ${source?.label || type} không có trên bản đồ`);
+      }
+
+      setIncidentDemoProgress(`Connecting ${source.label} camera…`, "busy");
+      focusCamera(source.cameraId, 15);
+
+      const video = document.createElement("video");
+      video.muted = true;
+      video.playsInline = true;
+      video.preload = "auto";
+      video.src = source.url;
+      video.style.cssText = "position:fixed;width:1px;height:1px;opacity:0;pointer-events:none;";
+      document.body.appendChild(video);
+
+      try {
+        video.load();
+        await waitForDemoVideo(video);
+        video.pause();
+
+        for (let attempt = 0; attempt < source.maxAttempts; attempt += 1) {
+          if (token !== dashboardDemoRunToken) throw new Error("Demo cancelled");
+          const stepSeconds = type === "fire" ? 4 : type === "flood" ? 2 : 1;
+          const duration = Number.isFinite(video.duration) ? Math.max(video.duration - 0.12, 0.12) : 60;
+          await seekDemoVideo(video, (attempt * stepSeconds) % duration);
+          setIncidentDemoProgress(
+            `AI scanning ${source.label} camera · frame ${attempt + 1}/${source.maxAttempts}`,
+            "busy"
+          );
+          const payload = await submitDashboardDemoFrame(source, captureDashboardDemoFrame(video));
+          const detected = (payload.detections || []).some((item) => item.event_type === source.eventType);
+          if (detected) {
+            await new Promise((resolve) => window.setTimeout(resolve, 350));
+            focusCamera(source.cameraId, 16);
+            setIncidentDemoProgress(`Đã phát hiện ${source.label} · dashboard đã cảnh báo`, "ok");
+            return payload;
+          }
+          await new Promise((resolve) => window.setTimeout(resolve, 260));
+        }
+      } finally {
+        video.pause();
+        video.removeAttribute("src");
+        video.load();
+        video.remove();
+      }
+
+      throw new Error(`Chưa phát hiện sự cố ${source.label} trong video camera mô phỏng`);
+    }
+
+    function removeDemoEventsFromUi(cameraIds) {
+      const idSet = new Set(cameraIds);
+      Array.from(activeAlerts.entries()).forEach(([key, alertData]) => {
+        if (idSet.has(alertData.camera_id)) activeAlerts.delete(key);
+      });
+      for (let index = statsEvents.length - 1; index >= 0; index -= 1) {
+        if (idSet.has(statsEvents[index].camera_id)) statsEvents.splice(index, 1);
+      }
+      cameraIds.forEach((cameraId) => {
+        renderCameraAlertState(cameraId, { blink: false, openPopup: false });
+        updateCameraMarkerVisibility(cameraId);
+      });
+      refreshStatistics();
+      updateIncidentFocus(getLatestActiveAlert());
+      renderCameraList();
+    }
+
+    async function resetDashboardIncidentDemo(cameraId = "", options = {}) {
+      if (dashboardDemoRunning) return false;
+      const body = cameraId ? { camera_id: cameraId } : {};
+      const result = await postJsonOrNull("/api/scanner/demo-reset", body);
+      if (!result?.success) throw new Error("Không thể đặt lại các sự cố mô phỏng");
+      const cameraIds = cameraId
+        ? [cameraId]
+        : Object.values(DASHBOARD_DEMO_SOURCES).map((source) => source.cameraId);
+      removeDemoEventsFromUi(cameraIds);
+      await loadAlertQueue();
+      if (!options.silent) setIncidentDemoProgress("Đã đặt lại · các camera đang bình thường", "idle");
+      return true;
+    }
+
+    async function runDashboardIncidentDemo(requestedType) {
+      if (dashboardDemoRunning) return;
+      const types = requestedType === "all" ? ["fire", "flood", "traffic"] : [requestedType];
+      const invalidType = types.find((type) => !DASHBOARD_DEMO_SOURCES[type]);
+      if (invalidType) return;
+
+      try {
+        if (requestedType === "all") {
+          await resetDashboardIncidentDemo("", { silent: true });
+        } else {
+          await resetDashboardIncidentDemo(DASHBOARD_DEMO_SOURCES[requestedType].cameraId, { silent: true });
+        }
+        const token = ++dashboardDemoRunToken;
+        setIncidentDemoControls(true, requestedType);
+        for (const type of types) {
+          await scanDashboardDemoSource(type, token);
+        }
+        const copy = requestedType === "all"
+          ? "Hoàn tất · 3 sự cố đã kích hoạt cảnh báo"
+          : `Hoàn tất · camera ${DASHBOARD_DEMO_SOURCES[requestedType].label} đang cảnh báo`;
+        setIncidentDemoProgress(copy, "ok");
+      } catch (err) {
+        setIncidentDemoProgress(err.message || "Incident demo failed", "error");
+      } finally {
+        setIncidentDemoControls(false);
+      }
     }
 
     function renderScannerStatus(status) {
@@ -1982,21 +2593,21 @@
       const lastRun = status?.lastRun;
       const running = Boolean(status?.running);
       const scanning = Boolean(status?.scanning);
-      const workerText = (status?.activeWorkers || 0) + "/" + (config.concurrency || 0) + " workers";
-      const cameraText = lastRun ? lastRun.processed + "/" + lastRun.cameras + " cameras" : "No scan yet";
+      const workerText = (status?.activeWorkers || 0) + "/" + (config.concurrency || 0) + " luồng xử lý";
+      const cameraText = lastRun ? lastRun.processed + "/" + lastRun.cameras + " camera" : "Chưa quét";
       const detectorText = config.detectorConfigured
-        ? "external detector"
+        ? "bộ nhận diện AI"
         : config.mockDetections
-          ? "demo detector"
-          : "no detector configured";
+          ? "bộ nhận diện mô phỏng"
+          : "chưa cấu hình bộ nhận diện";
 
       stateEl.textContent = running
         ? scanning
-          ? "AI scanner running"
-          : "AI scanner waiting"
-        : "AI scanner idle";
+          ? "Bộ quét AI đang hoạt động"
+          : "Bộ quét AI đang chờ"
+        : "Bộ quét AI đang nghỉ";
       detailEl.textContent = workerText + " | " + cameraText + " | " + detectorText;
-      toggle.textContent = running ? "Stop scan" : "Start scan";
+      toggle.textContent = running ? "Dừng quét" : "Bắt đầu quét";
       toggle.classList.toggle("enabled", running);
     }
 
@@ -2007,7 +2618,19 @@
 
     async function loadCameraHealth() {
       if (activeCameraSource === "hanoi") {
-        updateHealthSummaryUi({ total: cameras.size, live: 0, issues: 0, unchecked: cameras.size });
+        let demoLive = 0;
+        cameras.forEach((cam) => {
+          if (cam.data?.stream_type !== "recorded_demo" && cam.data?.source !== "simulated_demo") return;
+          cam.healthStatus = "live";
+          cam.health = { status: "live", checked_at: new Date().toISOString() };
+          demoLive += 1;
+        });
+        updateHealthSummaryUi({
+          total: cameras.size,
+          live: demoLive,
+          issues: 0,
+          unchecked: Math.max(cameras.size - demoLive, 0),
+        });
         renderCameraList();
         return;
       }
@@ -2025,7 +2648,15 @@
       if (cameraHealthChecking) return;
       const button = document.getElementById("health-check");
       if (activeCameraSource === "hanoi") {
-        updateHealthSummaryUi({ total: cameras.size, live: 0, issues: 0, unchecked: cameras.size });
+        const demoLive = Array.from(cameras.values()).filter((cam) =>
+          cam.data?.stream_type === "recorded_demo" || cam.data?.source === "simulated_demo"
+        ).length;
+        updateHealthSummaryUi({
+          total: cameras.size,
+          live: demoLive,
+          issues: 0,
+          unchecked: Math.max(cameras.size - demoLive, 0),
+        });
         if (button) {
           const previous = button.textContent;
           button.textContent = "WSS only";
@@ -2142,24 +2773,237 @@
       if (!list) return;
       document.getElementById("news-count").textContent = items.length;
 
+      newsMarkers.forEach((m) => {
+        if (map.hasLayer(m)) map.removeLayer(m);
+      });
+      newsMarkers = [];
+
       if (!items.length) {
         renderEmptyNews("No matching headlines are available right now.");
         return;
       }
 
+      items.forEach((item) => {
+        if (item.location && item.location.lat && item.location.lng) {
+          const marker = L.marker([item.location.lat, item.location.lng], {
+            icon: L.divIcon({
+              className: "map-marker status-normal",
+              html: iconSvg("news"),
+              iconSize: [28, 28],
+              iconAnchor: [14, 14],
+            }),
+            zIndexOffset: 500,
+          });
+          
+          marker.bindPopup(`
+            <div class="popup-title">${escapeHtml(item.title)}</div>
+            <div class="popup-address">${escapeHtml(item.location.name || item.source)}</div>
+            <div class="popup-meta" style="margin-top: 6px;">
+              <a href="${escapeAttr(item.url)}" target="_blank" style="color: var(--primary); text-decoration: none; font-weight: 500;">Xem bài báo</a>
+            </div>
+          `);
+          
+          marker.addTo(map);
+          newsMarkers.push(marker);
+        }
+      });
+
       list.innerHTML = items.map((item) => `
-        <a class="news-item" href="${escapeAttr(item.url)}" target="_blank" rel="noopener noreferrer">
-          <div class="news-title">${escapeHtml(item.title)}</div>
-          ${item.summary ? `<div class="news-summary"><span class="news-summary-label">Summary:</span> ${escapeHtml(item.summary)}</div>` : ""}
-          <div class="news-meta">
-            <span class="news-category">${escapeHtml(item.category || "news")}</span>
-            <span class="news-source">${escapeHtml(item.source || "News")}</span>
-            <span class="news-dot" aria-hidden="true"></span>
-            <span>${escapeHtml(formatRelativeTime(item.published_at))}</span>
+        <a class="news-item news-feed-card" href="${escapeAttr(item.url)}" target="_blank" rel="noopener noreferrer">
+          <div class="news-feed-card-content">
+            <div class="news-meta">
+              <span class="news-category">${escapeHtml(item.category || "news")}</span>
+              <span class="news-source">${escapeHtml(item.source || "News")}</span>
+              <span class="news-dot" aria-hidden="true"></span>
+              <span>${escapeHtml(formatRelativeTime(item.published_at))}</span>
+            </div>
+            <div class="news-title">${escapeHtml(item.title)}</div>
+            ${item.summary ? `<div class="news-summary">${escapeHtml(item.summary)}</div>` : ""}
+            <span class="news-read-source">Đọc bài gốc ↗</span>
           </div>
         </a>
       `).join("");
+      setupNewsFeedObserver();
     }
+
+    function renderVideoNewsItems() {
+      const list = document.getElementById("video-news-list");
+      if (!list) return;
+
+      const now = Date.now();
+      let filtered = currentVideoNews;
+      if (currentTimeRange !== "all") {
+        const timeFiltered = filtered.filter(item => {
+          const t = item.timestamp;
+          if (currentTimeRange === "1h") return now - t <= 3600000;
+          if (currentTimeRange === "24h") return now - t <= 86400000;
+          if (currentTimeRange === "7d") return now - t <= 7 * 86400000;
+          return true;
+        });
+        if (timeFiltered.length) filtered = timeFiltered;
+      }
+
+      if (showOnlyNearbyCameras && userLocation) {
+        filtered = filtered.filter(item => {
+          if (!item.location || !item.location.lat || !item.location.lng) return true;
+          return distanceBetweenMeters(userLocation, {lat: item.location.lat, lng: item.location.lng}) <= nearbyRadius;
+        });
+      }
+
+      if (newsSearchQuery.trim()) {
+        const query = newsSearchQuery.trim().toLowerCase();
+        filtered = filtered.filter(item => item.title?.toLowerCase().includes(query));
+      }
+
+      document.getElementById("news-count").textContent = filtered.length;
+
+      if (!filtered.length) {
+        list.innerHTML = `<div class="empty-state">Không có video nào trong khu vực và khoảng thời gian này.</div>`;
+        const indicator = document.getElementById("video-feed-indicator");
+        if (indicator) indicator.textContent = "0 / 0";
+        const prevBtn = document.getElementById("video-feed-prev");
+        const nextBtn = document.getElementById("video-feed-next");
+        if (prevBtn) prevBtn.disabled = true;
+        if (nextBtn) nextBtn.disabled = true;
+        return;
+      }
+
+      list.innerHTML = filtered.map((item) => `
+        <div class="news-item video-card news-feed-card" data-video-id="${item.id}" data-youtube-id="${item.youtubeId}">
+          <div class="video-card-thumb">
+            <img src="https://img.youtube.com/vi/${item.youtubeId}/hqdefault.jpg" alt="${escapeAttr(item.title)}" loading="lazy" />
+            <div class="video-play-btn">
+              <svg viewBox="0 0 24 24" fill="white"><path d="M5 3l14 9-14 9V3z"/></svg>
+            </div>
+            <div class="video-duration">
+              ${item.duration}
+            </div>
+            <div class="video-skeleton-loader" hidden></div>
+            <div class="video-player-iframe-container"></div>
+          </div>
+          <div class="news-title video-title">${escapeHtml(item.title)}</div>
+          <div class="news-meta video-meta">
+            <span>Youtube</span>
+            <span class="news-dot" aria-hidden="true"></span>
+            <span>${formatRelativeTime(new Date(item.timestamp).toISOString())}</span>
+          </div>
+        </div>
+      `).join("");
+      setupNewsFeedObserver();
+      requestAnimationFrame(() => {
+        const firstCard = list.querySelector(".video-card");
+        if (!firstCard) return;
+        firstCard.classList.add("is-current");
+        currentTargetIndex = 0;
+        loadVideoIframe(firstCard);
+        updateVideoFeedIndicator(firstCard);
+      });
+    }
+
+    function loadVideoIframe(card) {
+      const iframeContainer = card.querySelector('.video-player-iframe-container');
+      if (!iframeContainer || iframeContainer.querySelector('iframe')) return;
+
+      const skeleton = card.querySelector('.video-skeleton-loader');
+      if (skeleton) skeleton.removeAttribute('hidden');
+
+      const thumbnail = card.querySelector('img');
+      const playBtn = card.querySelector('.video-play-btn');
+      const duration = card.querySelector('.video-duration');
+
+      const iframe = document.createElement('iframe');
+      iframe.setAttribute('title', 'Video tin tức');
+      iframe.setAttribute('width', '100%');
+      iframe.setAttribute('height', '100%');
+      iframe.setAttribute('allow', 'accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture');
+      iframe.setAttribute('allowfullscreen', '');
+
+      const revealPlayer = () => {
+        if (skeleton) skeleton.setAttribute('hidden', '');
+        if (thumbnail) thumbnail.style.opacity = '0';
+        if (playBtn) playBtn.style.display = 'none';
+        if (duration) duration.style.display = 'none';
+      };
+      const revealFallback = window.setTimeout(revealPlayer, 2200);
+      iframe.onload = () => {
+        window.clearTimeout(revealFallback);
+        revealPlayer();
+      };
+
+      const youtubeId = card.dataset.youtubeId;
+      const origin = encodeURIComponent(window.location.origin);
+      iframe.src = `/api/youtube/embed?videoId=${youtubeId}&autoplay=1&mute=1&origin=${origin}`;
+      iframeContainer.appendChild(iframe);
+    }
+
+    function unloadVideoIframe(card) {
+      const iframeContainer = card.querySelector('.video-player-iframe-container');
+      if (!iframeContainer) return;
+      const iframe = iframeContainer.querySelector('iframe');
+      if (iframe) {
+        iframe.src = '';
+        iframe.remove();
+      }
+      const skeleton = card.querySelector('.video-skeleton-loader');
+      if (skeleton) skeleton.setAttribute('hidden', '');
+      const thumbnail = card.querySelector('img');
+      const playBtn = card.querySelector('.video-play-btn');
+      const duration = card.querySelector('.video-duration');
+      if (thumbnail) thumbnail.style.opacity = '1';
+      if (playBtn) playBtn.style.display = '';
+      if (duration) duration.style.display = '';
+    }
+
+    function updateVideoFeedIndicator(activeCard) {
+      if (activeNewsTab !== "video") return;
+      const list = document.getElementById("video-news-list");
+      if (!list) return;
+      const cards = Array.from(list.querySelectorAll(".news-feed-card"));
+      const index = cards.indexOf(activeCard);
+      const indicator = document.getElementById("video-feed-indicator");
+      if (indicator && index !== -1) {
+        indicator.textContent = `${index + 1} / ${cards.length}`;
+      }
+      
+      const prevBtn = document.getElementById("video-feed-prev");
+      const nextBtn = document.getElementById("video-feed-next");
+      if (prevBtn) prevBtn.disabled = index === -1 || index === 0;
+      if (nextBtn) nextBtn.disabled = index === -1 || index >= cards.length - 1;
+    }
+
+    function unloadAllVideoIframes() {
+      const list = document.getElementById("video-news-list");
+      if (!list) return;
+      const cards = list.querySelectorAll(".news-feed-card");
+      cards.forEach(card => unloadVideoIframe(card));
+    }
+
+    function updateFeedControlsVisibility() {
+      const controls = document.getElementById("video-feed-controls");
+      if (!controls) return;
+      const section = document.getElementById("news-section");
+      if (section && !section.hidden && activeNewsTab === "video") {
+        controls.removeAttribute("hidden");
+      } else {
+        controls.setAttribute("hidden", "");
+      }
+    }
+
+    window.openNewsVideoModal = function(videoId) {
+      const video = currentVideoNews.find(v => v.id === videoId);
+      if (!video) return;
+
+      const modal = document.getElementById("video-news-modal");
+      const iframe = document.getElementById("video-news-iframe");
+      
+      const origin = encodeURIComponent(window.location.origin);
+      iframe.src = `/api/youtube/embed?videoId=${video.youtubeId}&autoplay=1&mute=1&origin=${origin}`;
+      modal.classList.add("active");
+      
+      if (video.location && video.location.lat && video.location.lng) {
+        map.flyTo([video.location.lat, video.location.lng], 16, { duration: 1.5 });
+      }
+    };
 
     async function loadNews(options = {}) {
       const refreshButton = document.getElementById("news-refresh");
@@ -2174,7 +3018,9 @@
         if (options.refresh) params.set("refresh", "1");
         const json = await fetchJsonOrNull("/api/news?" + params.toString());
         if (!json) throw new Error("News API unavailable");
-        renderNewsItems(json.news || []);
+        currentNewsItems = json.news || [];
+        updateNewsSources(currentNewsItems);
+        applyNewsFilterAndRender();
       } catch (_err) {
         renderEmptyNews("News is unavailable. Try refresh again in a moment.");
       } finally {
@@ -2182,11 +3028,189 @@
       }
     }
 
+    async function loadVideoNews(options = {}) {
+      try {
+        const list = document.getElementById("video-news-list");
+        if (list && activeNewsTab === "video") {
+          list.innerHTML = Array(3).fill(0).map(() => `
+            <div class="news-item video-card news-feed-card skeleton-card">
+              <div class="video-card-thumb skeleton-thumbnail"></div>
+              <div class="skeleton-line skeleton-title"></div>
+              <div class="skeleton-line skeleton-meta"></div>
+            </div>
+          `).join("");
+        }
+        const params = new URLSearchParams();
+        if (options.refresh) params.set("refresh", "1");
+        const json = await fetchJsonOrNull("/api/news/videos?" + params.toString());
+        if (!json || !json.videos) {
+          throw new Error("Failed to load video news or videos array missing");
+        }
+        currentVideoNews = json.videos;
+        if (activeNewsTab === "video") applyNewsFilterAndRender();
+      } catch (err) {
+        console.error("Failed to load video news", err);
+        currentVideoNews = [];
+        applyNewsFilterAndRender();
+      }
+    }
+
+    function updateNewsSources(items) {
+      const select = document.getElementById("news-source-filter");
+      if (!select) return;
+      const currentVal = select.value;
+      const sources = new Set(items.map(i => i.source).filter(Boolean));
+      let html = '<option value="all">All Sources</option>';
+      Array.from(sources).sort().forEach(src => {
+        html += `<option value="${escapeAttr(src)}">${escapeHtml(src)}</option>`;
+      });
+      select.innerHTML = html;
+      if (sources.has(currentVal)) {
+        select.value = currentVal;
+      } else {
+        newsSourceFilter = "all";
+      }
+    }
+
+    function applyNewsFilterAndRender() {
+      let filtered = currentNewsItems;
+      if (newsSourceFilter !== "all") {
+        filtered = filtered.filter(item => item.source === newsSourceFilter);
+      }
+      if (newsSearchQuery.trim() !== "") {
+        const query = newsSearchQuery.toLowerCase();
+        filtered = filtered.filter(item => 
+          (item.title && item.title.toLowerCase().includes(query)) ||
+          (item.summary && item.summary.toLowerCase().includes(query))
+        );
+      }
+      if (currentTimeRange !== "all") {
+        const now = Date.now();
+        filtered = filtered.filter(item => {
+          const t = new Date(item.pubDate || item.timestamp || now).getTime();
+          if (currentTimeRange === "1h") return now - t <= 3600000;
+          if (currentTimeRange === "24h") return now - t <= 86400000;
+          if (currentTimeRange === "7d") return now - t <= 7 * 86400000;
+          return true;
+        });
+      }
+      if (showOnlyNearbyCameras && userLocation) {
+        filtered = filtered.filter(item => {
+          if (!item.location || !item.location.lat || !item.location.lng) return false;
+          return distanceBetweenMeters(userLocation, {lat: item.location.lat, lng: item.location.lng}) <= nearbyRadius;
+        });
+      }
+      
+      if (activeNewsTab === "text") {
+        unloadAllVideoIframes();
+        document.getElementById("news-list").hidden = false;
+        document.getElementById("video-news-list").hidden = true;
+        document.getElementById("news-tabs").style.display = "flex";
+        updateFeedControlsVisibility();
+        renderNewsItems(filtered);
+      } else {
+        document.getElementById("news-list").hidden = true;
+        document.getElementById("video-news-list").hidden = false;
+        document.getElementById("news-tabs").style.display = "none";
+        updateFeedControlsVisibility();
+        renderVideoNewsItems();
+      }
+    }
+
+    let newsFeedPreviousFocus = null;
+    let newsFeedObserver = null;
+    let currentTargetIndex = 0;
+
+    function setupNewsFeedObserver() {
+      const section = document.getElementById("news-section");
+      if (!section || section.hidden) return;
+
+      newsFeedObserver?.disconnect();
+      const list = document.getElementById(activeNewsTab === "video" ? "video-news-list" : "news-list");
+      if (!list) return;
+
+      const cards = Array.from(list.querySelectorAll(".news-feed-card"));
+      const foundIdx = cards.findIndex(c => c.classList.contains("is-current"));
+      currentTargetIndex = foundIdx >= 0 ? foundIdx : 0;
+
+      if (!("IntersectionObserver" in window)) {
+        if (cards[0]) {
+          cards[0].classList.add("is-current");
+          currentTargetIndex = 0;
+          if (activeNewsTab === "video") {
+            loadVideoIframe(cards[0]);
+            updateVideoFeedIndicator(cards[0]);
+          }
+        }
+        return;
+      }
+
+      newsFeedObserver = new IntersectionObserver((entries) => {
+        const activeEntry = entries
+          .filter((entry) => entry.isIntersecting && entry.intersectionRatio > 0)
+          .sort((a, b) => b.intersectionRatio - a.intersectionRatio)[0];
+        if (!activeEntry) return;
+
+        cards.forEach((card) => {
+          const isCurrent = card === activeEntry.target;
+          card.classList.toggle("is-current", isCurrent);
+          if (activeNewsTab === "video" && !isCurrent) unloadVideoIframe(card);
+        });
+        currentTargetIndex = cards.indexOf(activeEntry.target);
+        if (activeNewsTab === "video") {
+          loadVideoIframe(activeEntry.target);
+          updateVideoFeedIndicator(activeEntry.target);
+        }
+      }, { root: list, threshold: [0, 0.35, 0.6] });
+
+      cards.forEach((card) => newsFeedObserver.observe(card));
+    }
+
+    function openNewsFeed() {
+      const section = document.getElementById("news-section");
+      if (!section) return;
+
+      if (section.parentElement !== document.body) document.body.appendChild(section);
+      newsFeedPreviousFocus = document.activeElement;
+      section.classList.add("news-feed-overlay");
+      section.hidden = false;
+      document.body.classList.add("news-feed-active");
+      loadNews();
+      loadVideoNews();
+      requestAnimationFrame(() => {
+        setupNewsFeedObserver();
+        document.getElementById("news-feed-close")?.focus({ preventScroll: true });
+        updateFeedControlsVisibility();
+      });
+    }
+
+    function closeNewsFeed({ restoreFocus = true } = {}) {
+      const section = document.getElementById("news-section");
+      if (!section || section.hidden) return;
+
+      section.hidden = true;
+      document.body.classList.remove("news-feed-active");
+      newsFeedObserver?.disconnect();
+      unloadAllVideoIframes();
+      updateFeedControlsVisibility();
+      if (restoreFocus && newsFeedPreviousFocus instanceof HTMLElement) newsFeedPreviousFocus.focus();
+    }
+
+    function moveNewsFeed(direction) {
+      const list = document.getElementById(activeNewsTab === "video" ? "video-news-list" : "news-list");
+      if (!list || list.hidden) return;
+
+      const cards = Array.from(list.querySelectorAll(".news-feed-card"));
+      if (!cards.length) return;
+      currentTargetIndex = Math.min(cards.length - 1, Math.max(0, currentTargetIndex + direction));
+      cards[currentTargetIndex].scrollIntoView({ behavior: "smooth", block: "start" });
+    }
+
     async function loadHistoricalEvents() {
       try {
         const json = await fetchJsonOrNull("/api/events?limit=50");
         if (!json) {
-          renderEmptyAlerts("Event history is unavailable. Live alerts will still appear when received.");
+          renderEmptyAlerts("Không thể tải lịch sử. Cảnh báo trực tiếp vẫn sẽ xuất hiện khi hệ thống phát hiện sự cố.");
           return;
         }
         const events = (json.events || []).reverse();
@@ -2210,20 +3234,32 @@
 
         if (!events.length) renderEmptyAlerts();
       } catch (err) {
-        renderEmptyAlerts("Event history is unavailable. Live alerts will still appear when received.");
+        renderEmptyAlerts("Không thể tải lịch sử. Cảnh báo trực tiếp vẫn sẽ xuất hiện khi hệ thống phát hiện sự cố.");
       }
     }
 
     async function loadActiveAlerts() {
       try {
-        const json = await fetchJsonOrNull("/api/events/active");
+        const json = await fetchJsonOrNull("/api/events/active", { cache: "no-store" });
         activeAlerts.clear();
         (json?.alerts || []).forEach((alertData) => {
           if (!cameras.has(alertData.camera_id)) return;
           activeAlerts.set(activeAlertKey(alertData.camera_id, alertData.event_type), alertData);
+
+          const firstSeen = alertData.first_seen || alertData.timestamp;
+          const alreadyInStats = statsEvents.some((event) =>
+            event.camera_id === alertData.camera_id &&
+            event.event_type === alertData.event_type &&
+            String(event.timestamp) === String(firstSeen)
+          );
+          if (!alreadyInStats) {
+            statsEvents.unshift(normalizeEventForUi({ ...alertData, timestamp: firstSeen }));
+          }
         });
+        while (statsEvents.length > 1000) statsEvents.pop();
         cameras.forEach((_cam, cameraId) => renderCameraAlertState(cameraId, { blink: false, openPopup: false }));
         refreshCameraMarkerVisibility();
+        refreshStatistics();
         updateIncidentFocus(getLatestActiveAlert());
         checkNearbyActiveAlerts();
       } catch (_err) {
@@ -2362,13 +3398,12 @@
     }
 
     function clearRouteCameraFilter() {
+      if (isNavigating) stopNavigation();
       routeCameraIds = null;
-      if (chatRouteLayer) {
-        map.removeLayer(chatRouteLayer);
-        chatRouteLayer = null;
-      }
-      chatRouteMarkers.forEach((marker) => map.removeLayer(marker));
-      chatRouteMarkers = [];
+      clearChatRouteVisuals();
+      const panel = document.getElementById('route-directions-panel');
+      if (panel) panel.hidden = true;
+      document.querySelector('.app-shell')?.classList.remove('route-details-open');
       refreshCameraMarkerVisibility();
       updateIncidentFocus(getLatestActiveAlert());
     }
@@ -2392,11 +3427,13 @@
         return;
       }
       const bounds = L.latLngBounds(points);
-      map.fitBounds(bounds.pad(0.22), { maxZoom: 15, animate: true });
+      map.fitBounds(bounds.pad(0.22), { maxZoom: 15, animate: true, paddingTopLeft: [450, 80] });
     }
 
     async function init() {
       applyTheme(getCurrentTheme(), { persist: false });
+      initializeSpeechSynthesis();
+      observeMapToolbarLayout();
       normalizeMapFilterLabels();
       renderEmptyAlerts();
       renderEmptyNews();
@@ -2410,6 +3447,8 @@
         if (savedRadius) nearbyRadius = savedRadius;
       } catch (_err) {}
       setNearbyRadius(nearbyRadius);
+      restoreNearbyNotificationsPreference();
+      registerNotificationServiceWorker();
 
       try {
         await loadCameraDataset({ fit: false });
@@ -2426,6 +3465,7 @@
       await loadCameraHealth();
       await loadScannerStatus();
       await loadNews();
+      await loadVideoNews();
       await loadAlertQueue();
       await loadStatisticsEvents();
       await loadActiveAlerts();
@@ -2433,12 +3473,121 @@
       requestUserLocation({ focus: false }).catch(() => {});
     }
 
+    navigator.serviceWorker?.addEventListener("message", (event) => {
+      if (event.data?.type !== "OPEN_NEARBY_ALERT") return;
+      setWorkspacePanel("alerts");
+      if (event.data.cameraId) focusCamera(event.data.cameraId);
+    });
+
     document.getElementById("camera-search").addEventListener("input", renderCameraList);
     document.querySelectorAll("[data-camera-source]").forEach((btn) => {
       btn.addEventListener("click", () => setCameraSource(btn.dataset.cameraSource));
     });
     document.getElementById("fit-map-btn").addEventListener("click", fitMapToCameras);
-    document.getElementById("locate-me-btn").addEventListener("click", () => requestUserLocation({ focus: true }));
+
+    map.on("dragstart", () => {
+      if (isFollowMeMode) {
+        isFollowMeMode = false;
+        const btn = document.getElementById("follow-me-btn");
+        const textSpan = document.getElementById("follow-me-text");
+        if (btn) btn.classList.remove("enabled");
+        if (textSpan) textSpan.textContent = "🚗 Lái xe";
+      }
+    });
+
+    document.getElementById("follow-me-btn")?.addEventListener("click", () => {
+      isFollowMeMode = !isFollowMeMode;
+      const btn = document.getElementById("follow-me-btn");
+      const textSpan = document.getElementById("follow-me-text");
+      if (isFollowMeMode) {
+        btn.classList.add("enabled");
+        if (textSpan) textSpan.textContent = "🚗 Đang bám theo";
+        if (userLocation) map.flyTo([userLocation.lat, userLocation.lng], 16);
+      } else {
+        btn.classList.remove("enabled");
+        if (textSpan) textSpan.textContent = "🚗 Lái xe";
+      }
+    });
+
+    document.getElementById("voice-alert-btn")?.addEventListener("click", () => {
+      if (!initializeSpeechSynthesis()) return;
+      isVoiceAlertEnabled = !isVoiceAlertEnabled;
+      if (!isVoiceAlertEnabled) {
+        speechRequestId += 1;
+        window.speechSynthesis.cancel();
+        setVoiceAlertButtonState("off");
+        return;
+      }
+      setVoiceAlertButtonState("on");
+      speakAlert("Đã bật cảnh báo bằng giọng nói.", { immediate: true });
+    });
+
+    document.getElementById("locate-me-btn").addEventListener("click", async () => {
+      const btn = document.getElementById("locate-me-btn");
+      if (showOnlyNearbyCameras) {
+        showOnlyNearbyCameras = false;
+        refreshCameraMarkerVisibility();
+        applyNewsFilterAndRender();
+        refreshAlertListVisibility();
+        setLocateButtonState("ready");
+      } else {
+        try {
+          const loc = await requestUserLocation({ focus: true });
+          if (loc) {
+            showOnlyNearbyCameras = true;
+            refreshCameraMarkerVisibility();
+            applyNewsFilterAndRender();
+            refreshAlertListVisibility();
+            setLocateButtonState("ready");
+          }
+        } catch (err) {
+          // Fallback or ignore
+        }
+      }
+    });
+
+    document.getElementById("layer-camera-btn")?.addEventListener("click", () => {
+      isCameraLayerVisible = !isCameraLayerVisible;
+      const btn = document.getElementById("layer-camera-btn");
+      if (isCameraLayerVisible) btn.classList.add("enabled");
+      else btn.classList.remove("enabled");
+      refreshCameraMarkerVisibility();
+    });
+
+    document.getElementById("news-type-text-btn")?.addEventListener("click", (e) => {
+      activeNewsTab = "text";
+      e.target.classList.add("active");
+      document.getElementById("news-type-video-btn").classList.remove("active");
+      applyNewsFilterAndRender();
+    });
+
+    document.getElementById("news-type-video-btn")?.addEventListener("click", (e) => {
+      activeNewsTab = "video";
+      e.target.classList.add("active");
+      document.getElementById("news-type-text-btn").classList.remove("active");
+      applyNewsFilterAndRender();
+    });
+
+    document.getElementById("video-news-close")?.addEventListener("click", () => {
+      document.getElementById("video-news-modal").classList.remove("active");
+      document.getElementById("video-news-iframe").src = ""; // Stop video
+    });
+
+    document.getElementById("layer-alert-btn")?.addEventListener("click", () => {
+      isAlertLayerVisible = !isAlertLayerVisible;
+      const btn = document.getElementById("layer-alert-btn");
+      if (isAlertLayerVisible) btn.classList.add("enabled");
+      else btn.classList.remove("enabled");
+      cameras.forEach((_cam, cameraId) => renderCameraAlertState(cameraId));
+      refreshCameraMarkerVisibility();
+    });
+
+    document.getElementById("time-range-select")?.addEventListener("change", (e) => {
+      currentTimeRange = e.target.value;
+      refreshStatistics();
+      applyNewsFilterAndRender();
+    });
+
     document.getElementById("heatmap-toggle").addEventListener("click", toggleTrafficHeatmap);
     document.getElementById("map-only-toggle").addEventListener("click", toggleMapOnlyMode);
     document.getElementById("route-filter-clear").addEventListener("click", clearRouteCameraFilter);
@@ -2461,8 +3610,54 @@
     });
     document.getElementById("nearby-toggle").addEventListener("click", toggleNearbyNotifications);
     document.getElementById("scanner-toggle").addEventListener("click", toggleScanner);
+    document.querySelectorAll("[data-dashboard-demo]").forEach((button) => {
+      button.addEventListener("click", () => runDashboardIncidentDemo(button.dataset.dashboardDemo));
+    });
+    document.getElementById("incident-demo-reset")?.addEventListener("click", async () => {
+      try {
+        await resetDashboardIncidentDemo();
+      } catch (err) {
+        setIncidentDemoProgress(err.message || "Could not reset demo incidents", "error");
+      }
+    });
     document.getElementById("health-check").addEventListener("click", refreshCameraHealth);
-    document.getElementById("news-refresh").addEventListener("click", () => loadNews({ refresh: true }));
+    document.getElementById("news-refresh").addEventListener("click", () => {
+      loadNews({ refresh: true });
+      loadVideoNews({ refresh: true });
+    });
+    document.getElementById("news-feed-close")?.addEventListener("click", () => {
+      setWorkspacePanel("cameras");
+    });
+    document.addEventListener("keydown", (event) => {
+      const section = document.getElementById("news-section");
+      if (!section || section.hidden) return;
+
+      if (event.key === "Escape") {
+        event.preventDefault();
+        setWorkspacePanel("cameras");
+        return;
+      }
+
+      // Skip arrow keys action when typing or interacting with form controls/buttons
+      if (document.activeElement && ["INPUT", "TEXTAREA", "SELECT", "BUTTON"].includes(document.activeElement.tagName)) return;
+
+      if (activeNewsTab === "video") {
+        if (event.key === "ArrowDown" || event.key === "PageDown") {
+          event.preventDefault();
+          moveNewsFeed(1);
+        } else if (event.key === "ArrowUp" || event.key === "PageUp") {
+          event.preventDefault();
+          moveNewsFeed(-1);
+        }
+      }
+    });
+
+    document.getElementById("video-feed-prev")?.addEventListener("click", () => {
+      moveNewsFeed(-1);
+    });
+    document.getElementById("video-feed-next")?.addEventListener("click", () => {
+      moveNewsFeed(1);
+    });
     document.getElementById("account-logout").addEventListener("click", logout);
 
     document.querySelectorAll("[data-workspace-tab]").forEach((btn) => {
@@ -2472,18 +3667,31 @@
     renderAuthState();
     setWorkspacePanel("cameras");
 
-    document.querySelectorAll("[data-workspace-tab]").forEach((btn) => {
-      btn.addEventListener("click", () => setWorkspacePanel(btn.dataset.workspaceTab));
-    });
-
-    document.querySelectorAll(".news-tab").forEach((btn) => {
+    document.querySelectorAll("#news-tabs .news-tab").forEach((btn) => {
       btn.addEventListener("click", async () => {
-        document.querySelectorAll(".news-tab").forEach((item) => item.classList.remove("active"));
+        document.querySelectorAll("#news-tabs .news-tab").forEach((item) => item.classList.remove("active"));
         btn.classList.add("active");
         activeNewsCategory = btn.dataset.newsCategory || "all";
         await loadNews();
+        await loadVideoNews();
       });
     });
+
+    const newsSearchInput = document.getElementById("news-search-input");
+    if (newsSearchInput) {
+      newsSearchInput.addEventListener("input", (e) => {
+        newsSearchQuery = e.target.value;
+        applyNewsFilterAndRender();
+      });
+    }
+
+    const newsSourceSelect = document.getElementById("news-source-filter");
+    if (newsSourceSelect) {
+      newsSourceSelect.addEventListener("change", (e) => {
+        newsSourceFilter = e.target.value;
+        applyNewsFilterAndRender();
+      });
+    }
 
     document.querySelectorAll(".radius-btn").forEach((btn) => {
       btn.addEventListener("click", () => setNearbyRadius(Number(btn.dataset.radius)));
@@ -2585,6 +3793,14 @@
         if (data.severity !== "normal") {
           showToast(data);
         }
+        const spokenLabels = {
+          fire: "cháy",
+          flood: "ngập lụt",
+          traffic_jam: "ùn tắc giao thông",
+        };
+        const spokenLabel = spokenLabels[data.event_type] || getAlertMeta(data.event_type).shortLabel;
+        const cameraName = maybeRepairMojibake(data.camera_name || data.camera_id || "camera");
+        speakAlert(`Cảnh báo. Phát hiện ${spokenLabel} tại ${cameraName}.`);
       });
       socket.on("alert_update", (data) => {
         if (data.queue_status) {
@@ -2614,7 +3830,10 @@
       setConnection(false, "Preview");
     }
 
-    setInterval(() => loadNews(), 10 * 60 * 1000);
+    setInterval(() => {
+      loadNews();
+      loadVideoNews();
+    }, 10 * 60 * 1000);
     setInterval(loadScannerStatus, 5000);
     setInterval(loadTrafficHeatmap, 30000);
     init();
@@ -2622,6 +3841,98 @@
 // --- Chat Widget Logic ---
 let chatRouteLayer = null;
 let chatRouteMarkers = [];
+
+function clearChatRouteVisuals() {
+  if (chatRouteLayer) {
+    map.removeLayer(chatRouteLayer);
+    chatRouteLayer = null;
+  }
+  chatRouteMarkers.forEach((marker) => map.removeLayer(marker));
+  chatRouteMarkers = [];
+}
+
+function createRouteEndpointMarker(point, label, title, tone) {
+  const marker = L.marker(point, {
+    keyboard: true,
+    icon: L.divIcon({
+      className: `route-endpoint-marker ${tone}`,
+      html: `<span>${label}</span>`,
+      iconSize: [32, 32],
+      iconAnchor: [16, 16],
+    }),
+  }).addTo(map);
+  marker.bindTooltip(title, {
+    permanent: true,
+    direction: 'top',
+    offset: [0, -12],
+    className: 'route-label-tooltip',
+  });
+  return marker;
+}
+
+function addRouteTurnMarkers(steps) {
+  const candidates = (steps || []).filter((step) => {
+    const type = step?.maneuver?.type;
+    return step?.maneuver?.location && !['depart', 'arrive'].includes(type) && Number(step.distance) >= 20;
+  });
+  const limit = window.innerWidth <= 820 ? 6 : 12;
+  const stride = Math.max(1, Math.ceil(candidates.length / limit));
+
+  candidates.filter((_step, index) => index % stride === 0).forEach((step) => {
+    const [lng, lat] = step.maneuver.location;
+    const marker = L.circleMarker([lat, lng], {
+      radius: 5,
+      color: '#081311',
+      weight: 2,
+      fillColor: '#b8fff4',
+      fillOpacity: 1,
+      pane: 'markerPane',
+    }).addTo(map);
+    const action = translateManeuver(step.maneuver.type, step.maneuver.modifier);
+    const street = step.name ? ` • ${step.name}` : '';
+    marker.bindTooltip(`${action}${street} • ${formatDistance(step.distance)}`, {
+      direction: 'top',
+      className: 'route-step-tooltip',
+    });
+    marker.on('click', () => map.flyTo([lat, lng], 17, { duration: 0.45 }));
+    chatRouteMarkers.push(marker);
+  });
+}
+
+function renderDetailedRoute(data) {
+  clearChatRouteVisuals();
+
+  chatRouteLayer = L.featureGroup().addTo(map);
+  L.polyline(data.route, {
+    color: '#07110f',
+    weight: 11,
+    opacity: 0.9,
+    lineCap: 'round',
+    lineJoin: 'round',
+    interactive: false,
+  }).addTo(chatRouteLayer);
+  L.polyline(data.route, {
+    color: '#31d6c0',
+    weight: 6,
+    opacity: 1,
+    lineCap: 'round',
+    lineJoin: 'round',
+  }).addTo(chatRouteLayer);
+
+  chatRouteMarkers.push(
+    createRouteEndpointMarker(data.startPoint, 'A', 'Điểm xuất phát', 'start'),
+    createRouteEndpointMarker(data.endPoint, 'B', 'Điểm đến', 'end')
+  );
+  addRouteTurnMarkers(data.steps);
+
+  const isMobile = window.innerWidth <= 820;
+  map.fitBounds(chatRouteLayer.getBounds(), {
+    animate: true,
+    maxZoom: 15,
+    paddingTopLeft: isMobile ? [24, 176] : [450, 160],
+    paddingBottomRight: isMobile ? [24, Math.round(window.innerHeight * 0.5)] : [380, 110],
+  });
+}
 
 document.querySelector('#chat-panel .chat-header h3').textContent = 'Trợ lý Chỉ đường AI';
 document.querySelector('#chat-body .chat-message.ai').textContent = 'Xin chào! Tôi có thể giúp bạn lập tuyến đường. Bạn muốn đi đâu?';
@@ -2661,16 +3972,242 @@ function getCurrentLocation() {
     navigator.geolocation.getCurrentPosition(
       (pos) => resolve({ lat: pos.coords.latitude, lng: pos.coords.longitude }),
       () => resolve(null),
-      { timeout: 5000 }
+      { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
     );
   });
 }
+
+function formatDistance(m) {
+  return m < 1000 ? Math.round(m) + ' m' : (m / 1000).toFixed(1) + ' km';
+}
+
+const maneuverTranslations = {
+  'turn-left': 'Rẽ trái',
+  'turn-right': 'Rẽ phải',
+  'turn-slight left': 'Chếch sang trái',
+  'turn-slight right': 'Chếch sang phải',
+  'turn-sharp left': 'Rẽ ngoặt sang trái',
+  'turn-sharp right': 'Rẽ ngoặt sang phải',
+  'turn-straight': 'Đi thẳng',
+  'depart-right': 'Xuất phát về hướng bên phải',
+  'depart-left': 'Xuất phát về hướng bên trái',
+  'depart-straight': 'Xuất phát đi thẳng',
+  'arrive-left': 'Điểm đến ở bên trái',
+  'arrive-right': 'Điểm đến ở bên phải',
+  'arrive-straight': 'Đã đến nơi',
+  'roundabout-right': 'Vào vòng xuyến rẽ phải',
+  'roundabout-left': 'Vào vòng xuyến rẽ trái',
+  'merge-left': 'Nhập làn bên trái',
+  'merge-right': 'Nhập làn bên phải'
+};
+
+function translateManeuver(type, modifier) {
+  const key = `${type}-${modifier}`;
+  if (maneuverTranslations[key]) return maneuverTranslations[key];
+  if (type === 'depart') return 'Xuất phát';
+  if (type === 'arrive') return 'Đã đến nơi';
+  if (type === 'roundabout') return 'Vào vòng xuyến';
+  if (modifier === 'left') return 'Rẽ trái';
+  if (modifier === 'right') return 'Rẽ phải';
+  if (modifier === 'straight') return 'Đi thẳng';
+  if (type === 'new name') return 'Đi tiếp lên';
+  return type + ' ' + (modifier || '');
+}
+
+function getManeuverIcon(type, modifier) {
+  if (type === 'depart') return '<svg viewBox="0 0 24 24" width="24" height="24" stroke="currentColor" stroke-width="2" fill="none"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="3" fill="currentColor"/></svg>';
+  if (type === 'arrive') return '<svg viewBox="0 0 24 24" width="24" height="24" stroke="currentColor" stroke-width="2" fill="none"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="M9 12l2 2 4-4"/></svg>';
+  if (modifier?.includes('left')) return '<svg viewBox="0 0 24 24" width="24" height="24" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"><path d="M9 14l-4-4 4-4"/><path d="M5 10h11a4 4 0 110 8h-1"/></svg>';
+  if (modifier?.includes('right')) return '<svg viewBox="0 0 24 24" width="24" height="24" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"><path d="M15 14l4-4-4-4"/><path d="M19 10H8a4 4 0 100 8h1"/></svg>';
+  return '<svg viewBox="0 0 24 24" width="24" height="24" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19V5"/><path d="M5 12l7-7 7 7"/></svg>'; // straight
+}
+
+function renderRouteSteps(steps) {
+  const panel = document.getElementById('route-directions-panel');
+  const body = document.getElementById('route-directions-body');
+  if (!panel || !body) return;
+  
+  if (!steps || steps.length === 0) {
+    panel.hidden = true;
+    return;
+  }
+  
+  body.innerHTML = '';
+  steps.forEach((step, index) => {
+    const maneuver = step.maneuver;
+    let nameText = step.name ? `vào <b>${step.name}</b>` : '';
+    if (maneuver.type === 'arrive') nameText = '';
+    
+    let actionText = translateManeuver(maneuver.type, maneuver.modifier);
+    
+    const div = document.createElement('div');
+    div.className = 'direction-step';
+    div.tabIndex = 0;
+    div.setAttribute('role', 'button');
+    div.setAttribute('aria-label', `${actionText}${step.name ? ` vào ${step.name}` : ''}, ${formatDistance(step.distance || 0)}`);
+    div.innerHTML = `
+      <div class="direction-icon">${getManeuverIcon(maneuver.type, maneuver.modifier)}</div>
+      <div class="direction-text">
+        ${actionText} ${nameText}
+        ${step.distance > 0 ? `<div class="direction-distance">${formatDistance(step.distance)}</div>` : ''}
+      </div>
+    `;
+    const focusStep = () => {
+      const location = step?.maneuver?.location;
+      if (!location) return;
+      document.querySelectorAll('.direction-step.active').forEach((item) => item.classList.remove('active'));
+      div.classList.add('active');
+      const [lng, lat] = location;
+      map.flyTo([lat, lng], Math.max(map.getZoom(), 17), { duration: 0.45 });
+    };
+    div.addEventListener('click', focusStep);
+    div.addEventListener('keydown', (event) => {
+      if (event.key !== 'Enter' && event.key !== ' ') return;
+      event.preventDefault();
+      focusStep();
+    });
+    body.appendChild(div);
+  });
+  
+  panel.hidden = false;
+  document.querySelector('.app-shell')?.classList.add('route-details-open');
+}
+
+document.getElementById('close-directions-btn')?.addEventListener('click', () => {
+  const panel = document.getElementById('route-directions-panel');
+  if (panel) panel.hidden = true;
+  document.querySelector('.app-shell')?.classList.remove('route-details-open');
+});
 
 let forceRouteFlag = false;
 document.getElementById('btn-force-route')?.addEventListener('click', () => {
   forceRouteFlag = true;
   document.getElementById('chat-form').dispatchEvent(new Event('submit', { cancelable: true, bubbles: true }));
 });
+
+let isNavigating = false;
+let watchPositionId = null;
+let currentRouteSteps = [];
+let currentStepIndex = 0;
+let navLocationMarker = null;
+let lastKnownLocation = null;
+
+function getDistance(lat1, lon1, lat2, lon2) {
+  const R = 6371e3;
+  const p1 = lat1 * Math.PI/180;
+  const p2 = lat2 * Math.PI/180;
+  const dp = (lat2-lat1) * Math.PI/180;
+  const dl = (lon2-lon1) * Math.PI/180;
+  const a = Math.sin(dp/2) * Math.sin(dp/2) + Math.cos(p1) * Math.cos(p2) * Math.sin(dl/2) * Math.sin(dl/2);
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+}
+
+function updateNavigationBanner(overrideDistance) {
+  if (currentStepIndex >= currentRouteSteps.length) return;
+  const step = currentRouteSteps[currentStepIndex];
+  
+  const actionText = translateManeuver(step.maneuver.type, step.maneuver.modifier);
+  const nameText = step.name ? `vào ${step.name}` : '';
+  
+  document.getElementById('nav-instruction').textContent = `${actionText} ${nameText}`;
+  document.getElementById('nav-next-icon').innerHTML = getManeuverIcon(step.maneuver.type, step.maneuver.modifier);
+  
+  const dist = overrideDistance !== undefined ? overrideDistance : step.distance;
+  document.getElementById('nav-distance').textContent = formatDistance(dist);
+}
+
+function handleLocationUpdate(lat, lng) {
+  if (!isNavigating) return;
+  
+  if (!navLocationMarker) {
+    navLocationMarker = L.circleMarker([lat, lng], {
+      radius: 8,
+      fillColor: '#3b82f6',
+      color: '#fff',
+      weight: 3,
+      opacity: 1,
+      fillOpacity: 1,
+      className: 'user-location-marker'
+    }).addTo(map);
+  } else {
+    navLocationMarker.setLatLng([lat, lng]);
+  }
+  
+  map.panTo([lat, lng], { animate: true });
+  
+  if (currentStepIndex < currentRouteSteps.length) {
+    const step = currentRouteSteps[currentStepIndex];
+    const stepLoc = step.maneuver.location;
+    const dist = getDistance(lat, lng, stepLoc[1], stepLoc[0]);
+    
+    if (dist < 30) {
+      currentStepIndex++;
+    }
+    updateNavigationBanner(dist);
+  }
+  
+  if (currentStepIndex >= currentRouteSteps.length) {
+    document.getElementById('nav-instruction').textContent = "Đã đến nơi!";
+    document.getElementById('nav-distance').textContent = "0 m";
+    document.getElementById('nav-next-icon').innerHTML = getManeuverIcon('arrive', '');
+    setTimeout(stopNavigation, 5000);
+  }
+}
+
+function startNavigation() {
+  if (!currentRouteSteps || currentRouteSteps.length === 0) return;
+  isNavigating = true;
+  currentStepIndex = 0;
+  
+  const dirPanel = document.getElementById('route-directions-panel');
+  if (dirPanel) dirPanel.hidden = true;
+  document.querySelector('.app-shell')?.classList.remove('route-details-open');
+  
+  const navBanner = document.getElementById('navigation-banner');
+  if (navBanner) navBanner.hidden = false;
+  
+  if (map.getZoom() < 17) {
+    map.setZoom(17);
+  }
+  
+  updateNavigationBanner();
+  
+  if (navigator.geolocation) {
+    watchPositionId = navigator.geolocation.watchPosition(
+      (pos) => {
+        const lat = pos.coords.latitude;
+        const lng = pos.coords.longitude;
+        lastKnownLocation = {lat, lng};
+        handleLocationUpdate(lat, lng);
+      },
+      (err) => console.error("GPS Error:", err),
+      { enableHighAccuracy: true, maximumAge: 0 }
+    );
+  }
+}
+
+function stopNavigation() {
+  isNavigating = false;
+  if (watchPositionId !== null) {
+    navigator.geolocation.clearWatch(watchPositionId);
+    watchPositionId = null;
+  }
+  
+  const navBanner = document.getElementById('navigation-banner');
+  if (navBanner) navBanner.hidden = true;
+  
+  const dirPanel = document.getElementById('route-directions-panel');
+  if (dirPanel) dirPanel.hidden = false;
+  document.querySelector('.app-shell')?.classList.add('route-details-open');
+  
+  if (navLocationMarker) {
+    map.removeLayer(navLocationMarker);
+    navLocationMarker = null;
+  }
+}
+
+document.getElementById('start-navigation-btn')?.addEventListener('click', startNavigation);
+document.getElementById('nav-stop-btn')?.addEventListener('click', stopNavigation);
 
 document.getElementById('chat-form').addEventListener('submit', async (e) => {
   e.preventDefault();
@@ -2706,18 +4243,16 @@ document.getElementById('chat-form').addEventListener('submit', async (e) => {
     addChatMessage(data.message || data.error || 'Lỗi kết nối', 'ai');
 
     if (data.type === 'route' && data.route && data.route.length > 0) {
-      if (chatRouteLayer) map.removeLayer(chatRouteLayer);
-      chatRouteMarkers.forEach(m => map.removeLayer(m));
-      chatRouteMarkers = [];
-
-      chatRouteLayer = L.polyline(data.route, { color: '#31d6c0', weight: 6, opacity: 0.8 }).addTo(map);
-      
-      const startMarker = L.circleMarker(data.startPoint, { color: '#fff', fillColor: '#3b82f6', fillOpacity: 1, radius: 6 }).addTo(map);
-      const endMarker = L.circleMarker(data.endPoint, { color: '#fff', fillColor: '#ef4444', fillOpacity: 1, radius: 6 }).addTo(map);
-      
-      chatRouteMarkers.push(startMarker, endMarker);
+      renderDetailedRoute(data);
       applyRouteCameraFilter(data.route, data.route_cameras || []);
-      map.fitBounds(chatRouteLayer.getBounds(), { padding: [50, 50] });
+      
+      if (data.steps) {
+        currentRouteSteps = data.steps;
+        renderRouteSteps(data.steps);
+      }
+      if (window.innerWidth <= 820) {
+        document.getElementById('chat-panel').hidden = true;
+      }
     }
   } catch (err) {
     addChatMessage('Không thể kết nối đến máy chủ AI.', 'ai');
@@ -2729,9 +4264,7 @@ document.getElementById('chat-form').addEventListener('submit', async (e) => {
 document.getElementById("camera-collapse-btn")?.addEventListener("click", (event) => {
   const button = event.currentTarget;
   const section = document.getElementById("camera-section");
-  const workspace = document.getElementById("camera-workspace");
   const collapsed = section.classList.toggle("collapsed");
-  workspace?.classList.toggle("camera-list-collapsed", collapsed);
   button.setAttribute("aria-expanded", String(!collapsed));
   button.setAttribute("aria-label", collapsed ? "Show camera list" : "Hide camera list");
   button.setAttribute("title", collapsed ? "Show camera list" : "Hide camera list");

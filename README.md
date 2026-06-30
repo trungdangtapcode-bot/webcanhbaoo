@@ -101,5 +101,17 @@ python detector_api.py
 
 ---
 
+## 🎬 6. Video Demo
+
+> Video demo dưới đây trình bày toàn bộ quy trình hoạt động của hệ thống Smart Alert System — từ giao diện giám sát bản đồ, quá trình phát hiện sự cố bằng AI, đến cơ chế cảnh báo real-time.
+
+https://github.com/trungdangtapcode-bot/webcanhbaoo/blob/main/VideoDemo.mp4
+
+---
+
 ## 🛡️ Bản quyền
 Dự án được xây dựng phục vụ mục đích nghiên cứu và học thuật.
+
+---
+
+**Chúng em đã biết làm web và hiểu hệ thống web hoạt động như thế nào.**

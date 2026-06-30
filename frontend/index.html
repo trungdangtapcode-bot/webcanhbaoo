@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en" class="wa-theme-default wa-palette-default wa-brand-blue wa-dark">
+<html lang="vi" class="wa-theme-default wa-palette-default wa-brand-blue wa-dark">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
@@ -42,11 +42,91 @@
       }
     })();
   </script>
-  <link rel="stylesheet" href="./css/style.css">
+  <link rel="stylesheet" href="./css/style.css?v=20260630-auto-demo-scan-v2">
 </head>
 <body>
   <div id="toast-container" class="toast-container"></div>
   <div class="app-shell">
+    <aside class="nav-rail" aria-label="Main Navigation">
+      <nav class="workspace-nav" aria-label="Dashboard sections">
+        <button class="workspace-tab" type="button" data-workspace-tab="cameras" aria-label="Cameras" title="Cameras">
+          <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+            <path d="M4 8.5A2.5 2.5 0 0 1 6.5 6h11A2.5 2.5 0 0 1 20 8.5v7A2.5 2.5 0 0 1 17.5 18h-11A2.5 2.5 0 0 1 4 15.5v-7Z" stroke="currentColor" stroke-width="1.7" />
+            <path d="M12 14.6a2.6 2.6 0 1 0 0-5.2 2.6 2.6 0 0 0 0 5.2Z" stroke="currentColor" stroke-width="1.7" />
+          </svg>
+          <span class="workspace-label">Camera</span>
+        </button>
+        <button class="workspace-tab" type="button" data-workspace-tab="overview" aria-label="Stats" title="Stats">
+          <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+            <path d="M5 19V9M12 19V5M19 19v-7" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" />
+            <path d="M4 19h16" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" />
+          </svg>
+          <span class="workspace-label">Thống kê</span>
+        </button>
+        <button class="workspace-tab" type="button" data-workspace-tab="alerts" aria-label="Alerts" title="Alerts">
+          <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+            <path d="M12 3.5 21 20H3L12 3.5Z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" />
+            <path d="M12 9v4.7" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" />
+          </svg>
+          <span class="workspace-label">Cảnh báo</span>
+        </button>
+        <button class="workspace-tab" type="button" data-workspace-tab="nearby" aria-label="Nearby" title="Nearby">
+          <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+            <path d="M12 21s6-4.7 6-10a6 6 0 1 0-12 0c0 5.3 6 10 6 10Z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" />
+            <path d="M12 13.2a2.2 2.2 0 1 0 0-4.4 2.2 2.2 0 0 0 0 4.4Z" stroke="currentColor" stroke-width="1.8" />
+          </svg>
+          <span class="workspace-label">Gần tôi</span>
+        </button>
+        <button class="workspace-tab" type="button" data-workspace-tab="news" aria-label="News" title="News">
+          <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+            <path d="M5 5.5h10.5A2.5 2.5 0 0 1 18 8v10.5H6.5A2.5 2.5 0 0 1 4 16V6.5a1 1 0 0 1 1-1Z" stroke="currentColor" stroke-width="1.7" />
+            <path d="M8 10h6M8 13h6M8 16h3" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" />
+          </svg>
+          <span class="workspace-label">Tin tức</span>
+        </button>
+        <button class="workspace-tab" id="map-only-tab" type="button" data-workspace-tab="map" aria-label="Map only" title="Map only">
+          <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+            <path d="M9 18 3.5 20.5v-15L9 3m0 15 6 3m-6-3V3m6 18 5.5-2.5v-15L15 6m0 15V6M15 6 9 3" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" />
+          </svg>
+          <span class="workspace-label">Bản đồ</span>
+        </button>
+      </nav>
+
+      <section class="account-panel mt-auto" aria-label="Account">
+        <div class="account-profile">
+          <div class="account-avatar">
+            <svg viewBox="0 0 24 24" fill="none"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2M12 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8Z" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          </div>
+          <div class="account-user-name" id="account-user-name" hidden></div>
+          <a class="account-admin-link" id="account-admin-link" href="admin.html" title="Admin console" hidden>Admin</a>
+          <button class="account-logout-icon" id="account-logout" type="button" title="Logout">
+            <svg viewBox="0 0 24 24" fill="none"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          </button>
+        </div>
+      </section>
+    </aside>
+
+    <div class="top-status-bar">
+      <section class="stat-grid" aria-label="Tổng hợp cảnh báo">
+        <div class="stat-card">
+          <div class="stat-value" id="stat-cameras">0</div>
+          <div class="stat-label">Camera</div>
+        </div>
+        <div class="stat-card fire">
+          <div class="stat-value" id="stat-fire">0</div>
+          <div class="stat-label">Cháy</div>
+        </div>
+        <div class="stat-card flood">
+          <div class="stat-value" id="stat-flood">0</div>
+          <div class="stat-label">Ngập</div>
+        </div>
+        <div class="stat-card traffic">
+          <div class="stat-value" id="stat-traffic">0</div>
+          <div class="stat-label">Ùn tắc</div>
+        </div>
+      </section>
+    </div>
+
     <aside class="sidebar" id="sidebar">
       <header class="sidebar-header">
         <div class="brand-row">
@@ -59,7 +139,7 @@
             </div>
             <div>
               <h1 class="brand-title"><span>Smart</span> <span>Alert</span></h1>
-              <div class="brand-subtitle">Traffic, flood, and fire detection</div>
+              <div class="brand-subtitle">Nhận diện ùn tắc, ngập lụt và cháy</div>
             </div>
           </div>
           <div class="header-actions">
@@ -88,24 +168,6 @@
         </div>
       </header>
 
-      <section class="stat-grid" aria-label="Alert summary">
-        <div class="stat-card">
-          <div class="stat-value" id="stat-cameras">0</div>
-          <div class="stat-label">Cameras</div>
-        </div>
-        <div class="stat-card fire">
-          <div class="stat-value" id="stat-fire">0</div>
-          <div class="stat-label">Fire</div>
-        </div>
-        <div class="stat-card flood">
-          <div class="stat-value" id="stat-flood">0</div>
-          <div class="stat-label">Flood</div>
-        </div>
-        <div class="stat-card traffic">
-          <div class="stat-value" id="stat-traffic">0</div>
-          <div class="stat-label">Traffic</div>
-        </div>
-      </section>
 
       <section class="quick-action-section" aria-label="Emergency actions">
         <button class="emergency-button" id="emergency-open" type="button">
@@ -114,75 +176,17 @@
             <path d="M12 9v4.7" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" />
             <path d="M12 17.2h.01" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" />
           </svg>
-          Send emergency report
+          Gửi báo cáo khẩn cấp
         </button>
         <button class="contribute-camera-button" id="contribute-camera-open" type="button">
           <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
             <path d="M4 8.5A2.5 2.5 0 0 1 6.5 6h11A2.5 2.5 0 0 1 20 8.5v7A2.5 2.5 0 0 1 17.5 18h-11A2.5 2.5 0 0 1 4 15.5v-7Z" stroke="currentColor" stroke-width="1.8"/>
             <path d="M12 10v5M9.5 12.5h5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
           </svg>
-          Contribute camera
+          Đóng góp camera
         </button>
       </section>
 
-      <nav class="workspace-nav" aria-label="Dashboard sections">
-        <button class="workspace-tab" type="button" data-workspace-tab="cameras">
-          <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
-            <path d="M4 8.5A2.5 2.5 0 0 1 6.5 6h11A2.5 2.5 0 0 1 20 8.5v7A2.5 2.5 0 0 1 17.5 18h-11A2.5 2.5 0 0 1 4 15.5v-7Z" stroke="currentColor" stroke-width="1.7" />
-            <path d="M12 14.6a2.6 2.6 0 1 0 0-5.2 2.6 2.6 0 0 0 0 5.2Z" stroke="currentColor" stroke-width="1.7" />
-          </svg>
-          Cameras
-        </button>
-        <button class="workspace-tab" type="button" data-workspace-tab="overview">
-          <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
-            <path d="M5 19V9M12 19V5M19 19v-7" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" />
-            <path d="M4 19h16" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" />
-          </svg>
-          Stats
-        </button>
-        <button class="workspace-tab" type="button" data-workspace-tab="alerts">
-          <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
-            <path d="M12 3.5 21 20H3L12 3.5Z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" />
-            <path d="M12 9v4.7" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" />
-          </svg>
-          Alerts
-        </button>
-        <button class="workspace-tab" type="button" data-workspace-tab="nearby">
-          <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
-            <path d="M12 21s6-4.7 6-10a6 6 0 1 0-12 0c0 5.3 6 10 6 10Z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" />
-            <path d="M12 13.2a2.2 2.2 0 1 0 0-4.4 2.2 2.2 0 0 0 0 4.4Z" stroke="currentColor" stroke-width="1.8" />
-          </svg>
-          Nearby
-        </button>
-        <button class="workspace-tab" type="button" data-workspace-tab="news">
-          <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
-            <path d="M5 5.5h10.5A2.5 2.5 0 0 1 18 8v10.5H6.5A2.5 2.5 0 0 1 4 16V6.5a1 1 0 0 1 1-1Z" stroke="currentColor" stroke-width="1.7" />
-            <path d="M8 10h6M8 13h6M8 16h3" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" />
-          </svg>
-          News
-        </button>
-        <button class="workspace-tab" id="map-only-tab" type="button" data-workspace-tab="map">
-          <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
-            <path d="M9 18 3.5 20.5v-15L9 3m0 15 6 3m-6-3V3m6 18 5.5-2.5v-15L15 6m0 15V6M15 6 9 3" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" />
-          </svg>
-          Map only
-        </button>
-      </nav>
-
-      <section class="account-panel mt-auto" aria-label="Account">
-        <div class="account-profile">
-          <div class="account-avatar">
-            <svg viewBox="0 0 24 24" fill="none"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2M12 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8Z" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
-          </div>
-          <div class="account-user">
-            <div class="account-user-name" id="account-user-name">Operator</div>
-          </div>
-          <a class="account-admin-link" id="account-admin-link" href="admin.html" title="Admin console" hidden>Admin</a>
-          <button class="account-logout-icon" id="account-logout" type="button" title="Logout">
-            <svg viewBox="0 0 24 24" fill="none"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
-          </button>
-        </div>
-      </section>
 
       <section class="section compact workspace-panel" id="analytics-section" data-workspace-panel="overview" hidden>
         <div class="section-head">
@@ -191,7 +195,7 @@
               <path d="M5 19V9M12 19V5M19 19v-7" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" />
               <path d="M4 19h16" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" />
             </svg>
-            Incident stats
+            Thống kê sự cố
           </div>
           <span class="section-count" id="stats-range-label">24h</span>
         </div>
@@ -200,8 +204,8 @@
             <button class="range-btn active" type="button" data-range="24h">24h</button>
             <button class="range-btn" type="button" data-range="7d">7d</button>
             <button class="range-btn" type="button" data-range="30d">30d</button>
-            <button class="range-btn" type="button" data-range="all">All</button>
-            <button class="range-btn" type="button" data-range="custom">Custom</button>
+            <button class="range-btn" type="button" data-range="all">Tất cả</button>
+            <button class="range-btn" type="button" data-range="custom">Tùy chọn</button>
           </div>
           <div class="custom-range" id="custom-range">
             <label class="field">
@@ -216,21 +220,21 @@
           <div class="analytics-grid">
             <div class="analytics-item">
               <div class="analytics-value" id="analytics-total">0</div>
-              <div class="analytics-label">Total incidents</div>
+              <div class="analytics-label">Tổng số sự cố</div>
             </div>
             <div class="analytics-item">
-              <div class="analytics-value" id="analytics-peak">None</div>
-              <div class="analytics-label">Most common</div>
+              <div class="analytics-value" id="analytics-peak">Không có</div>
+              <div class="analytics-label">Loại phổ biến</div>
             </div>
             <div class="analytics-item">
-              <div class="analytics-value" id="analytics-busiest">None</div>
-              <div class="analytics-label">Hotspot camera</div>
+              <div class="analytics-value" id="analytics-busiest">Không có</div>
+              <div class="analytics-label">Camera nhiều sự cố</div>
             </div>
           </div>
           <div class="analytics-chart">
             <div class="analytics-chart-head">
-              <span>Incident trend</span>
-              <span class="analytics-chart-subtitle" id="analytics-chart-subtitle">No events</span>
+              <span>Xu hướng sự cố</span>
+              <span class="analytics-chart-subtitle" id="analytics-chart-subtitle">Chưa có dữ liệu</span>
             </div>
             <svg id="incident-line-chart" viewBox="0 0 980 280" role="img" aria-label="Incident trend line chart"></svg>
           </div>
@@ -244,35 +248,36 @@
               <path d="M12 21s6-4.7 6-10a6 6 0 1 0-12 0c0 5.3 6 10 6 10Z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" />
               <path d="M12 13.2a2.2 2.2 0 1 0 0-4.4 2.2 2.2 0 0 0 0 4.4Z" stroke="currentColor" stroke-width="1.8" />
             </svg>
-            Nearby alerts
+            Cảnh báo gần tôi
           </div>
-          <span class="section-count" id="nearby-radius-label">3km</span>
+          <span class="section-count" id="nearby-radius-label">10km</span>
         </div>
-        <div class="nearby-panel">
+        <div class="alert-section-body">
           <div class="radius-options" id="radius-options">
             <button class="radius-btn" type="button" data-radius="500">500m</button>
-            <button class="radius-btn active" type="button" data-radius="3000">3km</button>
+            <button class="radius-btn" type="button" data-radius="3000">3km</button>
             <button class="radius-btn" type="button" data-radius="5000">5km</button>
+            <button class="radius-btn active" type="button" data-radius="10000">10km</button>
           </div>
           <div class="nearby-actions">
             <button class="toggle-action" id="nearby-toggle" type="button">
-              Enable location alerts
+              Bật cảnh báo theo vị trí
             </button>
           </div>
-          <div class="nearby-status" id="nearby-status">
-            Off. Choose a radius and enable alerts to get notified near your position.
+          <div class="nearby-status" id="nearby-status" role="status" aria-live="polite">
+            Chọn bán kính và bật cảnh báo để nhận thông tin sự cố gần vị trí của bạn.
           </div>
         </div>
       </section>
 
-      <section class="section compact news-section workspace-panel" id="news-section" data-workspace-panel="news" hidden>
+      <section class="section compact news-section workspace-panel" id="news-section" data-workspace-panel="news" role="dialog" aria-modal="true" aria-labelledby="news-feed-title" hidden>
         <div class="section-head">
           <div class="section-title">
             <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
               <path d="M5 5.5h10.5A2.5 2.5 0 0 1 18 8v10.5H6.5A2.5 2.5 0 0 1 4 16V6.5a1 1 0 0 1 1-1Z" stroke="currentColor" stroke-width="1.7" />
               <path d="M18 9h1a1 1 0 0 1 1 1v6.5a2 2 0 0 1-2 2M8 10h6M8 13h6M8 16h3" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" />
             </svg>
-            Situation news
+            <span id="news-feed-title">Tin tức tình huống</span>
           </div>
           <div class="section-actions">
             <span class="section-count" id="news-count">0</span>
@@ -282,7 +287,16 @@
                 <path d="M17.5 3.7v3h-3M6.5 20.3v-3h3" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" />
               </svg>
             </button>
+            <button class="icon-action news-feed-close" id="news-feed-close" type="button" title="Đóng tin tức" aria-label="Đóng tin tức">
+              <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                <path d="M6.5 6.5 17.5 17.5M17.5 6.5 6.5 17.5" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" />
+              </svg>
+            </button>
           </div>
+        </div>
+        <div class="news-type-toggle">
+          <button class="news-tab active" id="news-type-text-btn" type="button">📝 Tin Vắn</button>
+          <button class="news-tab" id="news-type-video-btn" type="button">▶️ Video</button>
         </div>
         <div class="news-tabs" id="news-tabs">
           <button class="news-tab active" type="button" data-news-category="all">All</button>
@@ -290,7 +304,35 @@
           <button class="news-tab" type="button" data-news-category="fire">Fire</button>
           <button class="news-tab" type="button" data-news-category="traffic">Traffic</button>
         </div>
+        <div class="news-filter-toolbar">
+          <div class="filter-input-group">
+            <svg class="search-icon" viewBox="0 0 24 24" fill="none" aria-hidden="true" style="width: 16px; height: 16px;">
+              <circle cx="11" cy="11" r="8" stroke="currentColor" stroke-width="1.8"/>
+              <path d="M21 21l-4.3-4.3" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+            </svg>
+            <input type="text" id="news-search-input" placeholder="Search news..." />
+          </div>
+          <select id="news-source-filter" class="filter-select">
+            <option value="all">All Sources</option>
+            <!-- Source options will be populated dynamically if needed, or left as All -->
+          </select>
+        </div>
         <div class="news-list" id="news-list"></div>
+        <div class="news-list" id="video-news-list" hidden></div>
+        <!-- Video Feed Navigation & Indicator -->
+        <div class="video-feed-controls" id="video-feed-controls" hidden>
+          <button class="feed-nav-btn prev-btn" id="video-feed-prev" type="button" aria-label="Previous video">
+            <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+              <path d="M18 15l-6-6-6 6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+          </button>
+          <div class="feed-indicator" id="video-feed-indicator">1 / 1</div>
+          <button class="feed-nav-btn next-btn" id="video-feed-next" type="button" aria-label="Next video">
+            <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+              <path d="M6 9l6 6 6-6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+          </button>
+        </div>
       </section>
 
       <section class="alert-section workspace-panel" id="alert-section" data-workspace-panel="alerts" hidden>
@@ -301,31 +343,28 @@
               <path d="M12 9v4.7" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" />
               <path d="M12 17.2h.01" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" />
             </svg>
-            Alert log
+            Danh sách cảnh báo
           </div>
           <span class="section-count" id="alert-count">0</span>
         </div>
         <div class="filter-bar" id="filter-bar">
           <button class="filter-btn active" data-filter="all" id="filter-all" type="button">
-            <span>All</span>
+            <span>Tất cả</span>
           </button>
           <button class="filter-btn" data-filter="traffic_jam" id="filter-traffic" type="button">
-            <span>Traffic</span>
+            <span>Ùn tắc</span>
           </button>
           <button class="filter-btn" data-filter="fire" id="filter-fire" type="button">
-            <span>Fire</span>
+            <span>Cháy</span>
           </button>
           <button class="filter-btn" data-filter="flood" id="filter-flood" type="button">
-            <span>Flood</span>
+            <span>Ngập</span>
           </button>
         </div>
         <div class="alert-log" id="alert-log"></div>
       </section>
-    </aside>
 
-    <main class="main-workspace">
-      <section class="camera-workspace workspace-panel" id="camera-workspace" data-workspace-panel="cameras">
-        <section class="section compact main-camera-panel" id="camera-section">
+        <section class="section compact main-camera-panel workspace-panel" data-workspace-panel="cameras" id="camera-section">
           <div class="section-head">
             <div class="section-title">
               <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
@@ -333,9 +372,9 @@
                 <path d="M9.5 6 11 4h2l1.5 2" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" />
                 <path d="M12 14.6a2.6 2.6 0 1 0 0-5.2 2.6 2.6 0 0 0 0 5.2Z" stroke="currentColor" stroke-width="1.7" />
               </svg>
-              Cameras
+              Camera
             </div>
-            <div style="display:flex; gap:8px; align-items:center;">
+            <div style="display:flex; gap:6px; align-items:center;">
               <span class="section-count" id="camera-count">0</span>
               <button class="camera-collapse-toggle" id="camera-collapse-btn" type="button" aria-label="Hide camera list" aria-expanded="true" title="Hide camera list">
                 <svg viewBox="0 0 24 24" fill="none" width="18" height="18">
@@ -348,7 +387,7 @@
             <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
               <path d="m20 20-4.2-4.2M10.8 18a7.2 7.2 0 1 1 0-14.4 7.2 7.2 0 0 1 0 14.4Z" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" />
             </svg>
-            <input id="camera-search" type="search" placeholder="Search camera or area" autocomplete="off" />
+            <input id="camera-search" type="search" placeholder="Tìm camera hoặc khu vực" autocomplete="off" />
           </div>
           <div class="camera-source-tabs" id="camera-source-tabs" aria-label="Camera source">
             <button class="camera-source-tab active" data-camera-source="hcm" type="button">
@@ -361,39 +400,61 @@
             </button>
           </div>
           <div class="camera-filters" id="camera-filters">
-            <button class="cam-filter-chip active" data-filter="all">All</button>
-            <button class="cam-filter-chip" data-filter="alerts">Alerts</button>
-            <button class="cam-filter-chip" data-filter="live">Live</button>
-            <button class="cam-filter-chip" data-filter="offline">Issues</button>
-            <button class="cam-filter-chip" data-filter="unchecked">Unchecked</button>
+            <button class="cam-filter-chip active" data-filter="all">Tất cả</button>
+            <button class="cam-filter-chip" data-filter="alerts">Có cảnh báo</button>
+            <button class="cam-filter-chip" data-filter="live">Đang hoạt động</button>
+            <button class="cam-filter-chip" data-filter="offline">Có lỗi</button>
+            <button class="cam-filter-chip" data-filter="unchecked">Chưa kiểm tra</button>
           </div>
           <div class="scanner-panel" id="scanner-panel">
+            <div class="incident-demo-panel" id="incident-demo-panel" hidden>
+              <div class="incident-demo-heading">
+                <div>
+                  <span>Mô phỏng camera</span>
+                  <strong>Chạy tình huống sự cố</strong>
+                </div>
+                <button class="incident-demo-reset" id="incident-demo-reset" type="button">Đặt lại</button>
+              </div>
+              <div class="incident-demo-actions" aria-label="Recorded camera incident simulations">
+                <button class="fire" type="button" data-dashboard-demo="fire">Cháy</button>
+                <button class="flood" type="button" data-dashboard-demo="flood">Ngập</button>
+                <button class="traffic" type="button" data-dashboard-demo="traffic">Ùn tắc</button>
+                <button class="all" type="button" data-dashboard-demo="all">Chạy cả 3</button>
+              </div>
+              <div class="incident-demo-progress" id="incident-demo-progress" data-tone="idle">
+                <span class="incident-demo-pulse" aria-hidden="true"></span>
+                <span id="incident-demo-progress-copy">Sẵn sàng · 3 camera mô phỏng</span>
+              </div>
+            </div>
             <div class="scanner-row">
               <div>
-                <div class="scanner-state" id="scanner-state">AI scanner idle</div>
-                <div class="scanner-detail" id="scanner-detail">Worker pool is ready.</div>
+                <div class="scanner-state" id="scanner-state">Bộ quét AI đang chờ</div>
+                <div class="scanner-detail" id="scanner-detail">Hệ thống sẵn sàng xử lý camera.</div>
               </div>
-              <button class="toggle-action" id="scanner-toggle" type="button">Start scan</button>
+              <button class="toggle-action" id="scanner-toggle" type="button">Bắt đầu quét</button>
             </div>
             <div class="camera-health-row">
               <div class="health-pill live">
                 <span id="health-live-count">0</span>
-                <small>Live</small>
+                <small>Hoạt động</small>
               </div>
               <div class="health-pill offline">
                 <span id="health-offline-count">0</span>
-                <small>Issues</small>
+                <small>Có lỗi</small>
               </div>
               <div class="health-pill unchecked">
                 <span id="health-unchecked-count">0</span>
-                <small>Unchecked</small>
+                <small>Chưa kiểm tra</small>
               </div>
               <button class="toggle-action health-check-action" id="health-check" type="button">Check health</button>
             </div>
           </div>
           <div class="camera-list" id="camera-list"></div>
         </section>
-        <div class="map-container">
+    </aside>
+
+    <main class="main-workspace">
+      <section class="camera-workspace workspace-panel" id="camera-workspace" data-workspace-panel="cameras">        <div class="map-container">
           <div id="map"></div>
           <div class="map-empty-filter" id="map-empty-filter" hidden>
             <strong>Không có camera phù hợp</strong>
@@ -412,18 +473,35 @@
                 <path d="M9 9h6v6H9V9Z" stroke="currentColor" stroke-width="1.8" />
               </svg>
             </button>
-            <button class="icon-action" id="locate-me-btn" type="button" title="Use my current location" aria-label="Use my current location" aria-pressed="false">
-              <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
-                <path d="M12 21s6-4.7 6-10a6 6 0 1 0-12 0c0 5.3 6 10 6 10Z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" />
-                <path d="M12 13.2a2.2 2.2 0 1 0 0-4.4 2.2 2.2 0 0 0 0 4.4Z" stroke="currentColor" stroke-width="1.8" />
-              </svg>
+            <button class="icon-action has-text enabled" id="locate-me-btn" type="button" title="Toggle nearby filter" aria-label="Toggle nearby filter">
+              <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M12 21s6-4.7 6-10a6 6 0 1 0-12 0c0 5.3 6 10 6 10Z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/><path d="M12 13.2a2.2 2.2 0 1 0 0-4.4 2.2 2.2 0 0 0 0 4.4Z" stroke="currentColor" stroke-width="1.8"/></svg>
+              <span id="locate-me-text">Gần tôi</span>
             </button>
-            <button class="icon-action enabled" id="heatmap-toggle" type="button" title="Toggle traffic heatmap" aria-label="Toggle traffic heatmap" aria-pressed="true">
-              <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
-                <path d="M12 21s6-4.8 6-10a6 6 0 0 0-12 0c0 5.2 6 10 6 10Z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" />
-                <path d="M12 13.5a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5Z" fill="currentColor" opacity=".28" />
-              </svg>
+            <button class="icon-action has-text" id="follow-me-btn" type="button" title="Chế độ lái xe (Tự động bám theo vị trí)">
+              <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10Z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/><path d="M9 12l2 2 4-4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+              <span id="follow-me-text">Lái xe</span>
             </button>
+            <button class="icon-action has-text" id="voice-alert-btn" type="button" title="Cảnh báo bằng giọng nói">
+              <span id="voice-alert-text">🔇 Im lặng</span>
+            </button>
+            <button class="icon-action has-text enabled" id="layer-camera-btn" type="button" title="Bật/tắt lớp Camera">
+              <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M4 8.5A2.5 2.5 0 0 1 6.5 6h11A2.5 2.5 0 0 1 20 8.5v7A2.5 2.5 0 0 1 17.5 18h-11A2.5 2.5 0 0 1 4 15.5v-7Z" stroke="currentColor" stroke-width="1.8"/><path d="M12 14.6a2.6 2.6 0 1 0 0-5.2 2.6 2.6 0 0 0 0 5.2Z" stroke="currentColor" stroke-width="1.8"/></svg>
+              <span id="layer-camera-text">Camera</span>
+            </button>
+            <button class="icon-action has-text enabled" id="layer-alert-btn" type="button" title="Bật/tắt lớp Cảnh báo">
+              <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M12 3.5 21 20H3L12 3.5Z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/><path d="M12 9v4.7" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><path d="M12 17.2h.01" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/></svg>
+              <span id="layer-alert-text">Cảnh báo</span>
+            </button>
+            <button class="icon-action has-text enabled" id="heatmap-toggle" type="button" title="Bật/tắt lớp Heatmap">
+              <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18Z" stroke="currentColor" stroke-width="1.8"/><path d="M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6Z" stroke="currentColor" stroke-width="1.8"/><path d="M12 18v-1.5M12 7.5V6M7.5 12H6M18 12h-1.5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
+              <span id="layer-heatmap-text">Heatmap</span>
+            </button>
+            <select id="time-range-select" class="news-source-select">
+              <option value="1h">🕒 1 Giờ</option>
+              <option value="24h" selected>🕒 24 Giờ</option>
+              <option value="7d">🕒 7 Ngày</option>
+              <option value="all">🕒 Tất cả</option>
+            </select>
             <button class="icon-action" id="route-filter-clear" type="button" title="Show all cameras" aria-label="Show all cameras" hidden>
               <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
                 <path d="M7 7h10M7 12h7M7 17h4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" />
@@ -449,23 +527,50 @@
         <div class="toolbar-panel toolbar-metrics">
           <div class="metric-chip">
             <div class="metric-value" id="metric-active">0</div>
-            <div class="metric-label">Active cams</div>
+            <div class="metric-label">Camera hoạt động</div>
           </div>
           <div class="metric-chip">
-            <div class="metric-value" id="metric-last-alert">None</div>
-            <div class="metric-label">Active type</div>
+            <div class="metric-value" id="metric-last-alert">Không có</div>
+            <div class="metric-label">Loại sự cố</div>
           </div>
         </div>
       </div>
           <aside class="map-insight">
         <div class="map-insight-title">
-          <span>Incident focus</span>
+          <span>Sự cố đang theo dõi</span>
           <span class="section-count" id="incident-focus-count">0</span>
         </div>
         <div class="map-insight-body" id="incident-focus-copy">
-          Waiting for incoming detections from camera modules.
+          Đang chờ kết quả nhận diện từ hệ thống camera.
         </div>
           </aside>
+          <div id="navigation-banner" class="navigation-banner" hidden>
+            <div class="nav-banner-content">
+              <div class="nav-icon" id="nav-next-icon">
+                <!-- SVG Icon will be injected here -->
+              </div>
+              <div class="nav-info">
+                <div class="nav-distance" id="nav-distance">-- m</div>
+                <div class="nav-instruction" id="nav-instruction">--</div>
+              </div>
+            </div>
+            <button id="nav-stop-btn" class="nav-stop-btn">Kết thúc</button>
+          </div>
+        </div>
+        <div id="route-directions-panel" class="route-directions-panel" hidden>
+          <div class="route-directions-header">
+            <h3>Chỉ đường chi tiết</h3>
+            <button id="close-directions-btn" class="close-directions-btn">&times;</button>
+          </div>
+          <div class="route-directions-body" id="route-directions-body">
+            <!-- Directions injected here -->
+          </div>
+          <div class="route-directions-footer">
+            <button id="start-navigation-btn" class="start-navigation-btn">
+              <svg viewBox="0 0 24 24" width="20" height="20" stroke="currentColor" stroke-width="2" fill="none"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+              Bắt đầu điều hướng
+            </button>
+          </div>
         </div>
       </section>
       <!-- AI Chat Widget -->
@@ -630,12 +735,31 @@
     </div>
   </div>
 
+  <div class="video-modal" id="video-news-modal" role="dialog" aria-modal="true" aria-labelledby="video-news-title">
+    <div class="video-modal-content">
+      <div class="modal-header">
+        <h2 class="modal-title">
+          <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M15 10l4.5-3.5v11L15 14v-4Z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/><rect x="4.5" y="6.5" width="10.5" height="11" rx="2.5" stroke="currentColor" stroke-width="1.8"/></svg>
+          Phóng sự / Thời sự
+        </h2>
+        <button class="modal-close" id="video-news-close" type="button" title="Close" aria-label="Close">
+          <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M18 6L6 18M6 6l12 12" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
+        </button>
+      </div>
+      <div class="video-modal-body">
+        <div class="video-placeholder" id="video-news-player-container">
+          <iframe id="video-news-iframe" title="Video tin tức" width="100%" height="100%" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowfullscreen></iframe>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <div class="video-modal snapshot-modal" id="alert-snapshot-modal" role="dialog" aria-modal="true" aria-labelledby="alert-snapshot-title">
     <div class="modal-content snapshot-modal-content">
       <div class="modal-header">
         <div class="modal-title">
-          <strong id="alert-snapshot-title">Incident snapshot</strong>
-          <span class="live-badge" id="alert-snapshot-meta">Detection frame</span>
+          <strong id="alert-snapshot-title">Ảnh phát hiện sự cố</strong>
+          <span class="live-badge" id="alert-snapshot-meta">Khung hình nhận diện</span>
         </div>
         <button class="close-modal" id="alert-snapshot-close" type="button" aria-label="Close snapshot">
           <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
@@ -644,14 +768,15 @@
         </button>
       </div>
       <div class="snapshot-shell">
-        <img id="alert-snapshot-image" src="" alt="Incident detection snapshot" />
+        <img id="alert-snapshot-image" src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7" alt="CCTV Snapshot" />
+        <div class="incident-watermark" id="snapshot-incident-watermark" hidden></div>
       </div>
       <div class="snapshot-footer">
         <div>
           <strong id="alert-snapshot-camera">Camera</strong>
           <span id="alert-snapshot-time">--</span>
         </div>
-        <button class="secondary-action" id="alert-snapshot-watch" type="button">Watch live</button>
+        <button class="secondary-action" id="alert-snapshot-watch" type="button">Xem camera</button>
       </div>
     </div>
   </div>
@@ -677,25 +802,27 @@
               <path d="M9.4 6 10.9 4h2.2l1.5 2" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" />
               <path d="M12 14.6a2.6 2.6 0 1 0 0-5.2 2.6 2.6 0 0 0 0 5.2Z" stroke="currentColor" stroke-width="1.8" />
             </svg>
-            <div class="stream-placeholder-title" id="stream-placeholder-title">Waiting for stream</div>
-            <div class="stream-placeholder-copy" id="stream-placeholder-copy">The AI video proxy will appear here when the camera feed is available.</div>
+            <div class="stream-placeholder-title" id="stream-placeholder-title">Đang chờ luồng camera</div>
+            <div class="stream-placeholder-copy" id="stream-placeholder-copy">Video AI sẽ xuất hiện khi camera sẵn sàng.</div>
           </div>
         </div>
-        <img id="video-stream" src="" alt="AI processed camera stream" />
+        <img id="video-stream" src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7" alt="Camera Stream" />
+        <video id="recorded-demo-stream" title="Recorded demo camera stream" autoplay loop muted playsinline controls hidden></video>
         <iframe id="youtube-stream" title="YouTube camera stream" allow="autoplay; encrypted-media; picture-in-picture; fullscreen" allowfullscreen hidden></iframe>
+        <div class="incident-watermark" id="video-incident-watermark" hidden></div>
       </div>
       <div class="camera-history-panel" id="camera-history-panel">
         <div class="camera-history-item">
           <strong id="history-total">0</strong>
-          <span>24h alerts</span>
+          <span>Cảnh báo 24 giờ</span>
         </div>
         <div class="camera-history-item">
           <strong id="history-traffic">0</strong>
-          <span>Traffic</span>
+          <span>Ùn tắc</span>
         </div>
         <div class="camera-history-item">
           <strong id="history-volume">--</strong>
-          <span>Avg vehicles</span>
+          <span>Số xe trung bình</span>
         </div>
         <div class="camera-history-item">
           <strong id="history-stability">Unchecked</strong>
@@ -713,6 +840,6 @@
       : "";
     document.write('<script src="' + socketBase + '/socket.io/socket.io.js"><\/script>');
   </script>
-  <script src="./js/app.js?v=20260604-1"></script>
+  <script src="./js/app.js?v=20260630-auto-demo-scan-v3"></script>
 </body>
 </html>

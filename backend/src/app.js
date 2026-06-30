@@ -13,6 +13,7 @@ const scannerRouter = require('./routes/scanner');
 const trafficRouter = require('./routes/traffic');
 const chatRouter    = require('./routes/chat');
 const cameraContributionsRouter = require('./routes/cameraContributions');
+const youtubeRouter = require('./routes/youtube');
 
 const app = express();
 
@@ -36,6 +37,7 @@ app.use('/api/scanner', scannerRouter);
 app.use('/api/traffic', trafficRouter);
 app.use('/api/chat',    chatRouter);
 app.use('/api/camera-contributions', cameraContributionsRouter);
+app.use('/api/youtube', youtubeRouter);
 
 // --- Health check ---
 app.get('/api/health', (req, res) => {

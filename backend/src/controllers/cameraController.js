@@ -17,6 +17,13 @@ const {
 } = require('../services/cameraHealthService');
 const trafficVolumeService = require('../services/trafficVolumeService');
 
+const FIRE_DEMO_VIDEO_URL = '/assets/demo/perry-fire.webm';
+const FLOOD_DEMO_VIDEO_URL = '/assets/demo/flood-intersection.webm';
+const TRAFFIC_DEMO_VIDEO_URL = '/assets/demo/rush-hour-traffic.webm';
+const FIRE_DEMO_SOURCE_URL = 'https://upload.wikimedia.org/wikipedia/commons/transcoded/1/1a/Perry_Fire_Video_%2843953516241%29.webm/Perry_Fire_Video_%2843953516241%29.webm.480p.vp9.webm';
+const FLOOD_DEMO_SOURCE_URL = 'https://upload.wikimedia.org/wikipedia/commons/transcoded/b/b2/Bahrain_Flooding_2024.webm/Bahrain_Flooding_2024.webm.480p.vp9.webm';
+const TRAFFIC_DEMO_SOURCE_URL = 'https://upload.wikimedia.org/wikipedia/commons/transcoded/a/a3/Video_Codec_Test_rush_hour_1080p25.y4m.webm/Video_Codec_Test_rush_hour_1080p25.y4m.webm.480p.vp9.webm';
+
 // Demo cameras used when MongoDB is not available
 const DEMO_CAMERAS = [
   {
@@ -25,6 +32,67 @@ const DEMO_CAMERAS = [
     location: { lat: 11.9444, lng: 108.4441, address: 'USB Camera - Da Lat' },
     max_red_light_time: 10, // Lowered for quick testing
     active: true,
+  },
+  {
+    camera_id: 'DEMO_FIRE_CAM_001',
+    name: 'Camera mô phỏng — Sự cố cháy',
+    location: {
+      lat: 10.7731,
+      lng: 106.7048,
+      address: 'Quận 1 · Video mô phỏng sự cố cháy',
+    },
+    active: true,
+    source: 'simulated_demo',
+    stream_type: 'recorded_demo',
+    stream_url: FIRE_DEMO_VIDEO_URL,
+    metadata: {
+      demo: true,
+      recorded_footage: true,
+      expected_event_type: 'fire',
+      attribution: 'BLM Nevada · CC BY 2.0',
+      attribution_url: 'https://commons.wikimedia.org/wiki/File:Perry_Fire_Video_(43953516241).webm',
+      source_url: FIRE_DEMO_SOURCE_URL,
+    },
+  },
+  {
+    camera_id: 'DEMO_FLOOD_CAM_001',
+    name: 'Camera mô phỏng — Tuyến đường ngập',
+    location: {
+      lat: 10.7570,
+      lng: 106.7015,
+      address: 'Quận 4 · Video mô phỏng ngập lụt',
+    },
+    active: true,
+    source: 'simulated_demo',
+    stream_type: 'recorded_demo',
+    stream_url: FLOOD_DEMO_VIDEO_URL,
+    metadata: {
+      demo: true,
+      recorded_footage: true,
+      expected_event_type: 'flood',
+      attribution: 'Droodkin · CC BY-SA 4.0',
+      source_url: FLOOD_DEMO_SOURCE_URL,
+    },
+  },
+  {
+    camera_id: 'DEMO_TRAFFIC_CAM_001',
+    name: 'Camera mô phỏng — Ùn tắc giờ cao điểm',
+    location: {
+      lat: 10.7913,
+      lng: 106.6905,
+      address: 'Quận 3 · Video mô phỏng ùn tắc giao thông',
+    },
+    active: true,
+    source: 'simulated_demo',
+    stream_type: 'recorded_demo',
+    stream_url: TRAFFIC_DEMO_VIDEO_URL,
+    metadata: {
+      demo: true,
+      recorded_footage: true,
+      expected_event_type: 'traffic_jam',
+      attribution: 'Taurus Media Technik · CC0 1.0',
+      source_url: TRAFFIC_DEMO_SOURCE_URL,
+    },
   },
   {
     camera_id: 'CAM_001',
@@ -62,6 +130,49 @@ function mergeCameraLists(primary, extras) {
     seen.add(camera.camera_id);
     return true;
   });
+}
+
+const DEMO_CAMERA_LOCATIONS = {
+  hanoi: {
+    DEMO_FIRE_CAM_001: {
+      lat: 21.0314,
+      lng: 105.8523,
+      address: 'Hoàn Kiếm · Video mô phỏng sự cố cháy',
+    },
+    DEMO_FLOOD_CAM_001: {
+      lat: 21.0412,
+      lng: 105.8346,
+      address: 'Ba Đình · Video mô phỏng ngập lụt',
+    },
+    DEMO_TRAFFIC_CAM_001: {
+      lat: 21.0127,
+      lng: 105.8419,
+      address: 'Hai Bà Trưng · Video mô phỏng ùn tắc giao thông',
+    },
+  },
+};
+
+function getSimulatedDemoCameras(req, city = 'hcm') {
+  const explicitlyRequested = ['1', 'true', 'yes'].includes(
+    String(req?.query?.include_demo || '').toLowerCase()
+  );
+  const enabled = explicitlyRequested || process.env.ENABLE_SIMULATED_CAMERA === 'true' || process.env.NODE_ENV !== 'production';
+  if (!enabled) return [];
+
+  return buildSimulatedDemoCameras(city);
+}
+
+function buildSimulatedDemoCameras(city = 'hcm') {
+  return DEMO_CAMERAS
+    .filter((camera) => camera.source === 'simulated_demo')
+    .map((camera) => ({
+      ...camera,
+      location: DEMO_CAMERA_LOCATIONS[city]?.[camera.camera_id] || camera.location,
+      metadata: {
+        ...(camera.metadata || {}),
+        demo_city: city,
+      },
+    }));
 }
 
 function cleanString(value, maxLength = 500) {
@@ -140,7 +251,10 @@ async function getCameras(req, res) {
     if (req.query.source === 'hcm') {
       const communityCameras = await getApprovedCommunityCameras();
       return res.json({
-        cameras: mergeCameraLists(getHcmCameras(req.query.limit), communityCameras),
+        cameras: mergeCameraLists(
+          [...getSimulatedDemoCameras(req), ...getHcmCameras(req.query.limit)],
+          communityCameras
+        ),
         source: 'hcm_traffic_portal_with_community',
       });
     }
@@ -178,7 +292,10 @@ async function getHcmTrafficCameras(req, res) {
   try {
     const communityCameras = await getApprovedCommunityCameras();
     return res.json({
-      cameras: mergeCameraLists(getHcmCameras(req.query.limit), communityCameras),
+      cameras: mergeCameraLists(
+        [...getSimulatedDemoCameras(req, 'hcm'), ...getHcmCameras(req.query.limit)],
+        communityCameras
+      ),
       source: 'hcm_traffic_portal_with_community',
     });
   } catch (err) {
@@ -198,7 +315,7 @@ async function getHanoiTrafficCameras(req, res) {
       refresh: req.query.refresh === 'true',
     });
     return res.json({
-      cameras,
+      cameras: mergeCameraLists(getSimulatedDemoCameras(req, 'hanoi'), cameras),
       source: 'hanoi_video_wall',
       stream_mode: 'wss_video',
       stream_playback: 'backend_mjpeg_proxy',
@@ -538,6 +655,7 @@ async function upsertCamera(req, res) {
 
 module.exports = {
   DEMO_CAMERAS,
+  buildSimulatedDemoCameras,
   checkCameraHealthStatus,
   getCameraHistory,
   getCameraSnapshot,

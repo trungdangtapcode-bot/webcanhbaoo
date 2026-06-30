@@ -110,6 +110,7 @@ FLOOD_ENABLE_REFLECTIVE_MASK = os.getenv("DETECTOR_FLOOD_ENABLE_REFLECTIVE_MASK"
 
 # ── Traffic thresholds ───────────────────────────────────────────────────────
 TRAFFIC_MIN_VEHICLES = int(os.getenv("DETECTOR_TRAFFIC_MIN_VEHICLES", "21"))
+DEMO_TRAFFIC_MIN_VEHICLES = int(os.getenv("DETECTOR_DEMO_TRAFFIC_MIN_VEHICLES", "10"))
 # Minimum vehicle density (vehicles per 10 000 px²) to confirm jam
 TRAFFIC_MIN_DENSITY = float(os.getenv("DETECTOR_TRAFFIC_MIN_DENSITY", "0.015"))
 # Displacement thresholds (pixels) for speed classification between frames
@@ -190,6 +191,7 @@ class TrafficStateTracker:
         frame_gray: np.ndarray,
         current_boxes: List[List[float]],
         vehicle_count: int,
+        min_vehicles: int = TRAFFIC_MIN_VEHICLES,
     ) -> Dict[str, Any]:
         """
         So sánh frame hiện tại với frame trước, trả về thông tin tốc độ.
@@ -250,7 +252,7 @@ class TrafficStateTracker:
             speed_class = "flowing"
 
         # ─── Temporal confirmation logic ───
-        is_congested = speed_class in ("stopped", "slow") and vehicle_count >= TRAFFIC_MIN_VEHICLES
+        is_congested = speed_class in ("stopped", "slow") and vehicle_count >= min_vehicles
 
         if is_congested:
             self.jam_counter += 1
@@ -980,7 +982,11 @@ def detect_flood(frame: np.ndarray) -> Dict[str, Any] | None:
 # Traffic Detection (upgraded with temporal analysis)
 # ─────────────────────────────────────────────────────────────────────────────
 
-def detect_traffic(frame: np.ndarray, camera_id: str = "unknown") -> Dict[str, Any] | None:
+def detect_traffic(
+    frame: np.ndarray,
+    camera_id: str = "unknown",
+    min_vehicles: int = TRAFFIC_MIN_VEHICLES,
+) -> Dict[str, Any] | None:
     """
     Nhận diện ùn tắc giao thông với temporal analysis:
     1. YOLOv8 detect vehicles
@@ -1003,7 +1009,9 @@ def detect_traffic(frame: np.ndarray, camera_id: str = "unknown") -> Dict[str, A
     # ─── Temporal analysis via TrafficStateTracker ───
     tracker = _traffic_trackers[camera_id]
     frame_gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-    tracking_info = tracker.update(frame_gray, vehicle_boxes, vehicle_count)
+    tracking_info = tracker.update(
+        frame_gray, vehicle_boxes, vehicle_count, min_vehicles=min_vehicles
+    )
 
     avg_displacement = tracking_info["avg_displacement"]
     speed_class = tracking_info["speed_class"]
@@ -1019,23 +1027,23 @@ def detect_traffic(frame: np.ndarray, camera_id: str = "unknown") -> Dict[str, A
     )
 
     # ─── Bypass temporal tracking for static demo images ───
-    if camera_id in ("uploaded_image_demo", "browser_usb_demo") and vehicle_count >= TRAFFIC_MIN_VEHICLES and vehicle_density >= TRAFFIC_MIN_DENSITY:
+    if camera_id in ("uploaded_image_demo", "browser_usb_demo") and vehicle_count >= min_vehicles and vehicle_density >= TRAFFIC_MIN_DENSITY:
         is_jammed = True
         speed_class = "stopped"
 
     # ─── Quyết định severity dựa trên temporal state ───
     if is_jammed:
         # Đã confirmed jam qua temporal analysis
-        if speed_class == "stopped" and vehicle_count >= TRAFFIC_MIN_VEHICLES:
+        if speed_class == "stopped" and vehicle_count >= min_vehicles:
             severity = "critical"
         elif speed_class == "stopped":
             severity = "high"
         else:
             severity = "high"
-    elif speed_class == "slow" and vehicle_count >= TRAFFIC_MIN_VEHICLES:
+    elif speed_class == "slow" and vehicle_count >= min_vehicles:
         # Chưa confirmed jam nhưng đang chậm → cảnh báo medium
         severity = "medium"
-    elif vehicle_count >= TRAFFIC_MIN_VEHICLES and vehicle_density >= TRAFFIC_MIN_DENSITY:
+    elif vehicle_count >= min_vehicles and vehicle_density >= TRAFFIC_MIN_DENSITY:
         # Nhiều xe nhưng có thể đang chạy → normal traffic volume
         severity = "normal"
     else:
@@ -1044,6 +1052,7 @@ def detect_traffic(frame: np.ndarray, camera_id: str = "unknown") -> Dict[str, A
     # ─── Build metadata ───
     metadata = {
         "vehicle_count": vehicle_count,
+        "min_vehicle_threshold": min_vehicles,
         "vehicle_density": round(vehicle_density, 4),
         "avg_displacement_px": avg_displacement,
         "smoothed_speed_px": tracking_info.get("smoothed_speed", 0.0),
@@ -1587,8 +1596,15 @@ def detect(
     frame: np.ndarray,
     camera_id: str = "unknown",
     diagnostics: Optional[List[Dict[str, Any]]] = None,
+    demo_expected_event_type: Optional[str] = None,
 ) -> List[Dict[str, Any]]:
     detections = []
+    allow_fire_local_fallback = demo_expected_event_type == "fire" or (
+        FIRE_ALLOW_LOCAL_FALLBACK and not FIRE_REQUIRE_AI_VERIFICATION
+    )
+    allow_flood_local_fallback = demo_expected_event_type == "flood" or (
+        FLOOD_ALLOW_LOCAL_FALLBACK and not FLOOD_REQUIRE_AI_VERIFICATION
+    )
 
     # 1. Fire Detection (Fire/Smoke YOLO first, then Groq verify).
     fire_result = detect_fire_yolo(frame, camera_id)
@@ -1624,9 +1640,10 @@ def detect(
                 ai_conf = ai_verify.get("confidence", 0.8)
                 fire_result["confidence"] = round(max(local_conf * 0.6 + ai_conf * 0.4, 0.65), 3)
                 detections.append(fire_result)
-            elif strong_local_fire and FIRE_ALLOW_LOCAL_FALLBACK and not FIRE_REQUIRE_AI_VERIFICATION:
+            elif strong_local_fire and allow_fire_local_fallback:
                 fire_result["metadata"]["fallback_reason"] = "ai_unavailable"
                 fire_result["metadata"]["local_fallback"] = True
+                fire_result["metadata"]["simulated_demo_fallback"] = demo_expected_event_type == "fire"
                 detections.append(fire_result)
             else:
                 log.info(
@@ -1637,7 +1654,7 @@ def detect(
                 )
         else:
             ai_status = ai_verify.get("status", "unavailable")
-            if ai_status != "ok" and strong_local_fire and FIRE_ALLOW_LOCAL_FALLBACK and not FIRE_REQUIRE_AI_VERIFICATION:
+            if ai_status != "ok" and strong_local_fire and allow_fire_local_fallback:
                 fire_result["metadata"]["verified_by_ai"] = False
                 fire_result["metadata"]["ai_provider"] = AI_PROVIDER
                 fire_result["metadata"]["ai_model"] = AI_MODEL
@@ -1645,6 +1662,7 @@ def detect(
                 fire_result["metadata"]["ai_reason"] = ai_verify["reason"]
                 fire_result["metadata"]["fallback_reason"] = "ai_unavailable_local_demo"
                 fire_result["metadata"]["local_fallback"] = True
+                fire_result["metadata"]["simulated_demo_fallback"] = demo_expected_event_type == "fire"
                 detections.append(fire_result)
             else:
                 log.info("AI provider rejected the fire (reason: %s).", ai_verify["reason"])
@@ -1667,8 +1685,7 @@ def detect(
                 (
                     ai_verify.get("status") != "ok" and
                     strong_local_flood and
-                    FLOOD_ALLOW_LOCAL_FALLBACK and
-                    not FLOOD_REQUIRE_AI_VERIFICATION
+                    allow_flood_local_fallback
                 )
             ),
             "candidate": flood_result,
@@ -1693,9 +1710,10 @@ def detect(
                 flood_result["confidence"] = round(max(local_conf * 0.6 + ai_conf * 0.4, 0.65), 3)
                 detections.append(flood_result)
                 flood_diagnostic["accepted"] = True
-            elif strong_local_flood and FLOOD_ALLOW_LOCAL_FALLBACK and not FLOOD_REQUIRE_AI_VERIFICATION:
+            elif strong_local_flood and allow_flood_local_fallback:
                 flood_result["metadata"]["fallback_reason"] = "ai_unavailable_strong_local_flood"
                 flood_result["metadata"]["local_fallback"] = True
+                flood_result["metadata"]["simulated_demo_fallback"] = demo_expected_event_type == "flood"
                 detections.append(flood_result)
             else:
                 flood_result["metadata"]["fallback_reason"] = (
@@ -1711,7 +1729,7 @@ def detect(
                 )
         else:
             ai_status = ai_verify.get("status", "unavailable")
-            if ai_status != "ok" and strong_local_flood and FLOOD_ALLOW_LOCAL_FALLBACK and not FLOOD_REQUIRE_AI_VERIFICATION:
+            if ai_status != "ok" and strong_local_flood and allow_flood_local_fallback:
                 flood_result["metadata"]["verified_by_ai"] = False
                 flood_result["metadata"]["ai_provider"] = AI_PROVIDER
                 flood_result["metadata"]["ai_model"] = AI_MODEL
@@ -1719,6 +1737,7 @@ def detect(
                 flood_result["metadata"]["ai_reason"] = ai_verify["reason"]
                 flood_result["metadata"]["fallback_reason"] = "ai_unavailable_strong_local_flood"
                 flood_result["metadata"]["local_fallback"] = True
+                flood_result["metadata"]["simulated_demo_fallback"] = demo_expected_event_type == "flood"
                 detections.append(flood_result)
                 flood_diagnostic["accepted"] = True
             else:
@@ -1727,7 +1746,14 @@ def detect(
             diagnostics.append(flood_diagnostic)
 
     # 2. Traffic Detection
-    traffic_result = detect_traffic(frame, camera_id)
+    traffic_min_vehicles = (
+        DEMO_TRAFFIC_MIN_VEHICLES
+        if demo_expected_event_type == "traffic_jam"
+        else TRAFFIC_MIN_VEHICLES
+    )
+    traffic_result = detect_traffic(
+        frame, camera_id, min_vehicles=traffic_min_vehicles
+    )
 
     if traffic_result:
         # YOLO available — use temporal analysis result
@@ -1855,8 +1881,18 @@ class DetectorHandler(BaseHTTPRequestHandler):
             frame = decode_frame(payload.get("image_base64", ""))
             camera_id = payload.get("camera", {}).get("camera_id", "unknown")
             is_demo = bool(payload.get("metadata", {}).get("demo"))
+            is_simulated_source = bool(payload.get("metadata", {}).get("simulated_source"))
+            demo_expected_event_type = (
+                str(payload.get("metadata", {}).get("expected_event_type") or "")
+                if is_simulated_source else None
+            )
             diagnostics: Optional[List[Dict[str, Any]]] = [] if is_demo else None
-            detections = detect(frame, camera_id, diagnostics=diagnostics)
+            detections = detect(
+                frame,
+                camera_id,
+                diagnostics=diagnostics,
+                demo_expected_event_type=demo_expected_event_type,
+            )
             log.info("%s -> %d detections", camera_id, len(detections))
             response_payload: Dict[str, Any] = {"detections": detections}
             if diagnostics is not None:
@@ -1875,7 +1911,7 @@ def main():
     load_fire_yolo()
     server = ThreadingHTTPServer((HOST, PORT), DetectorHandler)
     log.info("Detector API listening on http://%s:%s", HOST, PORT)
-    log.info("Using AI_API_KEY: %s...", AI_API_KEY[:10])
+    log.info("AI provider configured: %s", bool(AI_API_KEY))
     log.info("Use AI_DETECTOR_URL=http://%s:%s/detect in backend", HOST, PORT)
     log.info(
         "Traffic config: jam_confirm=%d frames, speed_stopped=%.1fpx, "

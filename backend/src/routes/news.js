@@ -1,5 +1,5 @@
 const express = require('express');
-const { getCategories, getNews } = require('../services/newsService');
+const { getCategories, getNews, getVideoNews } = require('../services/newsService');
 
 const router = express.Router();
 
@@ -17,6 +17,17 @@ router.get('/', async (req, res, next) => {
     const payload = await getNews({
       category: req.query.category,
       limit: req.query.limit,
+      refresh: req.query.refresh === '1' || req.query.refresh === 'true',
+    });
+    res.json(payload);
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.get('/videos', async (req, res, next) => {
+  try {
+    const payload = await getVideoNews({
       refresh: req.query.refresh === '1' || req.query.refresh === 'true',
     });
     res.json(payload);

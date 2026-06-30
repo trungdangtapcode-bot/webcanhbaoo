@@ -1,6 +1,10 @@
 const Event = require('../models/Event');
 const Camera = require('../models/Camera');
+const path = require('path');
+const { execFile } = require('child_process');
+const { promisify } = require('util');
 const { isDatabaseConnected } = require('../config/database');
+const { buildSimulatedDemoCameras } = require('../controllers/cameraController');
 const alertService = require('./alertService');
 const { getCachedHealth } = require('./cameraHealthService');
 const { getPersistedEventImage } = require('./eventImagePolicy');
@@ -12,6 +16,24 @@ const { ensureHanoiProxyStarted, getProxyBaseUrl } = require('./hanoiProxyServic
 
 const VALID_EVENT_TYPES = new Set(['traffic_jam', 'traffic_volume', 'fire', 'flood']);
 const HANOI_SNAPSHOT_TIMEOUT_MS = parsePositiveInt(process.env.HANOI_SNAPSHOT_TIMEOUT_MS, 18000);
+const execFileAsync = promisify(execFile);
+const DEMO_VIDEO_CONFIG = {
+  DEMO_FIRE_CAM_001: {
+    durationSeconds: 12.5,
+    file: 'perry-fire.webm',
+    frameStepSeconds: 2.2,
+  },
+  DEMO_FLOOD_CAM_001: {
+    durationSeconds: 8.1,
+    file: 'flood-intersection.webm',
+    frameStepSeconds: 1.4,
+  },
+  DEMO_TRAFFIC_CAM_001: {
+    durationSeconds: 19.9,
+    file: 'rush-hour-traffic.webm',
+    frameStepSeconds: 1,
+  },
+};
 
 function parsePositiveInt(value, fallback) {
   const parsed = Number.parseInt(value, 10);
@@ -28,6 +50,7 @@ const defaults = {
   concurrency: parsePositiveInt(process.env.SCANNER_CONCURRENCY, 8),
   detectorUrl: process.env.AI_DETECTOR_URL || '',
   detectorTimeoutMs: parsePositiveInt(process.env.SCANNER_DETECT_TIMEOUT_MS, 20000),
+  demoIntervalMs: parsePositiveInt(process.env.SCANNER_DEMO_INTERVAL_MS, 5000),
   failureCooldownMs: parsePositiveInt(process.env.SCANNER_FAILURE_COOLDOWN_MS, 60000),
   frameTimeoutMs: parsePositiveInt(process.env.SCANNER_FRAME_TIMEOUT_MS, 8000),
   intervalMs: parsePositiveInt(process.env.SCANNER_INTERVAL_MS, 1000),
@@ -42,6 +65,9 @@ const state = {
   cameraStats: new Map(),
   config: { ...defaults },
   cursor: 0,
+  demoScanning: false,
+  demoTimer: null,
+  lastDemoRun: null,
   lastStrategy: null,
   lastRun: null,
   metrics: {
@@ -64,6 +90,7 @@ function publicConfig() {
     concurrency: state.config.concurrency,
     detectorConfigured: Boolean(state.config.detectorUrl),
     detectorTimeoutMs: state.config.detectorTimeoutMs,
+    demoIntervalMs: state.config.demoIntervalMs,
     failureCooldownMs: state.config.failureCooldownMs,
     frameTimeoutMs: state.config.frameTimeoutMs,
     intervalMs: state.config.intervalMs,
@@ -83,6 +110,7 @@ function getStatus() {
     activeWorkers: state.activeWorkers,
     config: publicConfig(),
     lastRun: state.lastRun,
+    lastDemoRun: state.lastDemoRun,
     lastStrategy: state.lastStrategy,
     metrics: {
       ...state.metrics,
@@ -96,6 +124,7 @@ function getStatus() {
     queueLength: state.queueLength,
     running: state.running,
     scanning: state.scanning,
+    demoScanning: state.demoScanning,
     startedAt: state.startedAt,
   };
 }
@@ -106,6 +135,7 @@ function normalizeStartOptions(options = {}) {
     concurrency: parsePositiveInt(options.concurrency, state.config.concurrency),
     detectorUrl: typeof options.detectorUrl === 'string' ? options.detectorUrl : state.config.detectorUrl,
     detectorTimeoutMs: parsePositiveInt(options.detectorTimeoutMs, state.config.detectorTimeoutMs),
+    demoIntervalMs: parsePositiveInt(options.demoIntervalMs, state.config.demoIntervalMs),
     failureCooldownMs: parsePositiveInt(options.failureCooldownMs, state.config.failureCooldownMs),
     frameTimeoutMs: parsePositiveInt(options.frameTimeoutMs, state.config.frameTimeoutMs),
     intervalMs: parsePositiveInt(options.intervalMs, state.config.intervalMs),
@@ -184,6 +214,11 @@ function scoreCamera(camera, activeCameraIds, total, index, now = Date.now()) {
   const roundRobinDistance = (index - state.cursor + total) % total;
   let score = Math.max(total - roundRobinDistance, 0) / Math.max(total, 1);
   const reasons = ['round_robin'];
+
+  if (camera.source === 'simulated_demo') {
+    score += 1000;
+    reasons.push('simulated_demo');
+  }
 
   if (runtime.cooldownUntil && runtime.cooldownUntil > now) {
     score -= 500;
@@ -270,15 +305,15 @@ function selectPriorityBatch(cameras, limit) {
 
 async function getAllSourceCameras() {
   if (state.config.source === 'hcm') {
-    return getHcmCameras();
+    return [...buildSimulatedDemoCameras('hcm'), ...getHcmCameras()];
   }
 
   if (state.config.source === 'hanoi') {
-    return getHanoiCameras();
+    return [...buildSimulatedDemoCameras('hanoi'), ...(await getHanoiCameras())];
   }
 
   if (state.config.source === 'all') {
-    return [...getHcmCameras(), ...(await getHanoiCameras())];
+    return [...buildSimulatedDemoCameras('hcm'), ...getHcmCameras(), ...(await getHanoiCameras())];
   }
 
   if (isDatabaseConnected()) {
@@ -332,7 +367,54 @@ async function fetchHanoiFrame(camera) {
   };
 }
 
+async function fetchSimulatedDemoFrame(camera) {
+  const config = DEMO_VIDEO_CONFIG[camera.camera_id];
+  if (!config) throw new Error(`No recorded demo source configured for ${camera.camera_id}`);
+
+  const runtime = getCameraRuntimeStats(camera.camera_id);
+  const scanIndex = runtime.successes + runtime.failures;
+  const seekSeconds = (scanIndex * config.frameStepSeconds) % config.durationSeconds;
+  const inputPath = path.join(__dirname, '../../../frontend/assets/demo', config.file);
+  const { stdout } = await execFileAsync('ffmpeg', [
+    '-hide_banner',
+    '-loglevel', 'error',
+    '-ss', seekSeconds.toFixed(2),
+    '-i', inputPath,
+    '-frames:v', '1',
+    '-vf', 'scale=min(960\\,iw):-2',
+    '-pix_fmt', 'yuvj420p',
+    '-strict', 'unofficial',
+    '-f', 'image2pipe',
+    '-vcodec', 'mjpeg',
+    'pipe:1',
+  ], {
+    encoding: 'buffer',
+    maxBuffer: 5 * 1024 * 1024,
+    timeout: state.config.frameTimeoutMs,
+  });
+
+  if (!Buffer.isBuffer(stdout) || !stdout.length) {
+    throw new Error(`FFmpeg returned an empty frame for ${camera.camera_id}`);
+  }
+
+  return {
+    buffer: stdout,
+    contentType: 'image/jpeg',
+    metadata: {
+      demo: true,
+      expected_event_type: camera.metadata?.expected_event_type,
+      frame_source: 'recorded_demo_video',
+      seek_seconds: seekSeconds,
+      simulated_source: true,
+    },
+  };
+}
+
 async function fetchCameraFrame(camera) {
+  if (camera.source === 'simulated_demo' || camera.stream_type === 'recorded_demo') {
+    return fetchSimulatedDemoFrame(camera);
+  }
+
   if (camera.source === 'hanoi_video_wall' || camera.stream_type === 'wss_video') {
     return fetchHanoiFrame(camera);
   }
@@ -392,7 +474,12 @@ async function detectFrame(camera, frame, tickId) {
         },
         content_type: frame.contentType,
         image_base64: frame.buffer.toString('base64'),
-        metadata: frame.metadata || {},
+        metadata: {
+          ...(frame.metadata || {}),
+          demo: Boolean(frame.metadata?.demo || camera.metadata?.demo),
+          expected_event_type: frame.metadata?.expected_event_type || camera.metadata?.expected_event_type,
+          simulated_source: Boolean(frame.metadata?.simulated_source || camera.source === 'simulated_demo'),
+        },
         timestamp: new Date().toISOString(),
       }),
     }).finally(() => clearTimeout(timer));
@@ -589,7 +676,7 @@ async function runPool(cameras, tickId) {
           workerId,
         });
       } finally {
-        state.activeWorkers -= 1;
+        state.activeWorkers = Math.max(state.activeWorkers - 1, 0);
       }
     }
   }
@@ -643,6 +730,50 @@ async function scanOnce() {
   }
 }
 
+async function scanSimulatedDemoCameras() {
+  if (!state.running || state.demoScanning) return null;
+  state.demoScanning = true;
+  const startedAt = Date.now();
+  const city = state.config.source === 'hanoi' ? 'hanoi' : 'hcm';
+  const cameras = buildSimulatedDemoCameras(city);
+
+  try {
+    const { failures, results } = await runPool(cameras, startedAt);
+    state.lastDemoRun = {
+      cameras: cameras.length,
+      detections: results.reduce((sum, item) => sum + item.detections, 0),
+      durationMs: Date.now() - startedAt,
+      failed: failures.length,
+      failures,
+      finishedAt: new Date().toISOString(),
+      processed: results.length,
+    };
+    return { failures, results, summary: state.lastDemoRun };
+  } finally {
+    state.demoScanning = false;
+  }
+}
+
+function scheduleNextDemoRun() {
+  if (!state.running) return;
+  state.demoTimer = setTimeout(async () => {
+    try {
+      await scanSimulatedDemoCameras();
+    } catch (err) {
+      state.lastDemoRun = {
+        error: err.message,
+        failed: true,
+        finishedAt: new Date().toISOString(),
+      };
+      console.error('[Scanner] simulated demo scan failed:', err);
+    } finally {
+      scheduleNextDemoRun();
+    }
+  }, state.config.demoIntervalMs);
+
+  if (typeof state.demoTimer.unref === 'function') state.demoTimer.unref();
+}
+
 function scheduleNextRun() {
   if (!state.running) return;
   state.timer = setTimeout(async () => {
@@ -684,6 +815,7 @@ async function start(options = {}) {
       console.error('[Scanner] initial scan failed:', err);
     })
     .finally(scheduleNextRun);
+  scheduleNextDemoRun();
 
   return getStatus();
 }
@@ -695,12 +827,17 @@ function stop() {
     clearTimeout(state.timer);
     state.timer = null;
   }
+  if (state.demoTimer) {
+    clearTimeout(state.demoTimer);
+    state.demoTimer = null;
+  }
   console.log('[Scanner] stopped');
   return getStatus();
 }
 
 module.exports = {
   getStatus,
+  scanSimulatedDemoCameras,
   scanOnce,
   start,
   stop,

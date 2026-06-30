@@ -1,3 +1,4 @@
+const ytSearch = require('yt-search');
 const NEWS_CACHE_TTL_MS = Number(process.env.NEWS_CACHE_TTL_MS || 10 * 60 * 1000);
 const REQUEST_TIMEOUT_MS = Number(process.env.NEWS_REQUEST_TIMEOUT_MS || 8000);
 const GOOGLE_NEWS_BASE = 'https://news.google.com/rss/search';
@@ -53,7 +54,57 @@ const DIRECT_RSS_FEEDS = [
   },
 ];
 
+const LOCATION_DICTIONARY = [
+  { keywords: ['hồ chí minh', 'tp.hcm', 'hcm', 'sài gòn', 'quận 1', 'q1', 'quận nhất', 'chợ bến thành'], lat: 10.7769, lng: 106.7009, name: 'Quận 1, TP.HCM' },
+  { keywords: ['quận 2', 'q2', 'thủ thiêm', 'thảo điền'], lat: 10.7876, lng: 106.7496, name: 'Quận 2, TP.HCM' },
+  { keywords: ['quận 3', 'q3'], lat: 10.7844, lng: 106.6853, name: 'Quận 3, TP.HCM' },
+  { keywords: ['quận 4', 'q4'], lat: 10.7588, lng: 106.7018, name: 'Quận 4, TP.HCM' },
+  { keywords: ['quận 5', 'q5', 'chợ lớn'], lat: 10.7540, lng: 106.6632, name: 'Quận 5, TP.HCM' },
+  { keywords: ['quận 7', 'q7', 'phú mỹ hưng'], lat: 10.7337, lng: 106.7135, name: 'Quận 7, TP.HCM' },
+  { keywords: ['quận 9', 'q9', 'khu công nghệ cao'], lat: 10.8427, lng: 106.8115, name: 'Quận 9, TP.HCM' },
+  { keywords: ['thủ đức', 'thủ đưc'], lat: 10.8494, lng: 106.7537, name: 'Thủ Đức, TP.HCM' },
+  { keywords: ['hà nội', 'hoàn kiếm', 'hồ gươm', 'phố cổ'], lat: 21.0285, lng: 105.8542, name: 'Hoàn Kiếm, Hà Nội' },
+  { keywords: ['cầu giấy'], lat: 21.0305, lng: 105.7958, name: 'Cầu Giấy, Hà Nội' },
+  { keywords: ['hà đông'], lat: 20.9726, lng: 105.7720, name: 'Hà Đông, Hà Nội' },
+  { keywords: ['đống đa'], lat: 21.0163, lng: 105.8239, name: 'Đống Đa, Hà Nội' },
+  { keywords: ['ba đình'], lat: 21.0348, lng: 105.8202, name: 'Ba Đình, Hà Nội' },
+  { keywords: ['thanh xuân'], lat: 20.9934, lng: 105.8117, name: 'Thanh Xuân, Hà Nội' },
+  { keywords: ['tây hồ', 'hồ tây'], lat: 21.0543, lng: 105.8227, name: 'Tây Hồ, Hà Nội' },
+  { keywords: ['hai bà trưng'], lat: 21.0069, lng: 105.8504, name: 'Hai Bà Trưng, Hà Nội' },
+  { keywords: ['hoàng mai'], lat: 20.9723, lng: 105.8428, name: 'Hoàng Mai, Hà Nội' },
+  { keywords: ['long biên'], lat: 21.0360, lng: 105.8850, name: 'Long Biên, Hà Nội' },
+  { keywords: ['nam từ liêm'], lat: 21.0122, lng: 105.7601, name: 'Nam Từ Liêm, Hà Nội' },
+  { keywords: ['bắc từ liêm'], lat: 21.0660, lng: 105.7483, name: 'Bắc Từ Liêm, Hà Nội' }
+];
+
 const cache = new Map();
+const videoCache = new Map();
+
+function parseAgo(agoString) {
+  if (!agoString) return Date.now();
+  const now = Date.now();
+  if (agoString.includes('hour')) {
+    const num = parseInt(agoString) || 1;
+    return now - num * 3600000;
+  }
+  if (agoString.includes('day')) {
+    const num = parseInt(agoString) || 1;
+    return now - num * 86400000;
+  }
+  if (agoString.includes('week')) {
+    const num = parseInt(agoString) || 1;
+    return now - num * 7 * 86400000;
+  }
+  if (agoString.includes('month')) {
+    const num = parseInt(agoString) || 1;
+    return now - num * 30 * 86400000;
+  }
+  if (agoString.includes('minute')) {
+    const num = parseInt(agoString) || 1;
+    return now - num * 60000;
+  }
+  return now - 86400000; // default 1 day
+}
 
 function getCategories() {
   return Object.entries(CATEGORY_CONFIG).map(([id, config]) => ({
@@ -145,6 +196,26 @@ function isRelevantToCategory(item, category) {
   return keywords.some((keyword) => haystack.includes(keyword));
 }
 
+function extractLocation(text) {
+  if (!text) return null;
+  const normalized = normalizeSearchText(text);
+  for (const loc of LOCATION_DICTIONARY) {
+    for (const keyword of loc.keywords) {
+      if (normalized.includes(normalizeSearchText(keyword))) {
+        // Add a small jitter so markers don't perfectly overlap
+        const jitterLat = (Math.random() - 0.5) * 0.006;
+        const jitterLng = (Math.random() - 0.5) * 0.006;
+        return {
+          lat: loc.lat + jitterLat,
+          lng: loc.lng + jitterLng,
+          name: loc.name
+        };
+      }
+    }
+  }
+  return null;
+}
+
 function readTag(xml, tag) {
   const match = xml.match(new RegExp(`<${tag}(?:\\s[^>]*)?>([\\s\\S]*?)<\\/${tag}>`, 'i'));
   return match ? decodeHtmlEntities(match[1]).trim() : '';
@@ -163,17 +234,21 @@ function parseRssItems(xml, category, query) {
     const description = stripHtml(readTag(itemXml, 'description'));
     const title = stripHtml(readTag(itemXml, 'title'));
     const source = stripHtml(readTag(itemXml, 'source'));
+    const summary = makeNewsSummary({ title, description, category, source });
+    const location = extractLocation(`${title} ${summary}`);
+    
     return {
       id: readTag(itemXml, 'guid') || readTag(itemXml, 'link') || `${category}:${title}`,
       category,
       query,
       title,
-      summary: makeNewsSummary({ title, description, category, source }),
+      summary,
       raw_summary: description.slice(0, 320),
       url: readTag(itemXml, 'link'),
       source: source || 'Google News',
       source_url: readTagAttr(itemXml, 'source', 'url'),
       published_at: parsedDate && !Number.isNaN(parsedDate.getTime()) ? parsedDate.toISOString() : null,
+      location,
     };
   }).filter((item) => item.title && item.url && isRelevantToCategory(item, category));
 }
@@ -295,7 +370,81 @@ async function getNews(options = {}) {
   };
 }
 
+async function getVideoNews(options = {}) {
+  const cacheKey = 'video_news';
+  const now = Date.now();
+  const cached = videoCache.get(cacheKey);
+
+  if (!options.refresh && cached && cached.expiresAt > now) {
+    return {
+      updated_at: cached.updatedAt,
+      videos: cached.videos,
+      cached: true,
+    };
+  }
+
+  try {
+    const queries = [
+      'tin tức thời sự tai nạn giao thông việt nam',
+      'thời sự cháy nổ hỏa hoạn việt nam',
+      'tin tức thời sự ngập lụt bão lũ việt nam',
+      'camera giao thông việt nam'
+    ];
+    
+    const searchPromises = queries.map(q => ytSearch(q));
+    const searchResults = await Promise.all(searchPromises);
+    
+    // Merge, deduplicate and slice
+    const uniqueVideos = new Map();
+    for (const result of searchResults) {
+      if (!result.videos) continue;
+      for (const v of result.videos) {
+        if (!uniqueVideos.has(v.videoId)) {
+          uniqueVideos.set(v.videoId, v);
+        }
+      }
+    }
+    
+    const mergedVideos = Array.from(uniqueVideos.values());
+    const videos = mergedVideos.slice(0, 60).map(v => {
+      const location = extractLocation(`${v.title} ${v.description || ''}`);
+      return {
+        id: v.videoId,
+        title: v.title,
+        youtubeId: v.videoId,
+        duration: v.timestamp,
+        timestamp: parseAgo(v.ago),
+        location: location || null
+      };
+    });
+
+    const updatedAt = new Date().toISOString();
+    videoCache.set(cacheKey, {
+      videos,
+      updatedAt,
+      expiresAt: now + NEWS_CACHE_TTL_MS,
+    });
+
+    return {
+      updated_at: updatedAt,
+      videos,
+      cached: false,
+    };
+  } catch (error) {
+    console.error("Failed to fetch video news:", error);
+    if (cached) {
+      return {
+        updated_at: cached.updatedAt,
+        videos: cached.videos,
+        cached: true,
+      };
+    }
+    return { videos: [] };
+  }
+}
+
 module.exports = {
   getCategories,
   getNews,
+  getVideoNews
 };

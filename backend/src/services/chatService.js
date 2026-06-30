@@ -29,6 +29,46 @@ function trimRouteNoise(value) {
     .trim();
 }
 
+const KNOWN_PLACES = [
+  {
+    aliases: ['truong dai hoc cong nghe thong tin', 'dai hoc cong nghe thong tin', 'uit'],
+    lat: 10.8698118,
+    lng: 106.8033668,
+    name: 'Trường Đại học Công nghệ Thông tin, ĐHQG TP.HCM',
+  },
+  {
+    aliases: ['dinh doc lap', 'hoi truong thong nhat'],
+    lat: 10.7770348,
+    lng: 106.695488,
+    name: 'Dinh Độc Lập, Thành phố Hồ Chí Minh',
+  },
+];
+
+function findKnownPlace(value) {
+  const normalized = normalizeText(value);
+  const place = KNOWN_PLACES.find((item) =>
+    item.aliases.some((alias) => normalized === alias || normalized.includes(alias))
+  );
+  return place ? { lat: place.lat, lng: place.lng, name: place.name } : null;
+}
+
+function isCurrentLocationReference(value) {
+  const normalized = normalizeText(value);
+  return [
+    'vi tri hien tai',
+    'vi tri cua toi',
+    'vi tri hien tai cua toi',
+    'noi toi dang o',
+    'cho toi dang o',
+    'day',
+  ].includes(normalized);
+}
+
+function shouldPreferHcm(value) {
+  const normalized = normalizeText(value);
+  return !/\b(ha noi|da nang|hai phong|can tho|hue|nha trang|da lat|vung tau)\b/.test(normalized);
+}
+
 function summarizeAlerts(activeAlerts) {
   if (!activeAlerts.length) {
     return 'Hiện chưa có cảnh báo giao thông đang hoạt động trên hệ thống.';
@@ -64,7 +104,17 @@ function buildGeneralReply(message, activeAlerts) {
 }
 
 function parseRouteLocally(message, forceRoute = false) {
-  const normalized = normalizeText(message).replace(/\s+/g, ' ');
+  const original = String(message || '').replace(/\s+/g, ' ').trim();
+  const normalized = normalizeText(original).replace(/\s+/g, ' ');
+
+  const originalFromToMatch = original.match(/(?:^|\s)từ\s+(.+?)\s+(?:đến|tới|sang|qua)\s+(.+)$/iu);
+  if (originalFromToMatch) {
+    return {
+      intent: 'routing',
+      start: cleanLocation(originalFromToMatch[1]),
+      end: cleanLocation(originalFromToMatch[2]),
+    };
+  }
 
   const fromToMatch = normalized.match(/(?:^|\s)(?:tu)\s+(.+?)\s+(?:den|toi|sang|qua)\s+(.+)$/);
   if (fromToMatch) {
@@ -72,6 +122,15 @@ function parseRouteLocally(message, forceRoute = false) {
       intent: 'routing',
       start: cleanLocation(fromToMatch[1]),
       end: cleanLocation(fromToMatch[2]),
+    };
+  }
+
+  const originalToFromMatch = original.match(/(?:^|\s)(?:đến|tới)\s+(.+?)\s+từ\s+(.+)$/iu);
+  if (originalToFromMatch) {
+    return {
+      intent: 'routing',
+      start: cleanLocation(originalToFromMatch[2]),
+      end: cleanLocation(originalToFromMatch[1]),
     };
   }
 
@@ -90,11 +149,15 @@ function parseRouteLocally(message, forceRoute = false) {
 
   if (!looksLikeRoute) return null;
 
+  const originalDestinationMatch = original.match(
+    /(?:chỉ đường|dẫn đường|tìm đường|đường đi|lộ trình|đi đến|đi tới|đến|tới)\s+(.+)$/iu
+  );
+
   const destinationMatch = normalized.match(
     /(?:chi duong|dan duong|tim duong|duong di|lo trinh|di den|di toi|den|toi)\s+(.+)$/
   );
 
-  const end = trimRouteNoise(destinationMatch?.[1] || normalized);
+  const end = trimRouteNoise(originalDestinationMatch?.[1] || destinationMatch?.[1] || original);
   if (!end) return null;
 
   return { intent: 'routing', start: null, end };
@@ -197,10 +260,23 @@ function getDistance(lat1, lon1, lat2, lon2) {
   return R * c;
 }
 
-async function geocode(locationStr) {
-  try {
+async function geocode(locationStr, options = {}) {
+  const knownPlace = findKnownPlace(locationStr);
+  if (knownPlace) return knownPlace;
+
+  const rawLocation = cleanLocation(locationStr);
+  const queries = [];
+  if (options.preferHcm !== false) {
+    queries.push(`${rawLocation}, Thành phố Hồ Chí Minh, Việt Nam`);
+  }
+  queries.push(`${rawLocation}, Việt Nam`, rawLocation);
+
+  for (const query of [...new Set(queries)]) {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 8000);
+    try {
     const params = new URLSearchParams({
-      q: locationStr,
+      q: query,
       format: 'json',
       limit: '1',
       addressdetails: '1',
@@ -208,23 +284,32 @@ async function geocode(locationStr) {
       'accept-language': 'vi',
     });
     const url = `https://nominatim.openstreetmap.org/search?${params.toString()}`;
-    const res = await fetch(url, { headers: { 'User-Agent': 'SmartAlertSystem/1.0 (+local routing assistant)' }});
+      const res = await fetch(url, {
+        signal: controller.signal,
+        headers: { 'User-Agent': 'SmartAlertSystem/1.0 (+local routing assistant)' },
+      });
+      if (!res.ok) continue;
     const data = await res.json();
-    if (!data || data.length === 0) return null;
-    return {
-      lat: parseFloat(data[0].lat),
-      lng: parseFloat(data[0].lon),
-      name: data[0].display_name
-    };
-  } catch (err) {
-    console.error('Geocoding error:', err);
-    return null;
+      if (data?.length) {
+        return {
+          lat: parseFloat(data[0].lat),
+          lng: parseFloat(data[0].lon),
+          name: data[0].display_name,
+        };
+      }
+    } catch (err) {
+      console.warn(`[ChatService] Geocoding failed for "${query}":`, err.message);
+    } finally {
+      clearTimeout(timer);
+    }
   }
+
+  return null;
 }
 
 async function getRoutes(startCoords, endCoords) {
   try {
-    const url = `http://router.project-osrm.org/route/v1/driving/${startCoords.lng},${startCoords.lat};${endCoords.lng},${endCoords.lat}?overview=full&geometries=geojson&alternatives=3`;
+    const url = `http://router.project-osrm.org/route/v1/driving/${startCoords.lng},${startCoords.lat};${endCoords.lng},${endCoords.lat}?overview=full&geometries=geojson&alternatives=3&steps=true`;
     const res = await fetch(url);
     const data = await res.json();
     if (data.code !== 'Ok' || !data.routes || data.routes.length === 0) return null;
@@ -324,15 +409,19 @@ async function processChat(message, currentLocation, forceRoute) {
     }
 
     let startObj = null;
-    if (parsed.start) {
-      startObj = await geocode(parsed.start + ', Hồ Chí Minh');
-    } else if (currentLocation && currentLocation.lat && currentLocation.lng) {
+    const useCurrentLocation = !parsed.start || isCurrentLocationReference(parsed.start);
+    if (useCurrentLocation && currentLocation && currentLocation.lat && currentLocation.lng) {
       startObj = { lat: currentLocation.lat, lng: currentLocation.lng, name: "Vị trí hiện tại của bạn" };
+    } else if (parsed.start && !isCurrentLocationReference(parsed.start)) {
+      startObj = await geocode(parsed.start, { preferHcm: shouldPreferHcm(parsed.start) });
     }
 
-    const endObj = await geocode(parsed.end + ', Hồ Chí Minh');
+    const endObj = await geocode(parsed.end, { preferHcm: shouldPreferHcm(parsed.end) });
 
     if (!startObj) {
+      if (parsed.start && !isCurrentLocationReference(parsed.start)) {
+        return { type: 'text', message: `Không tìm thấy tọa độ cho điểm xuất phát "${parsed.start}". Vui lòng nhập thêm quận, thành phố hoặc địa chỉ.` };
+      }
       return { type: 'text', message: 'Không thể xác định được điểm xuất phát. Vui lòng cho phép truy cập vị trí hoặc nhập rõ điểm xuất phát.' };
     }
     if (!endObj) {
@@ -395,7 +484,8 @@ async function processChat(message, currentLocation, forceRoute) {
       route: finalCoords,
       route_cameras: routeCameras,
       startPoint: [startObj.lat, startObj.lng],
-      endPoint: [endObj.lat, endObj.lng]
+      endPoint: [endObj.lat, endObj.lng],
+      steps: selectedRoute.legs && selectedRoute.legs[0] && selectedRoute.legs[0].steps ? selectedRoute.legs[0].steps : []
     };
 
   } catch (error) {
@@ -405,5 +495,8 @@ async function processChat(message, currentLocation, forceRoute) {
 }
 
 module.exports = {
-  processChat
+  processChat,
+  parseRouteLocally,
+  isCurrentLocationReference,
+  shouldPreferHcm,
 };

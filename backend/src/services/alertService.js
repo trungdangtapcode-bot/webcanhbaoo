@@ -75,6 +75,7 @@ function upsertActiveAlert(alertData, options = {}) {
 
   const entry = {
     camera_id: alertData.camera_id,
+    confidence: alertData.confidence ?? existing?.confidence ?? null,
     event_type: alertData.event_type,
     severity: alertData.severity || 'medium',
     image_base64: alertData.image_base64 || null,

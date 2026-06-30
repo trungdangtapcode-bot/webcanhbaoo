@@ -1,6 +1,48 @@
 (function () {
+  const FIRE_DEMO_VIDEO_URL = "./assets/demo/perry-fire.webm";
+  const FLOOD_DEMO_VIDEO_URL = "./assets/demo/flood-intersection.webm";
+  const TRAFFIC_DEMO_VIDEO_URL = "./assets/demo/rush-hour-traffic.webm";
+  const DEMO_SOURCES = {
+    fire: {
+      url: FIRE_DEMO_VIDEO_URL,
+      cameraId: "DEMO_FIRE_CAM_001",
+      cameraName: "Camera mô phỏng — Sự cố cháy",
+      expectedEventType: "fire",
+      lat: 21.0314,
+      lng: 105.8523,
+      label: "Camera mô phỏng cháy",
+      attribution: "Footage: BLM Nevada · CC BY 2.0",
+      attributionUrl: "https://commons.wikimedia.org/wiki/File:Perry_Fire_Video_(43953516241).webm",
+    },
+    flood: {
+      url: FLOOD_DEMO_VIDEO_URL,
+      cameraId: "DEMO_FLOOD_CAM_001",
+      cameraName: "Camera mô phỏng — Tuyến đường ngập",
+      expectedEventType: "flood",
+      lat: 21.0412,
+      lng: 105.8346,
+      label: "Camera mô phỏng ngập lụt",
+      attribution: "Footage: Droodkin · CC BY-SA 4.0",
+      attributionUrl: "https://commons.wikimedia.org/wiki/File:Bahrain_Flooding_2024.webm",
+    },
+    traffic: {
+      url: TRAFFIC_DEMO_VIDEO_URL,
+      cameraId: "DEMO_TRAFFIC_CAM_001",
+      cameraName: "Camera mô phỏng — Ùn tắc giờ cao điểm",
+      expectedEventType: "traffic_jam",
+      lat: 21.0127,
+      lng: 105.8419,
+      label: "Camera mô phỏng ùn tắc",
+      attribution: "Footage: Taurus Media Technik · CC0 1.0",
+      attributionUrl: "https://commons.wikimedia.org/wiki/File:Video_Codec_Test_rush_hour_1080p25.y4m.webm",
+    },
+  };
+
   const state = {
     stream: null,
+    mode: null,
+    videoObjectUrl: null,
+    source: null,
     devices: [],
     frames: 0,
     fire: 0,
@@ -18,6 +60,11 @@
     start: document.getElementById("demo-start-camera"),
     stop: document.getElementById("demo-stop-camera"),
     capture: document.getElementById("demo-capture"),
+    startVideos: Array.from(document.querySelectorAll("[data-demo-source]")),
+    videoInput: document.getElementById("demo-video-input"),
+    useVideo: document.getElementById("demo-use-video"),
+    sourceBadge: document.getElementById("demo-source-badge"),
+    sourceAttribution: document.getElementById("demo-source-attribution"),
     cameraSelect: document.getElementById("demo-camera-select"),
     interval: document.getElementById("demo-scan-interval"),
     imageInput: document.getElementById("demo-image-input"),
@@ -78,11 +125,13 @@
     els.trafficCount.textContent = state.traffic;
   }
 
-  function setCameraUi(active) {
+  function setCameraUi(active, mode = null) {
     els.start.disabled = active;
+    els.startVideos.forEach((button) => { button.disabled = active; });
     els.stop.disabled = !active;
     els.capture.disabled = !active || state.scanning;
     els.empty.hidden = active;
+    els.sourceBadge.hidden = mode !== "video";
     els.emptyCopy.textContent = active ? "" : "Camera is off";
   }
 
@@ -112,10 +161,16 @@
         audio: false,
       };
       state.stream = await navigator.mediaDevices.getUserMedia(constraints);
+      state.mode = "camera";
+      state.source = {
+        cameraId: "USB_CAM_001",
+        cameraName: "USB Camera — Local",
+        source: "browser_usb_camera",
+      };
       els.video.srcObject = state.stream;
       await els.video.play();
       await loadDevices();
-      setCameraUi(true);
+      setCameraUi(true, "camera");
       setRunState("Camera live", "ok");
       syncAutoScan();
     } catch (err) {
@@ -134,9 +189,91 @@
     }
     state.stream = null;
     els.video.srcObject = null;
+    els.video.pause();
+    els.video.removeAttribute("src");
+    els.video.load();
+    if (state.videoObjectUrl) URL.revokeObjectURL(state.videoObjectUrl);
+    state.videoObjectUrl = null;
+    state.mode = null;
+    state.source = null;
     clearAutoScan();
     setCameraUi(false);
     setRunState("Idle");
+  }
+
+  async function startVideoSource(url, options = {}) {
+    stopCamera();
+    setRunState("Loading simulation", "busy");
+    try {
+      state.mode = "video";
+      state.videoObjectUrl = options.objectUrl ? url : null;
+      state.source = {
+        cameraId: options.cameraId || "DEMO_UPLOAD_CAM_001",
+        cameraName: options.cameraName || options.name || "Community Demo Camera — Recorded Footage",
+        source: "recorded_demo_camera",
+        expectedEventType: options.expectedEventType,
+        lat: options.lat ?? 10.7769,
+        lng: options.lng ?? 106.7009,
+      };
+      els.video.srcObject = null;
+      els.video.src = url;
+      els.video.loop = true;
+      els.video.muted = true;
+      els.video.preload = "auto";
+      els.sourceBadge.textContent = `${options.label || "Demo camera"} · recorded footage`;
+      if (els.sourceAttribution && options.attribution) {
+        els.sourceAttribution.textContent = options.attribution;
+        els.sourceAttribution.href = options.attributionUrl || "#";
+      }
+      setCameraUi(true, "video");
+      await new Promise((resolve, reject) => {
+        let timeoutId = null;
+        const onReady = () => {
+          cleanup();
+          resolve();
+        };
+        const onError = () => {
+          cleanup();
+          reject(new Error("Cannot play the selected video"));
+        };
+        const cleanup = () => {
+          els.video.removeEventListener("loadeddata", onReady);
+          els.video.removeEventListener("canplay", onReady);
+          els.video.removeEventListener("error", onError);
+          if (timeoutId) window.clearTimeout(timeoutId);
+        };
+        els.video.addEventListener("loadeddata", onReady);
+        els.video.addEventListener("canplay", onReady);
+        els.video.addEventListener("error", onError);
+        els.video.load();
+        if (els.video.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA) onReady();
+        else timeoutId = window.setTimeout(() => reject(new Error("Video loading timed out")), 12000);
+      });
+      await els.video.play();
+      els.interval.value = "2000";
+      setRunState("Simulation live", "ok");
+      syncAutoScan();
+      window.setTimeout(scanFrame, 450);
+    } catch (err) {
+      stopCamera();
+      setRunState("Video unavailable", "error");
+      addResult({ error: "Cannot start recorded camera", detail: err.message }, true);
+    }
+  }
+
+  function startBundledVideo(type = "fire") {
+    const source = DEMO_SOURCES[type] || DEMO_SOURCES.fire;
+    return startVideoSource(source.url, source);
+  }
+
+  function startUploadedVideo() {
+    const file = els.videoInput?.files?.[0];
+    if (!file) return;
+    const objectUrl = URL.createObjectURL(file);
+    return startVideoSource(objectUrl, {
+      name: `Community Demo Camera — ${file.name}`,
+      objectUrl: true,
+    });
   }
 
   function captureFrame() {
@@ -153,12 +290,18 @@
     };
   }
 
-  async function submitFrame(frame, cameraId) {
+  async function submitFrame(frame, source = {}) {
     const response = await fetch("/api/scanner/demo-detect", {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({
-        camera_id: cameraId,
+        camera_id: source.cameraId || "USB_CAM_001",
+        camera_name: source.cameraName || "USB Camera — Local",
+        camera_source: source.source || "browser_usb_camera",
+        demo_session: source.source === "recorded_demo_camera" ? "incident-dashboard-v1" : undefined,
+        expected_event_type: source.expectedEventType,
+        lat: source.lat,
+        lng: source.lng,
         content_type: "image/jpeg",
         ...frame,
       }),
@@ -173,12 +316,12 @@
   }
 
   async function scanFrame() {
-    if (!state.stream || state.scanning) return;
+    if (!state.mode || state.scanning || els.video.readyState < HTMLMediaElement.HAVE_CURRENT_DATA) return;
     state.scanning = true;
     els.capture.disabled = true;
     setRunState("Scanning", "busy");
     try {
-      await submitFrame(captureFrame(), "browser_usb_demo");
+      await submitFrame(captureFrame(), state.source || {});
       setRunState("Scan complete", "ok");
     } catch (err) {
       addResult({
@@ -188,7 +331,7 @@
       setRunState("Scan failed", "error");
     } finally {
       state.scanning = false;
-      els.capture.disabled = !state.stream;
+      els.capture.disabled = !state.mode;
     }
   }
 
@@ -219,7 +362,11 @@
         height: els.canvas.height,
         image_base64: els.canvas.toDataURL("image/jpeg", 0.9).split(",")[1],
       };
-      await submitFrame(frame, "uploaded_image_demo");
+      await submitFrame(frame, {
+        cameraId: "uploaded_image_demo",
+        cameraName: "Uploaded incident image",
+        source: "uploaded_image",
+      });
       setRunState("Image scan complete", "ok");
       URL.revokeObjectURL(image.src);
     } catch (err) {
@@ -366,7 +513,7 @@
   function syncAutoScan() {
     clearAutoScan();
     const interval = Number(els.interval.value);
-    if (!state.stream || !interval) return;
+    if (!state.mode || !interval) return;
     state.timer = window.setInterval(scanFrame, interval);
   }
 
@@ -375,11 +522,18 @@
     setTheme(current === "light" ? "dark" : "light");
   });
   els.start.addEventListener("click", startCamera);
+  els.startVideos.forEach((button) => {
+    button.addEventListener("click", () => startBundledVideo(button.dataset.demoSource));
+  });
   els.stop.addEventListener("click", stopCamera);
   els.capture.addEventListener("click", scanFrame);
   els.imageInput?.addEventListener("change", () => {
     els.scanImage.disabled = !els.imageInput.files?.length;
   });
+  els.videoInput?.addEventListener("change", () => {
+    els.useVideo.disabled = !els.videoInput.files?.length;
+  });
+  els.useVideo?.addEventListener("click", startUploadedVideo);
   els.scanImage?.addEventListener("click", scanImageFile);
   els.cameraSelect.addEventListener("change", () => {
     if (state.stream) startCamera();
@@ -402,4 +556,8 @@
     els.cameraSelect.innerHTML = '<option value="">Camera permission needed</option>';
   });
   refreshHealth();
+  const pageParams = new URLSearchParams(window.location.search);
+  if (pageParams.get("autoplayDemo") === "1") {
+    window.setTimeout(() => startBundledVideo(pageParams.get("incident") || "fire"), 250);
+  }
 })();
