@@ -28,3 +28,11 @@ Thumbs.db
 
 # Temp files
 backend/scripts/gen_token.js
+
+# AI Agent metadata
+.agents/
+.understand-anything/
+
+# Temporary scripts
+check_streams.py
+move_camera.py
